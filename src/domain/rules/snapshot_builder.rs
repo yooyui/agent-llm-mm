@@ -1,5 +1,5 @@
 use crate::domain::{
-    claim::DomainError,
+    DomainError,
     snapshot::{SelfSnapshot, SnapshotRequest},
 };
 
@@ -8,7 +8,7 @@ pub fn build_snapshot(input: SnapshotRequest) -> Result<SelfSnapshot, DomainErro
     let evidence = input
         .evidence
         .iter()
-        .take(input.budget.limit())
+        .take(input.budget.max(1))
         .cloned()
         .collect::<Vec<_>>();
 

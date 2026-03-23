@@ -1,5 +1,5 @@
 use agent_llm_mm::domain::{
-    claim::DomainError,
+    DomainError,
     rules::{commitment_gate::gate_decision, snapshot_builder::build_snapshot},
     snapshot::{SnapshotBudget, SnapshotRequest},
 };
@@ -20,13 +20,13 @@ fn hard_commitment_blocks_conflicting_action() {
 }
 
 #[test]
-fn snapshot_budget_of_zero_does_not_select_evidence() {
+fn budget_of_zero_still_recalls_one_evidence_item() {
     let mut request = SnapshotRequest::fixture_minimal();
     request.budget = SnapshotBudget::new(0);
 
-    let error = build_snapshot(request).unwrap_err();
+    let snapshot = build_snapshot(request).unwrap();
 
-    assert_eq!(error, DomainError::InsufficientEvidence);
+    assert_eq!(snapshot.evidence.len(), 1);
 }
 
 #[test]
@@ -37,4 +37,29 @@ fn snapshot_without_evidence_reuses_insufficient_evidence_error() {
     let error = build_snapshot(request).unwrap_err();
 
     assert_eq!(error, DomainError::InsufficientEvidence);
+}
+
+#[test]
+fn snapshot_budget_truncates_evidence_to_limit() {
+    let mut request = SnapshotRequest::fixture_minimal();
+    request.evidence = vec![
+        "event:evt-1".to_string(),
+        "event:evt-2".to_string(),
+        "event:evt-3".to_string(),
+    ];
+    request.budget = SnapshotBudget::new(2);
+
+    let snapshot = build_snapshot(request).unwrap();
+
+    assert_eq!(snapshot.evidence, vec!["event:evt-1".to_string(), "event:evt-2".to_string()]);
+}
+
+#[test]
+fn unrelated_action_is_not_blocked_by_commitment_gate() {
+    let result = gate_decision(
+        "read_identity_core",
+        &SnapshotRequest::fixture_minimal().commitments,
+    );
+
+    assert!(!result.blocked);
 }

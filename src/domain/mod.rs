@@ -1,3 +1,8 @@
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DomainError {
+    InsufficientEvidence,
+}
+
 pub mod claim;
 pub mod commitment;
 pub mod episode;

@@ -1,4 +1,4 @@
-use crate::domain::claim::DomainError;
+use crate::domain::DomainError;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SnapshotBudget {
@@ -10,8 +10,8 @@ impl SnapshotBudget {
         Self { limit }
     }
 
-    pub fn limit(&self) -> usize {
-        self.limit
+    pub fn max(&self, minimum: usize) -> usize {
+        self.limit.max(minimum)
     }
 }
 
