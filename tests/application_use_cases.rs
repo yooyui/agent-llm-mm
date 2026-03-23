@@ -630,7 +630,9 @@ impl IdGenerator for InMemoryDeps {
 
 #[async_trait]
 impl IngestTransactionRunner for InMemoryDeps {
-    async fn begin_ingest_transaction(&self) -> Result<Box<dyn IngestTransaction + '_>, AppError> {
+    async fn begin_ingest_transaction(
+        &self,
+    ) -> Result<Box<dyn IngestTransaction + Send + '_>, AppError> {
         Ok(Box::new(InMemoryIngestTransaction {
             deps: self.clone(),
             pending: PendingIngest::default(),
@@ -642,7 +644,7 @@ impl IngestTransactionRunner for InMemoryDeps {
 impl ReflectionTransactionRunner for InMemoryDeps {
     async fn begin_reflection_transaction(
         &self,
-    ) -> Result<Box<dyn ReflectionTransaction + '_>, AppError> {
+    ) -> Result<Box<dyn ReflectionTransaction + Send + '_>, AppError> {
         Ok(Box::new(InMemoryReflectionTransaction {
             deps: self.clone(),
             pending: PendingReflection::default(),

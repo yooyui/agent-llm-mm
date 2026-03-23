@@ -218,7 +218,9 @@ impl CommitmentStore for SqliteStore {
 
 #[async_trait]
 impl IngestTransactionRunner for SqliteStore {
-    async fn begin_ingest_transaction(&self) -> Result<Box<dyn IngestTransaction + '_>, AppError> {
+    async fn begin_ingest_transaction(
+        &self,
+    ) -> Result<Box<dyn IngestTransaction + Send + '_>, AppError> {
         let transaction = map_sqlite(self.pool.begin().await)?;
 
         Ok(Box::new(SqliteIngestTransaction {
@@ -232,7 +234,7 @@ impl IngestTransactionRunner for SqliteStore {
 impl ReflectionTransactionRunner for SqliteStore {
     async fn begin_reflection_transaction(
         &self,
-    ) -> Result<Box<dyn ReflectionTransaction + '_>, AppError> {
+    ) -> Result<Box<dyn ReflectionTransaction + Send + '_>, AppError> {
         let transaction = map_sqlite(self.pool.begin().await)?;
 
         Ok(Box::new(SqliteReflectionTransaction {

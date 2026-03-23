@@ -37,7 +37,9 @@ pub trait IngestTransaction {
 
 #[async_trait]
 pub trait IngestTransactionRunner {
-    async fn begin_ingest_transaction(&self) -> Result<Box<dyn IngestTransaction + '_>, AppError>;
+    async fn begin_ingest_transaction(
+        &self,
+    ) -> Result<Box<dyn IngestTransaction + Send + '_>, AppError>;
 }
 
 #[async_trait]
@@ -56,5 +58,5 @@ pub trait ReflectionTransaction {
 pub trait ReflectionTransactionRunner {
     async fn begin_reflection_transaction(
         &self,
-    ) -> Result<Box<dyn ReflectionTransaction + '_>, AppError>;
+    ) -> Result<Box<dyn ReflectionTransaction + Send + '_>, AppError>;
 }
