@@ -151,7 +151,8 @@ async fn decide_with_snapshot_does_not_call_model_when_gate_blocks() {
     .unwrap();
 
     assert!(result.blocked);
-    assert!(result.decision.is_none());
+    assert!(result.action.is_empty());
+    assert!(result.rationale.is_empty());
     assert_eq!(deps.model_call_count(), 0);
 }
 
@@ -171,15 +172,13 @@ async fn decide_with_snapshot_calls_model_when_gate_allows() {
     .unwrap();
 
     assert!(!result.blocked);
-    assert_eq!(
-        result.decision,
-        Some(ModelDecision::new("Proceed".to_string()))
-    );
+    assert_eq!(result.action, "Proceed");
+    assert_eq!(result.rationale, "in-memory");
     assert_eq!(deps.model_call_count(), 1);
 
     let model_input = deps.last_model_input().expect("model should be called");
     assert_eq!(model_input.task, "read identity safely");
-    assert!(!model_input.gate_blocked);
+    assert_eq!(model_input.action, "read_identity_core");
     assert_eq!(
         model_input.snapshot.identity,
         vec!["identity:self=architect".to_string()]
@@ -607,7 +606,10 @@ impl ReflectionStore for InMemoryDeps {
 impl ModelPort for InMemoryDeps {
     async fn decide(&self, input: ModelInput) -> Result<ModelDecision, AppError> {
         self.state.lock().unwrap().model_calls.push(input);
-        Ok(ModelDecision::new("Proceed".to_string()))
+        Ok(ModelDecision::new(
+            "Proceed".to_string(),
+            "in-memory".to_string(),
+        ))
     }
 }
 

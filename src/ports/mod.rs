@@ -19,7 +19,7 @@ pub use episode_store::EpisodeStore;
 pub use event_store::{EventStore, StoredEvent};
 pub use id_generator::IdGenerator;
 pub use identity_store::IdentityStore;
-pub use model_port::{ModelDecision, ModelInput, ModelPort};
+pub use model_port::{ModelDecision, ModelDecisionRequest, ModelInput, ModelPort};
 pub use reflection_store::{ReflectionStore, StoredReflection};
 
 #[async_trait]

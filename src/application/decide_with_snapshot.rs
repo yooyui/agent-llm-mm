@@ -1,7 +1,7 @@
 use crate::{
     domain::{rules::commitment_gate::gate_decision, snapshot::SelfSnapshot},
     error::AppError,
-    ports::{ModelDecision, ModelInput, ModelPort},
+    ports::{ModelDecisionRequest, ModelPort},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -14,7 +14,8 @@ pub struct DecideWithSnapshotInput {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DecideWithSnapshotResult {
     pub blocked: bool,
-    pub decision: Option<ModelDecision>,
+    pub action: String,
+    pub rationale: String,
 }
 
 pub async fn execute<D>(
@@ -28,16 +29,22 @@ where
     if gate.blocked {
         return Ok(DecideWithSnapshotResult {
             blocked: true,
-            decision: None,
+            action: String::new(),
+            rationale: String::new(),
         });
     }
 
     let decision = deps
-        .decide(ModelInput::new(input.task, input.snapshot, gate.blocked))
+        .decide(ModelDecisionRequest::new(
+            input.task,
+            input.action,
+            input.snapshot,
+        ))
         .await?;
 
     Ok(DecideWithSnapshotResult {
         blocked: false,
-        decision: Some(decision),
+        action: decision.action,
+        rationale: decision.rationale,
     })
 }

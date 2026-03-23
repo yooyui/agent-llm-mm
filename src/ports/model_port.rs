@@ -3,34 +3,37 @@ use async_trait::async_trait;
 use crate::{domain::snapshot::SelfSnapshot, error::AppError};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ModelInput {
+pub struct ModelDecisionRequest {
     pub task: String,
+    pub action: String,
     pub snapshot: SelfSnapshot,
-    pub gate_blocked: bool,
 }
 
-impl ModelInput {
-    pub fn new(task: String, snapshot: SelfSnapshot, gate_blocked: bool) -> Self {
+impl ModelDecisionRequest {
+    pub fn new(task: String, action: String, snapshot: SelfSnapshot) -> Self {
         Self {
             task,
+            action,
             snapshot,
-            gate_blocked,
         }
     }
 }
 
+pub type ModelInput = ModelDecisionRequest;
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ModelDecision {
-    pub recommendation: String,
+    pub action: String,
+    pub rationale: String,
 }
 
 impl ModelDecision {
-    pub fn new(recommendation: String) -> Self {
-        Self { recommendation }
+    pub fn new(action: String, rationale: String) -> Self {
+        Self { action, rationale }
     }
 }
 
 #[async_trait]
 pub trait ModelPort {
-    async fn decide(&self, input: ModelInput) -> Result<ModelDecision, AppError>;
+    async fn decide(&self, request: ModelDecisionRequest) -> Result<ModelDecision, AppError>;
 }
