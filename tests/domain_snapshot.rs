@@ -1,6 +1,7 @@
 use agent_llm_mm::domain::{
+    claim::DomainError,
     rules::{commitment_gate::gate_decision, snapshot_builder::build_snapshot},
-    snapshot::SnapshotRequest,
+    snapshot::{SnapshotBudget, SnapshotRequest},
 };
 
 #[test]
@@ -16,4 +17,24 @@ fn hard_commitment_blocks_conflicting_action() {
         &SnapshotRequest::fixture_minimal().commitments,
     );
     assert!(result.blocked);
+}
+
+#[test]
+fn snapshot_budget_of_zero_does_not_select_evidence() {
+    let mut request = SnapshotRequest::fixture_minimal();
+    request.budget = SnapshotBudget::new(0);
+
+    let error = build_snapshot(request).unwrap_err();
+
+    assert_eq!(error, DomainError::InsufficientEvidence);
+}
+
+#[test]
+fn snapshot_without_evidence_reuses_insufficient_evidence_error() {
+    let mut request = SnapshotRequest::fixture_minimal();
+    request.evidence.clear();
+
+    let error = build_snapshot(request).unwrap_err();
+
+    assert_eq!(error, DomainError::InsufficientEvidence);
 }

@@ -10,8 +10,8 @@ impl SnapshotBudget {
         Self { limit }
     }
 
-    pub fn max(&self, minimum: usize) -> usize {
-        self.limit.max(minimum)
+    pub fn limit(&self) -> usize {
+        self.limit
     }
 }
 
@@ -39,7 +39,7 @@ impl SnapshotRequest {
 
     pub fn validate(self) -> Result<Self, DomainError> {
         if self.evidence.is_empty() {
-            return Err(DomainError::SnapshotNeedsEvidence);
+            return Err(DomainError::InsufficientEvidence);
         }
 
         Ok(self)

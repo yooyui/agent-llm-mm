@@ -8,12 +8,12 @@ pub fn build_snapshot(input: SnapshotRequest) -> Result<SelfSnapshot, DomainErro
     let evidence = input
         .evidence
         .iter()
-        .take(input.budget.max(1))
+        .take(input.budget.limit())
         .cloned()
         .collect::<Vec<_>>();
 
     if evidence.is_empty() {
-        return Err(DomainError::SnapshotNeedsEvidence);
+        return Err(DomainError::InsufficientEvidence);
     }
 
     Ok(SelfSnapshot {
