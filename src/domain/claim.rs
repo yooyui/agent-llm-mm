@@ -3,6 +3,7 @@ use crate::domain::types::{Mode, Owner};
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DomainError {
     InsufficientEvidence,
+    SnapshotNeedsEvidence,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
