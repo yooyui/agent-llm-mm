@@ -479,7 +479,7 @@ async fn update_claim_status_row<'e, E>(
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
-    map_sqlite(
+    let result = map_sqlite(
         sqlx::query(
             r#"
             UPDATE claims
@@ -492,6 +492,12 @@ where
         .execute(executor)
         .await,
     )?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::Message(format!(
+            "cannot update missing claim: {claim_id}"
+        )));
+    }
 
     Ok(())
 }

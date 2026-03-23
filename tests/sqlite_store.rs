@@ -2,9 +2,14 @@ use agent_llm_mm::{
     domain::{
         claim::ClaimDraft,
         event::Event,
+        identity_core::IdentityCore,
+        reflection::Reflection,
         types::{EventKind, Mode, Owner},
     },
-    ports::{ClaimStatus, IngestTransactionRunner, StoredClaim, StoredEvent},
+    ports::{
+        ClaimStatus, ClaimStore, CommitmentStore, IdentityStore, IngestTransactionRunner,
+        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
+    },
 };
 use chrono::{DateTime, Utc};
 use sqlx::{Row, sqlite::SqlitePool};
@@ -27,6 +32,8 @@ async fn sqlite_store_bootstraps_all_tables() {
     assert!(tables.contains(&"evidence_links".to_string()));
     assert!(tables.contains(&"episode_events".to_string()));
     assert!(tables.contains(&"reflections".to_string()));
+    assert!(tables.contains(&"identity_claims".to_string()));
+    assert!(tables.contains(&"commitments".to_string()));
 }
 
 #[tokio::test]
@@ -65,6 +72,143 @@ async fn sqlite_round_trips_claim_with_evidence() {
     assert_eq!(claim_row.get::<String, _>("status"), "active");
     assert_eq!(evidence_rows.len(), 1);
     assert_eq!(evidence_rows[0].get::<String, _>("event_id"), ids.event_id);
+}
+
+#[tokio::test]
+async fn sqlite_reflection_transactions_commit_and_roll_back_as_expected() {
+    let context = test_support::new_sqlite_store().await;
+    test_support::seed_claim(&context.store, "claim-old")
+        .await
+        .unwrap();
+
+    let mut ok_tx = context.store.begin_reflection_transaction().await.unwrap();
+    ok_tx
+        .upsert_claim(StoredClaim::new(
+            "claim-new".to_string(),
+            ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "senior_architect",
+                Mode::Observed,
+            ),
+            ClaimStatus::Active,
+        ))
+        .await
+        .unwrap();
+    ok_tx
+        .append_reflection(StoredReflection::new(
+            "refl-1".to_string(),
+            test_support::fixed_now(),
+            Reflection::new("replace old claim"),
+            Some("claim-old".to_string()),
+            Some("claim-new".to_string()),
+        ))
+        .await
+        .unwrap();
+    ok_tx
+        .update_claim_status("claim-old", ClaimStatus::Superseded)
+        .await
+        .unwrap();
+    ok_tx.commit().await.unwrap();
+
+    let committed_reflection_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM reflections WHERE reflection_id = 'refl-1'",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    let old_status =
+        sqlx::query_scalar::<_, String>("SELECT status FROM claims WHERE claim_id = 'claim-old'")
+            .fetch_one(&context.pool)
+            .await
+            .unwrap();
+    assert_eq!(committed_reflection_count, 1);
+    assert_eq!(old_status, "superseded");
+
+    let mut failing_tx = context.store.begin_reflection_transaction().await.unwrap();
+    failing_tx
+        .upsert_claim(StoredClaim::new(
+            "claim-rolled-back".to_string(),
+            ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "staff_architect",
+                Mode::Observed,
+            ),
+            ClaimStatus::Active,
+        ))
+        .await
+        .unwrap();
+    failing_tx
+        .append_reflection(StoredReflection::new(
+            "refl-missing".to_string(),
+            test_support::fixed_now(),
+            Reflection::new("this should fail"),
+            Some("claim-missing".to_string()),
+            Some("claim-rolled-back".to_string()),
+        ))
+        .await
+        .unwrap();
+
+    let update_result = failing_tx
+        .update_claim_status("claim-missing", ClaimStatus::Superseded)
+        .await;
+
+    assert!(update_result.is_err());
+
+    let rolled_back_reflection_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM reflections WHERE reflection_id = 'refl-missing'",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    let rolled_back_claim_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM claims WHERE claim_id = 'claim-rolled-back'",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    assert_eq!(rolled_back_reflection_count, 0);
+    assert_eq!(rolled_back_claim_count, 0);
+}
+
+#[tokio::test]
+async fn sqlite_store_persists_identity_and_reads_commitments_for_snapshot_ports() {
+    let context = test_support::new_sqlite_store().await;
+
+    context
+        .store
+        .save_identity(IdentityCore::new(vec![
+            "identity:self=architect".to_string(),
+            "identity:style=rigorous".to_string(),
+        ]))
+        .await
+        .unwrap();
+    test_support::insert_commitment(
+        &context.pool,
+        Owner::Self_,
+        "forbid:write_identity_core_directly",
+    )
+    .await
+    .unwrap();
+
+    let identity = context.store.load_identity().await.unwrap();
+    let commitments = context.store.list_commitments().await.unwrap();
+
+    assert_eq!(
+        identity.canonical_claims(),
+        &[
+            "identity:self=architect".to_string(),
+            "identity:style=rigorous".to_string()
+        ]
+    );
+    assert_eq!(commitments.len(), 1);
+    assert_eq!(
+        commitments[0].description(),
+        "forbid:write_identity_core_directly"
+    );
 }
 
 mod test_support {
@@ -120,7 +264,38 @@ mod test_support {
         Ok(SeedIds { claim_id, event_id })
     }
 
-    fn fixed_now() -> DateTime<Utc> {
+    pub async fn seed_claim(
+        store: &SqliteStore,
+        claim_id: &str,
+    ) -> Result<(), agent_llm_mm::error::AppError> {
+        store
+            .upsert_claim(StoredClaim::new(
+                claim_id.to_string(),
+                ClaimDraft::new(Owner::Self_, "self.role", "is", "architect", Mode::Observed),
+                ClaimStatus::Active,
+            ))
+            .await
+    }
+
+    pub async fn insert_commitment(
+        pool: &SqlitePool,
+        owner: Owner,
+        description: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("INSERT INTO commitments (description, owner) VALUES (?, ?)")
+            .bind(description)
+            .bind(match owner {
+                Owner::Self_ => "self",
+                Owner::User => "user",
+                Owner::World => "world",
+                Owner::Unknown => "unknown",
+            })
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    pub fn fixed_now() -> DateTime<Utc> {
         chrono::DateTime::parse_from_rfc3339("2026-03-23T10:00:00Z")
             .unwrap()
             .with_timezone(&Utc)
