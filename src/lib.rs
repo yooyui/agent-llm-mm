@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+pub mod adapters;
 pub mod application;
 pub mod domain;
 pub mod error;
