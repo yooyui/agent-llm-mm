@@ -155,8 +155,9 @@ async fn sqlite_reflection_transactions_commit_and_roll_back_as_expected() {
     let update_result = failing_tx
         .update_claim_status("claim-missing", ClaimStatus::Superseded)
         .await;
-
     assert!(update_result.is_err());
+    let commit_result = failing_tx.commit().await;
+    assert!(commit_result.is_err());
 
     let rolled_back_reflection_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM reflections WHERE reflection_id = 'refl-missing'",

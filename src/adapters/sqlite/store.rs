@@ -223,6 +223,7 @@ impl IngestTransactionRunner for SqliteStore {
 
         Ok(Box::new(SqliteIngestTransaction {
             transaction: Some(transaction),
+            poisoned: false,
         }))
     }
 }
@@ -236,22 +237,29 @@ impl ReflectionTransactionRunner for SqliteStore {
 
         Ok(Box::new(SqliteReflectionTransaction {
             transaction: Some(transaction),
+            poisoned: false,
         }))
     }
 }
 
 struct SqliteIngestTransaction<'a> {
     transaction: Option<sqlx::Transaction<'a, Sqlite>>,
+    poisoned: bool,
 }
 
 #[async_trait]
 impl IngestTransaction for SqliteIngestTransaction<'_> {
     async fn append_event(&mut self, event: StoredEvent) -> Result<(), AppError> {
-        let transaction = self
-            .transaction
-            .as_mut()
-            .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
-        insert_event(transaction.as_mut(), &event).await
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            insert_event(transaction.as_mut(), &event).await
+        };
+        self.note_result(result)
     }
 
     async fn record_event_in_episode(
@@ -259,30 +267,51 @@ impl IngestTransaction for SqliteIngestTransaction<'_> {
         episode_reference: String,
         event_id: String,
     ) -> Result<(), AppError> {
-        let transaction = self
-            .transaction
-            .as_mut()
-            .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
-        insert_episode_event(transaction.as_mut(), &episode_reference, &event_id).await
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            insert_episode_event(transaction.as_mut(), &episode_reference, &event_id).await
+        };
+        self.note_result(result)
     }
 
     async fn upsert_claim(&mut self, claim: StoredClaim) -> Result<(), AppError> {
-        let transaction = self
-            .transaction
-            .as_mut()
-            .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
-        upsert_claim_row(transaction.as_mut(), &claim).await
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            upsert_claim_row(transaction.as_mut(), &claim).await
+        };
+        self.note_result(result)
     }
 
     async fn link_evidence(&mut self, claim_id: String, event_id: String) -> Result<(), AppError> {
-        let transaction = self
-            .transaction
-            .as_mut()
-            .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
-        insert_evidence_link(transaction.as_mut(), &claim_id, &event_id).await
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            insert_evidence_link(transaction.as_mut(), &claim_id, &event_id).await
+        };
+        self.note_result(result)
     }
 
     async fn commit(mut self: Box<Self>) -> Result<(), AppError> {
+        if self.poisoned {
+            return Err(AppError::Message(
+                "transaction is poisoned and cannot be committed".to_string(),
+            ));
+        }
+
         let transaction = self
             .transaction
             .take()
@@ -292,26 +321,57 @@ impl IngestTransaction for SqliteIngestTransaction<'_> {
     }
 }
 
+impl SqliteIngestTransaction<'_> {
+    fn ensure_writable(&self) -> Result<(), AppError> {
+        if self.poisoned {
+            return Err(AppError::Message(
+                "transaction is poisoned and cannot accept more writes".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn note_result<T>(&mut self, result: Result<T, AppError>) -> Result<T, AppError> {
+        if result.is_err() {
+            self.poisoned = true;
+        }
+
+        result
+    }
+}
+
 struct SqliteReflectionTransaction<'a> {
     transaction: Option<sqlx::Transaction<'a, Sqlite>>,
+    poisoned: bool,
 }
 
 #[async_trait]
 impl ReflectionTransaction for SqliteReflectionTransaction<'_> {
     async fn upsert_claim(&mut self, claim: StoredClaim) -> Result<(), AppError> {
-        let transaction = self
-            .transaction
-            .as_mut()
-            .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
-        upsert_claim_row(transaction.as_mut(), &claim).await
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            upsert_claim_row(transaction.as_mut(), &claim).await
+        };
+        self.note_result(result)
     }
 
     async fn append_reflection(&mut self, reflection: StoredReflection) -> Result<(), AppError> {
-        let transaction = self
-            .transaction
-            .as_mut()
-            .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
-        insert_reflection(transaction.as_mut(), &reflection).await
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            insert_reflection(transaction.as_mut(), &reflection).await
+        };
+        self.note_result(result)
     }
 
     async fn update_claim_status(
@@ -319,20 +379,51 @@ impl ReflectionTransaction for SqliteReflectionTransaction<'_> {
         claim_id: &str,
         status: ClaimStatus,
     ) -> Result<(), AppError> {
-        let transaction = self
-            .transaction
-            .as_mut()
-            .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
-        update_claim_status_row(transaction.as_mut(), claim_id, status).await
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            update_claim_status_row(transaction.as_mut(), claim_id, status).await
+        };
+        self.note_result(result)
     }
 
     async fn commit(mut self: Box<Self>) -> Result<(), AppError> {
+        if self.poisoned {
+            return Err(AppError::Message(
+                "transaction is poisoned and cannot be committed".to_string(),
+            ));
+        }
+
         let transaction = self
             .transaction
             .take()
             .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
         map_sqlite(transaction.commit().await)?;
         Ok(())
+    }
+}
+
+impl SqliteReflectionTransaction<'_> {
+    fn ensure_writable(&self) -> Result<(), AppError> {
+        if self.poisoned {
+            return Err(AppError::Message(
+                "transaction is poisoned and cannot accept more writes".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn note_result<T>(&mut self, result: Result<T, AppError>) -> Result<T, AppError> {
+        if result.is_err() {
+            self.poisoned = true;
+        }
+
+        result
     }
 }
 
