@@ -11,9 +11,3 @@ impl From<crate::domain::DomainError> for AppError {
         Self::Message(format!("{value:?}"))
     }
 }
-
-impl From<sqlx::Error> for AppError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Message(value.to_string())
-    }
-}

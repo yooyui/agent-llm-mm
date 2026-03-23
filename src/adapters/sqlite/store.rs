@@ -25,17 +25,6 @@ use crate::{
 
 use super::schema::INIT_SQL;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EvidenceEvent {
-    pub event_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClaimWithEvidence {
-    pub claim: StoredClaim,
-    pub evidence: Vec<EvidenceEvent>,
-}
-
 #[derive(Clone)]
 pub struct SqliteStore {
     pool: SqlitePool,
@@ -47,66 +36,13 @@ impl SqliteStore {
             .map_err(|error| AppError::Message(error.to_string()))?
             .create_if_missing(true)
             .foreign_keys(true);
-        let pool = SqlitePool::connect_with(options).await?;
+        let pool = map_sqlite(SqlitePool::connect_with(options).await)?;
 
         for statement in INIT_SQL.split(';').filter(|part| !part.trim().is_empty()) {
-            sqlx::query(statement).execute(&pool).await?;
+            map_sqlite(sqlx::query(statement).execute(&pool).await)?;
         }
 
         Ok(Self { pool })
-    }
-
-    pub async fn list_tables(&self) -> Result<Vec<String>, AppError> {
-        let rows = sqlx::query(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| row.get::<String, _>("name"))
-            .collect())
-    }
-
-    pub async fn load_claim_with_evidence(
-        &self,
-        claim_id: &str,
-    ) -> Result<ClaimWithEvidence, AppError> {
-        let claim_row = sqlx::query(
-            r#"
-            SELECT claim_id, owner, subject, predicate, object, mode, status
-            FROM claims
-            WHERE claim_id = ?
-            "#,
-        )
-        .bind(claim_id)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        let Some(row) = claim_row else {
-            return Err(AppError::Message(format!("missing claim: {claim_id}")));
-        };
-
-        let claim = stored_claim_from_row(&row)?;
-        let evidence = sqlx::query(
-            r#"
-            SELECT event_id
-            FROM evidence_links
-            WHERE claim_id = ?
-            ORDER BY rowid
-            "#,
-        )
-        .bind(claim_id)
-        .fetch_all(&self.pool)
-        .await?
-        .into_iter()
-        .map(|row| EvidenceEvent {
-            event_id: row.get("event_id"),
-        })
-        .collect();
-
-        Ok(ClaimWithEvidence { claim, evidence })
     }
 }
 
@@ -117,9 +53,11 @@ impl EventStore for SqliteStore {
     }
 
     async fn list_event_references(&self) -> Result<Vec<String>, AppError> {
-        let rows = sqlx::query("SELECT event_id FROM events ORDER BY rowid")
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = map_sqlite(
+            sqlx::query("SELECT event_id FROM events ORDER BY rowid")
+                .fetch_all(&self.pool)
+                .await,
+        )?;
 
         Ok(rows
             .into_iter()
@@ -139,17 +77,19 @@ impl ClaimStore for SqliteStore {
     }
 
     async fn list_active_claims(&self) -> Result<Vec<StoredClaim>, AppError> {
-        let rows = sqlx::query(
-            r#"
-            SELECT claim_id, owner, subject, predicate, object, mode, status
-            FROM claims
-            WHERE status = ?
-            ORDER BY rowid
-            "#,
-        )
-        .bind(ClaimStatus::Active.as_str())
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = map_sqlite(
+            sqlx::query(
+                r#"
+                SELECT claim_id, owner, subject, predicate, object, mode, status
+                FROM claims
+                WHERE status = ?
+                ORDER BY rowid
+                "#,
+            )
+            .bind(ClaimStatus::Active.as_str())
+            .fetch_all(&self.pool)
+            .await,
+        )?;
 
         rows.into_iter()
             .map(|row| stored_claim_from_row(&row))
@@ -176,16 +116,18 @@ impl EpisodeStore for SqliteStore {
     }
 
     async fn list_episode_references(&self) -> Result<Vec<String>, AppError> {
-        let rows = sqlx::query(
-            r#"
-            SELECT episode_reference
-            FROM episode_events
-            GROUP BY episode_reference
-            ORDER BY MIN(rowid)
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = map_sqlite(
+            sqlx::query(
+                r#"
+                SELECT episode_reference
+                FROM episode_events
+                GROUP BY episode_reference
+                ORDER BY MIN(rowid)
+                "#,
+            )
+            .fetch_all(&self.pool)
+            .await,
+        )?;
 
         Ok(rows
             .into_iter()
@@ -204,15 +146,17 @@ impl ReflectionStore for SqliteStore {
 #[async_trait]
 impl IdentityStore for SqliteStore {
     async fn load_identity(&self) -> Result<IdentityCore, AppError> {
-        let rows = sqlx::query(
-            r#"
-            SELECT claim
-            FROM identity_claims
-            ORDER BY position
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = map_sqlite(
+            sqlx::query(
+                r#"
+                SELECT claim
+                FROM identity_claims
+                ORDER BY position
+                "#,
+            )
+            .fetch_all(&self.pool)
+            .await,
+        )?;
 
         if rows.is_empty() {
             return Err(AppError::Message("missing identity".to_string()));
@@ -224,20 +168,24 @@ impl IdentityStore for SqliteStore {
     }
 
     async fn save_identity(&self, identity: IdentityCore) -> Result<(), AppError> {
-        let mut tx = self.pool.begin().await?;
-        sqlx::query("DELETE FROM identity_claims")
-            .execute(tx.as_mut())
-            .await?;
+        let mut tx = map_sqlite(self.pool.begin().await)?;
+        map_sqlite(
+            sqlx::query("DELETE FROM identity_claims")
+                .execute(tx.as_mut())
+                .await,
+        )?;
 
         for (position, claim) in identity.canonical_claims().iter().enumerate() {
-            sqlx::query("INSERT INTO identity_claims (position, claim) VALUES (?, ?)")
-                .bind(position as i64)
-                .bind(claim)
-                .execute(tx.as_mut())
-                .await?;
+            map_sqlite(
+                sqlx::query("INSERT INTO identity_claims (position, claim) VALUES (?, ?)")
+                    .bind(position as i64)
+                    .bind(claim)
+                    .execute(tx.as_mut())
+                    .await,
+            )?;
         }
 
-        tx.commit().await?;
+        map_sqlite(tx.commit().await)?;
         Ok(())
     }
 }
@@ -245,15 +193,17 @@ impl IdentityStore for SqliteStore {
 #[async_trait]
 impl CommitmentStore for SqliteStore {
     async fn list_commitments(&self) -> Result<Vec<Commitment>, AppError> {
-        let rows = sqlx::query(
-            r#"
-            SELECT owner, description
-            FROM commitments
-            ORDER BY rowid
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = map_sqlite(
+            sqlx::query(
+                r#"
+                SELECT owner, description
+                FROM commitments
+                ORDER BY rowid
+                "#,
+            )
+            .fetch_all(&self.pool)
+            .await,
+        )?;
 
         rows.into_iter()
             .map(|row| {
@@ -269,7 +219,7 @@ impl CommitmentStore for SqliteStore {
 #[async_trait]
 impl IngestTransactionRunner for SqliteStore {
     async fn begin_ingest_transaction(&self) -> Result<Box<dyn IngestTransaction + '_>, AppError> {
-        let transaction = self.pool.begin().await?;
+        let transaction = map_sqlite(self.pool.begin().await)?;
 
         Ok(Box::new(SqliteIngestTransaction {
             transaction: Some(transaction),
@@ -282,7 +232,7 @@ impl ReflectionTransactionRunner for SqliteStore {
     async fn begin_reflection_transaction(
         &self,
     ) -> Result<Box<dyn ReflectionTransaction + '_>, AppError> {
-        let transaction = self.pool.begin().await?;
+        let transaction = map_sqlite(self.pool.begin().await)?;
 
         Ok(Box::new(SqliteReflectionTransaction {
             transaction: Some(transaction),
@@ -337,7 +287,7 @@ impl IngestTransaction for SqliteIngestTransaction<'_> {
             .transaction
             .take()
             .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
-        transaction.commit().await?;
+        map_sqlite(transaction.commit().await)?;
         Ok(())
     }
 }
@@ -381,7 +331,7 @@ impl ReflectionTransaction for SqliteReflectionTransaction<'_> {
             .transaction
             .take()
             .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
-        transaction.commit().await?;
+        map_sqlite(transaction.commit().await)?;
         Ok(())
     }
 }
@@ -390,19 +340,21 @@ async fn insert_event<'e, E>(executor: E, event: &StoredEvent) -> Result<(), App
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
-    sqlx::query(
-        r#"
-        INSERT INTO events (event_id, recorded_at, owner, kind, summary)
-        VALUES (?, ?, ?, ?, ?)
-        "#,
-    )
-    .bind(&event.event_id)
-    .bind(event.recorded_at.to_rfc3339())
-    .bind(owner_as_str(event.event.owner()))
-    .bind(event_kind_as_str(event.event.kind()))
-    .bind(event.event.summary())
-    .execute(executor)
-    .await?;
+    map_sqlite(
+        sqlx::query(
+            r#"
+            INSERT INTO events (event_id, recorded_at, owner, kind, summary)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&event.event_id)
+        .bind(event.recorded_at.to_rfc3339())
+        .bind(owner_as_str(event.event.owner()))
+        .bind(event_kind_as_str(event.event.kind()))
+        .bind(event.event.summary())
+        .execute(executor)
+        .await,
+    )?;
 
     Ok(())
 }
@@ -411,28 +363,30 @@ async fn upsert_claim_row<'e, E>(executor: E, claim: &StoredClaim) -> Result<(),
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
-    sqlx::query(
-        r#"
-        INSERT INTO claims (claim_id, owner, subject, predicate, object, mode, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(claim_id) DO UPDATE SET
-            owner = excluded.owner,
-            subject = excluded.subject,
-            predicate = excluded.predicate,
-            object = excluded.object,
-            mode = excluded.mode,
-            status = excluded.status
-        "#,
-    )
-    .bind(&claim.claim_id)
-    .bind(owner_as_str(claim.claim.owner()))
-    .bind(claim.claim.subject())
-    .bind(claim.claim.predicate())
-    .bind(claim.claim.object())
-    .bind(mode_as_str(claim.claim.mode()))
-    .bind(claim.status.as_str())
-    .execute(executor)
-    .await?;
+    map_sqlite(
+        sqlx::query(
+            r#"
+            INSERT INTO claims (claim_id, owner, subject, predicate, object, mode, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(claim_id) DO UPDATE SET
+                owner = excluded.owner,
+                subject = excluded.subject,
+                predicate = excluded.predicate,
+                object = excluded.object,
+                mode = excluded.mode,
+                status = excluded.status
+            "#,
+        )
+        .bind(&claim.claim_id)
+        .bind(owner_as_str(claim.claim.owner()))
+        .bind(claim.claim.subject())
+        .bind(claim.claim.predicate())
+        .bind(claim.claim.object())
+        .bind(mode_as_str(claim.claim.mode()))
+        .bind(claim.status.as_str())
+        .execute(executor)
+        .await,
+    )?;
 
     Ok(())
 }
@@ -445,16 +399,18 @@ async fn insert_evidence_link<'e, E>(
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
-    sqlx::query(
-        r#"
-        INSERT INTO evidence_links (claim_id, event_id)
-        VALUES (?, ?)
-        "#,
-    )
-    .bind(claim_id)
-    .bind(event_id)
-    .execute(executor)
-    .await?;
+    map_sqlite(
+        sqlx::query(
+            r#"
+            INSERT INTO evidence_links (claim_id, event_id)
+            VALUES (?, ?)
+            "#,
+        )
+        .bind(claim_id)
+        .bind(event_id)
+        .execute(executor)
+        .await,
+    )?;
 
     Ok(())
 }
@@ -467,16 +423,18 @@ async fn insert_episode_event<'e, E>(
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
-    sqlx::query(
-        r#"
-        INSERT INTO episode_events (episode_reference, event_id)
-        VALUES (?, ?)
-        "#,
-    )
-    .bind(episode_reference)
-    .bind(event_id)
-    .execute(executor)
-    .await?;
+    map_sqlite(
+        sqlx::query(
+            r#"
+            INSERT INTO episode_events (episode_reference, event_id)
+            VALUES (?, ?)
+            "#,
+        )
+        .bind(episode_reference)
+        .bind(event_id)
+        .execute(executor)
+        .await,
+    )?;
 
     Ok(())
 }
@@ -488,25 +446,27 @@ async fn insert_reflection<'e, E>(
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
-    sqlx::query(
-        r#"
-        INSERT INTO reflections (
-            reflection_id,
-            recorded_at,
-            summary,
-            superseded_claim_id,
-            replacement_claim_id
+    map_sqlite(
+        sqlx::query(
+            r#"
+            INSERT INTO reflections (
+                reflection_id,
+                recorded_at,
+                summary,
+                superseded_claim_id,
+                replacement_claim_id
+            )
+            VALUES (?, ?, ?, ?, ?)
+            "#,
         )
-        VALUES (?, ?, ?, ?, ?)
-        "#,
-    )
-    .bind(&reflection.reflection_id)
-    .bind(reflection.recorded_at.to_rfc3339())
-    .bind(reflection.reflection.summary())
-    .bind(&reflection.superseded_claim_id)
-    .bind(&reflection.replacement_claim_id)
-    .execute(executor)
-    .await?;
+        .bind(&reflection.reflection_id)
+        .bind(reflection.recorded_at.to_rfc3339())
+        .bind(reflection.reflection.summary())
+        .bind(&reflection.superseded_claim_id)
+        .bind(&reflection.replacement_claim_id)
+        .execute(executor)
+        .await,
+    )?;
 
     Ok(())
 }
@@ -519,19 +479,25 @@ async fn update_claim_status_row<'e, E>(
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
-    sqlx::query(
-        r#"
-        UPDATE claims
-        SET status = ?
-        WHERE claim_id = ?
-        "#,
-    )
-    .bind(status.as_str())
-    .bind(claim_id)
-    .execute(executor)
-    .await?;
+    map_sqlite(
+        sqlx::query(
+            r#"
+            UPDATE claims
+            SET status = ?
+            WHERE claim_id = ?
+            "#,
+        )
+        .bind(status.as_str())
+        .bind(claim_id)
+        .execute(executor)
+        .await,
+    )?;
 
     Ok(())
+}
+
+fn map_sqlite<T>(result: Result<T, sqlx::Error>) -> Result<T, AppError> {
+    result.map_err(|error| AppError::Message(error.to_string()))
 }
 
 fn stored_claim_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<StoredClaim, AppError> {
