@@ -1,7 +1,9 @@
 use anyhow::Result;
 
+pub mod application;
 pub mod domain;
 pub mod error;
+pub mod ports;
 pub mod support;
 
 use support::config::{AppConfig, TransportKind};
