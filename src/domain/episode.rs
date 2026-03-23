@@ -2,8 +2,8 @@ use crate::domain::event::Event;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Episode {
-    pub title: String,
-    pub events: Vec<Event>,
+    title: String,
+    events: Vec<Event>,
 }
 
 impl Episode {
@@ -12,5 +12,13 @@ impl Episode {
             title: title.into(),
             events,
         }
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn events(&self) -> &[Event] {
+        &self.events
     }
 }

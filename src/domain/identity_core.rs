@@ -2,12 +2,16 @@ use crate::domain::types::Mode;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct IdentityCore {
-    pub canonical_claims: Vec<String>,
+    canonical_claims: Vec<String>,
 }
 
 impl IdentityCore {
     pub fn new(canonical_claims: Vec<String>) -> Self {
         Self { canonical_claims }
+    }
+
+    pub fn canonical_claims(&self) -> &[String] {
+        &self.canonical_claims
     }
 }
 

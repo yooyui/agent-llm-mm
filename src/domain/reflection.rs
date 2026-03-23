@@ -1,6 +1,6 @@
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Reflection {
-    pub summary: String,
+    summary: String,
 }
 
 impl Reflection {
@@ -8,5 +8,9 @@ impl Reflection {
         Self {
             summary: summary.into(),
         }
+    }
+
+    pub fn summary(&self) -> &str {
+        &self.summary
     }
 }

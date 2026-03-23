@@ -2,8 +2,8 @@ use crate::domain::types::Owner;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Commitment {
-    pub owner: Owner,
-    pub description: String,
+    owner: Owner,
+    description: String,
 }
 
 impl Commitment {
@@ -12,5 +12,13 @@ impl Commitment {
             owner,
             description: description.into(),
         }
+    }
+
+    pub fn owner(&self) -> Owner {
+        self.owner
+    }
+
+    pub fn description(&self) -> &str {
+        &self.description
     }
 }

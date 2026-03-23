@@ -7,11 +7,11 @@ pub enum DomainError {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ClaimDraft {
-    pub owner: Owner,
-    pub subject: String,
-    pub predicate: String,
-    pub object: String,
-    pub mode: Mode,
+    owner: Owner,
+    subject: String,
+    predicate: String,
+    object: String,
+    mode: Mode,
 }
 
 impl ClaimDraft {
@@ -46,5 +46,25 @@ impl ClaimDraft {
         }
 
         Ok(())
+    }
+
+    pub fn owner(&self) -> Owner {
+        self.owner
+    }
+
+    pub fn subject(&self) -> &str {
+        &self.subject
+    }
+
+    pub fn predicate(&self) -> &str {
+        &self.predicate
+    }
+
+    pub fn object(&self) -> &str {
+        &self.object
+    }
+
+    pub fn mode(&self) -> Mode {
+        self.mode
     }
 }
