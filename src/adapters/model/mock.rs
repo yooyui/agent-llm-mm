@@ -17,9 +17,6 @@ impl ModelPort for MockModel {
             "summarize_memory_state"
         };
 
-        Ok(ModelDecision::new(
-            action.to_string(),
-            "mocked".to_string(),
-        ))
+        Ok(ModelDecision::new(action.to_string()))
     }
 }

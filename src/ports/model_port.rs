@@ -24,12 +24,11 @@ pub type ModelInput = ModelDecisionRequest;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ModelDecision {
     pub action: String,
-    pub rationale: String,
 }
 
 impl ModelDecision {
-    pub fn new(action: String, rationale: String) -> Self {
-        Self { action, rationale }
+    pub fn new(action: String) -> Self {
+        Self { action }
     }
 }
 
