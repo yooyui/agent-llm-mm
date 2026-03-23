@@ -2,7 +2,7 @@ use crate::{
     domain::{claim::ClaimDraft, reflection::Reflection},
     error::AppError,
     ports::{
-        ClaimStatus, ClaimStore, Clock, IdGenerator, ReflectionStore, StoredClaim, StoredReflection,
+        ClaimStatus, Clock, IdGenerator, ReflectionTransactionRunner, StoredClaim, StoredReflection,
     },
 };
 
@@ -35,35 +35,40 @@ pub struct ReflectionResult {
 
 pub async fn execute<D>(deps: &D, input: ReflectionInput) -> Result<ReflectionResult, AppError>
 where
-    D: ReflectionStore + ClaimStore + IdGenerator + Clock + Sync,
+    D: ReflectionTransactionRunner + IdGenerator + Clock + Sync,
 {
     let reflection_id = deps.next_id().await?;
     let recorded_at = deps.now().await?;
+    let mut transaction = deps.begin_reflection_transaction().await?;
     let replacement_claim_id = match input.replacement_claim {
         Some(claim) => {
             claim.validate(1)?;
             let claim_id = format!("{reflection_id}:replacement");
-            deps.upsert_claim(StoredClaim::new(
-                claim_id.clone(),
-                claim,
-                ClaimStatus::Active,
-            ))
-            .await?;
+            transaction
+                .upsert_claim(StoredClaim::new(
+                    claim_id.clone(),
+                    claim,
+                    ClaimStatus::Active,
+                ))
+                .await?;
             Some(claim_id)
         }
         None => None,
     };
 
-    deps.append_reflection(StoredReflection::new(
-        reflection_id.clone(),
-        recorded_at,
-        input.reflection,
-        Some(input.supersede_claim_id.clone()),
-        replacement_claim_id.clone(),
-    ))
-    .await?;
-    deps.update_claim_status(&input.supersede_claim_id, ClaimStatus::Superseded)
+    transaction
+        .append_reflection(StoredReflection::new(
+            reflection_id.clone(),
+            recorded_at,
+            input.reflection,
+            Some(input.supersede_claim_id.clone()),
+            replacement_claim_id.clone(),
+        ))
         .await?;
+    transaction
+        .update_claim_status(&input.supersede_claim_id, ClaimStatus::Superseded)
+        .await?;
+    transaction.commit().await?;
 
     Ok(ReflectionResult {
         reflection_id,
