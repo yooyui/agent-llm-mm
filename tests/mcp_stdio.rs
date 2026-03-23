@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 #[tokio::test]
 async fn server_exposes_expected_tools_over_stdio() {
-    let client = test_support::spawn_stdio_client().await.unwrap();
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
     let tools = client.list_all_tools().await.unwrap();
     let names = tools
         .into_iter()
@@ -21,6 +21,92 @@ async fn server_exposes_expected_tools_over_stdio() {
     assert!(names.contains(&"run_reflection".to_string()));
 }
 
+#[tokio::test]
+async fn stdio_tools_share_runtime_state_across_calls() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "The user asked for stronger memory."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:task-7"
+            }),
+        )
+        .await
+        .unwrap();
+    let event_id = ingest
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str)
+        .unwrap();
+    assert!(!event_id.is_empty());
+
+    let snapshot = client
+        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .await
+        .unwrap();
+    let snapshot = snapshot
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("snapshot"))
+        .cloned()
+        .unwrap();
+
+    let claims = snapshot
+        .get("claims")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    assert!(
+        claims.contains(&"self.role is architect"),
+        "snapshot claims missing ingested claim: {claims:?}"
+    );
+
+    let evidence = snapshot
+        .get("evidence")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(evidence.len(), 1, "expected one evidence reference");
+    assert!(
+        evidence[0].starts_with("event:"),
+        "unexpected evidence reference: {:?}",
+        evidence
+    );
+
+    let episodes = snapshot
+        .get("episodes")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    assert!(
+        episodes.contains(&"episode:task-7"),
+        "snapshot episodes missing ingested episode: {episodes:?}"
+    );
+}
+
 mod test_support {
     use super::*;
 
@@ -30,6 +116,7 @@ mod test_support {
 
     pub struct StdioClient {
         child: Child,
+        initialized: bool,
         stdin: ChildStdin,
         stdout: BufReader<ChildStdout>,
     }
@@ -58,17 +145,36 @@ mod test_support {
 
             Ok(Self {
                 child,
+                initialized: false,
                 stdin,
                 stdout: BufReader::new(stdout),
             })
         }
 
-        pub async fn list_all_tools(mut self) -> io::Result<Vec<Tool>> {
+        pub async fn list_all_tools(&mut self) -> io::Result<Vec<Tool>> {
             self.initialize()?;
             self.list_tools()
         }
 
+        pub async fn call_tool(&mut self, name: &str, arguments: Value) -> io::Result<Value> {
+            self.initialize()?;
+            self.send(json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": name,
+                    "arguments": arguments
+                }
+            }))?;
+            self.read_message()
+        }
+
         fn initialize(&mut self) -> io::Result<()> {
+            if self.initialized {
+                return Ok(());
+            }
+
             self.send(json!({
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -88,6 +194,7 @@ mod test_support {
                 "jsonrpc": "2.0",
                 "method": "notifications/initialized"
             }))?;
+            self.initialized = true;
             Ok(())
         }
 
@@ -119,17 +226,24 @@ mod test_support {
         }
 
         fn read_message(&mut self) -> io::Result<Value> {
-            let mut line = String::new();
-            let bytes_read = self.stdout.read_line(&mut line)?;
-            if bytes_read == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "child process closed stdout before sending an MCP message",
-                ));
-            }
+            loop {
+                let mut line = String::new();
+                let bytes_read = self.stdout.read_line(&mut line)?;
+                if bytes_read == 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "child process closed stdout before sending an MCP message",
+                    ));
+                }
 
-            serde_json::from_str(&line)
-                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+                let trimmed = line.trim();
+                if !trimmed.starts_with('{') {
+                    continue;
+                }
+
+                return serde_json::from_str(trimmed)
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error));
+            }
         }
     }
 

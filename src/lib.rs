@@ -4,6 +4,7 @@ pub mod adapters;
 pub mod application;
 pub mod domain;
 pub mod error;
+pub mod interfaces;
 pub mod ports;
 pub mod support;
 
@@ -17,6 +18,6 @@ pub async fn run() -> Result<()> {
     support::tracing::init_tracing();
 
     match startup_transport_from_default_config() {
-        TransportKind::Stdio => Ok(()),
+        TransportKind::Stdio => interfaces::mcp::run_stdio_server().await,
     }
 }

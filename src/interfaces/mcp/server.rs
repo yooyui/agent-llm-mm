@@ -11,7 +11,7 @@ use rmcp::{
 use serde::Serialize;
 use uuid::Uuid;
 
-use agent_llm_mm::{
+use crate::{
     adapters::{model::mock::MockModel, sqlite::SqliteStore},
     application::{build_self_snapshot, decide_with_snapshot, ingest_interaction, run_reflection},
     domain::identity_core::IdentityCore,
@@ -128,14 +128,17 @@ impl Runtime {
     }
 
     async fn ensure_default_identity(&self) -> Result<(), AppError> {
-        if self.store.load_identity().await.is_err() {
-            self.store
-                .save_identity(IdentityCore::new(vec![
-                    "identity:self=agent_llm_mm".to_string(),
-                ]))
-                .await?;
+        match self.store.load_identity().await {
+            Ok(_) => Ok(()),
+            Err(AppError::Message(message)) if message == "missing identity" => {
+                self.store
+                    .save_identity(IdentityCore::new(vec![
+                        "identity:self=agent_llm_mm".to_string(),
+                    ]))
+                    .await
+            }
+            Err(error) => Err(error),
         }
-        Ok(())
     }
 }
 
@@ -224,9 +227,7 @@ impl IdentityStore for Runtime {
 
 #[async_trait]
 impl CommitmentStore for Runtime {
-    async fn list_commitments(
-        &self,
-    ) -> Result<Vec<agent_llm_mm::domain::commitment::Commitment>, AppError> {
+    async fn list_commitments(&self) -> Result<Vec<crate::domain::commitment::Commitment>, AppError> {
         self.store.list_commitments().await
     }
 }
