@@ -187,13 +187,6 @@ async fn sqlite_store_persists_identity_and_reads_commitments_for_snapshot_ports
         ]))
         .await
         .unwrap();
-    test_support::insert_commitment(
-        &context.pool,
-        Owner::Self_,
-        "forbid:write_identity_core_directly",
-    )
-    .await
-    .unwrap();
 
     let identity = context.store.load_identity().await.unwrap();
     let commitments = context.store.list_commitments().await.unwrap();
@@ -277,25 +270,6 @@ mod test_support {
             ))
             .await
     }
-
-    pub async fn insert_commitment(
-        pool: &SqlitePool,
-        owner: Owner,
-        description: &str,
-    ) -> Result<(), sqlx::Error> {
-        sqlx::query("INSERT INTO commitments (description, owner) VALUES (?, ?)")
-            .bind(description)
-            .bind(match owner {
-                Owner::Self_ => "self",
-                Owner::User => "user",
-                Owner::World => "world",
-                Owner::Unknown => "unknown",
-            })
-            .execute(pool)
-            .await?;
-        Ok(())
-    }
-
     pub fn fixed_now() -> DateTime<Utc> {
         chrono::DateTime::parse_from_rfc3339("2026-03-23T10:00:00Z")
             .unwrap()

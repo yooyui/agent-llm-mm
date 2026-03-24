@@ -101,6 +101,23 @@ async fn reflection_supersedes_old_claim_and_persists_audit_record() {
 }
 
 #[tokio::test]
+async fn reflection_rejects_inferred_replacement_without_external_evidence() {
+    let deps = test_support::in_memory_deps();
+
+    let result = execute_reflection(&deps, test_support::inferred_reflection_input()).await;
+
+    assert!(result.is_err());
+    assert_eq!(
+        deps.claim("claim-old")
+            .expect("original claim should remain active")
+            .status,
+        ClaimStatus::Active
+    );
+    assert!(deps.claim("id-1:replacement").is_none());
+    assert!(deps.reflection("id-1").is_none());
+}
+
+#[tokio::test]
 async fn conflicting_reflection_marks_existing_claim_as_disputed() {
     let deps = test_support::in_memory_deps();
 
@@ -328,6 +345,20 @@ mod test_support {
                 "self.role",
                 "is",
                 "senior_architect",
+                Mode::Observed,
+            )),
+        )
+    }
+
+    pub fn inferred_reflection_input() -> ReflectionInput {
+        ReflectionInput::new(
+            Reflection::new("An inferred replacement without evidence should be rejected."),
+            "claim-old",
+            Some(ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "principal_architect",
                 Mode::Inferred,
             )),
         )

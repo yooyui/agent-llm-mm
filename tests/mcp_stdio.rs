@@ -1,10 +1,13 @@
 use std::{
     io::{self, BufRead, BufReader, Write},
+    path::Path,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
 
+use agent_llm_mm::support::config::DATABASE_URL_ENV_VAR;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tempfile::TempDir;
 
 #[tokio::test]
 async fn server_exposes_expected_tools_over_stdio() {
@@ -186,14 +189,95 @@ async fn conflicting_reflection_over_stdio_removes_claim_from_active_snapshot() 
     );
 }
 
+#[tokio::test]
+async fn fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Observation",
+                    "summary": "Bootstrap one evidence event so the snapshot can be built."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:task-8-gate"
+            }),
+        )
+        .await
+        .unwrap();
+
+    let snapshot = client
+        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .await
+        .unwrap();
+    let snapshot = snapshot
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("snapshot"))
+        .cloned()
+        .unwrap();
+
+    let commitments = snapshot
+        .get("commitments")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    assert!(
+        commitments.contains(&"forbid:write_identity_core_directly"),
+        "fresh stdio runtime should seed the baseline commitment: {commitments:?}"
+    );
+
+    let decision = client
+        .call_tool(
+            "decide_with_snapshot",
+            json!({
+                "task": "attempt a forbidden direct identity write",
+                "action": "write_identity_core_directly",
+                "snapshot": snapshot,
+            }),
+        )
+        .await
+        .unwrap();
+
+    let blocked = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("blocked"))
+        .and_then(Value::as_bool)
+        .unwrap();
+    let model_decision = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("decision"));
+
+    assert!(blocked, "baseline commitment should block forbidden action");
+    assert!(
+        model_decision.is_some_and(Value::is_null),
+        "blocked decisions should not call the model: {decision:?}"
+    );
+}
+
 mod test_support {
     use super::*;
 
     pub async fn spawn_stdio_client() -> io::Result<StdioClient> {
-        StdioClient::spawn()
+        let database = database_override()?;
+        StdioClient::spawn(&database.url, Some(database.temp_dir))
+    }
+
+    struct DatabaseOverride {
+        temp_dir: TempDir,
+        url: String,
     }
 
     pub struct StdioClient {
+        _database_dir: Option<TempDir>,
         child: Child,
         initialized: bool,
         stdin: ChildStdin,
@@ -206,8 +290,9 @@ mod test_support {
     }
 
     impl StdioClient {
-        fn spawn() -> io::Result<Self> {
+        fn spawn(database_url: &str, database_dir: Option<TempDir>) -> io::Result<Self> {
             let mut child = Command::new(env!("CARGO_BIN_EXE_agent_llm_mm"))
+                .env(DATABASE_URL_ENV_VAR, database_url)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -223,6 +308,7 @@ mod test_support {
                 .ok_or_else(|| io::Error::other("missing child stdout"))?;
 
             Ok(Self {
+                _database_dir: database_dir,
                 child,
                 initialized: false,
                 stdin,
@@ -331,5 +417,18 @@ mod test_support {
             let _ = self.child.kill();
             let _ = self.child.wait();
         }
+    }
+
+    fn database_override() -> io::Result<DatabaseOverride> {
+        let temp_dir = tempfile::tempdir()?;
+        let database_path = temp_dir.path().join("agent-llm-mm.sqlite");
+        Ok(DatabaseOverride {
+            url: sqlite_url(&database_path),
+            temp_dir,
+        })
+    }
+
+    fn sqlite_url(path: &Path) -> String {
+        format!("sqlite://{}", path.to_string_lossy().replace('\\', "/"))
     }
 }

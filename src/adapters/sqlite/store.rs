@@ -41,6 +41,7 @@ impl SqliteStore {
         for statement in INIT_SQL.split(';').filter(|part| !part.trim().is_empty()) {
             map_sqlite(sqlx::query(statement).execute(&pool).await)?;
         }
+        seed_baseline_commitments(&pool).await?;
 
         Ok(Self { pool })
     }
@@ -591,6 +592,23 @@ where
             "cannot update missing claim: {claim_id}"
         )));
     }
+
+    Ok(())
+}
+
+async fn seed_baseline_commitments(pool: &SqlitePool) -> Result<(), AppError> {
+    map_sqlite(
+        sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO commitments (description, owner)
+            VALUES (?, ?)
+            "#,
+        )
+        .bind("forbid:write_identity_core_directly")
+        .bind("self")
+        .execute(pool)
+        .await,
+    )?;
 
     Ok(())
 }

@@ -11,6 +11,14 @@ fn default_config_uses_stdio_transport() {
 }
 
 #[test]
+fn default_config_uses_file_backed_sqlite_database() {
+    let config = AppConfig::default();
+
+    assert_ne!(config.database_url, "sqlite::memory:");
+    assert!(config.database_url.starts_with("sqlite://"));
+}
+
+#[test]
 fn startup_transport_uses_default_config_stdio() {
     assert_eq!(
         startup_transport_from_default_config(),

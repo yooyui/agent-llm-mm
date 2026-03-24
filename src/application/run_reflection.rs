@@ -55,7 +55,7 @@ where
     });
     let replacement_claim_id = match (decision, replacement_claim) {
         (ReflectionDecision::SupersedeWithReplacement, Some(claim)) => {
-            claim.validate(1)?;
+            claim.validate(0)?;
             let claim_id = format!("{reflection_id}:replacement");
             transaction
                 .upsert_claim(StoredClaim::new(
