@@ -1,5 +1,9 @@
 use crate::{
-    domain::{claim::ClaimDraft, reflection::Reflection},
+    domain::{
+        claim::ClaimDraft,
+        reflection::Reflection,
+        rules::reflection_policy::{ReflectionDecision, ReflectionTrigger, classify_reflection},
+    },
     error::AppError,
     ports::{
         ClaimStatus, Clock, IdGenerator, ReflectionTransactionRunner, StoredClaim, StoredReflection,
@@ -37,11 +41,20 @@ pub async fn execute<D>(deps: &D, input: ReflectionInput) -> Result<ReflectionRe
 where
     D: ReflectionTransactionRunner + IdGenerator + Clock + Sync,
 {
+    let ReflectionInput {
+        reflection,
+        supersede_claim_id,
+        replacement_claim,
+    } = input;
     let reflection_id = deps.next_id().await?;
     let recorded_at = deps.now().await?;
     let mut transaction = deps.begin_reflection_transaction().await?;
-    let replacement_claim_id = match input.replacement_claim {
-        Some(claim) => {
+    let decision = classify_reflection(match replacement_claim {
+        Some(_) => ReflectionTrigger::Failure,
+        None => ReflectionTrigger::Conflict,
+    });
+    let replacement_claim_id = match (decision, replacement_claim) {
+        (ReflectionDecision::SupersedeWithReplacement, Some(claim)) => {
             claim.validate(1)?;
             let claim_id = format!("{reflection_id}:replacement");
             transaction
@@ -53,21 +66,38 @@ where
                 .await?;
             Some(claim_id)
         }
-        None => None,
+        (ReflectionDecision::SupersedeWithReplacement, None) => {
+            return Err(AppError::Message(
+                "superseding reflections require a replacement claim".to_string(),
+            ));
+        }
+        _ => None,
     };
 
     transaction
         .append_reflection(StoredReflection::new(
             reflection_id.clone(),
             recorded_at,
-            input.reflection,
-            Some(input.supersede_claim_id.clone()),
+            reflection,
+            Some(supersede_claim_id.clone()),
             replacement_claim_id.clone(),
         ))
         .await?;
-    transaction
-        .update_claim_status(&input.supersede_claim_id, ClaimStatus::Superseded)
-        .await?;
+
+    match decision {
+        ReflectionDecision::MarkDisputed => {
+            transaction
+                .update_claim_status(&supersede_claim_id, ClaimStatus::Disputed)
+                .await?;
+        }
+        ReflectionDecision::SupersedeWithReplacement => {
+            transaction
+                .update_claim_status(&supersede_claim_id, ClaimStatus::Superseded)
+                .await?;
+        }
+        ReflectionDecision::RecordOnly => {}
+    }
+
     transaction.commit().await?;
 
     Ok(ReflectionResult {

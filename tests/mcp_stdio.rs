@@ -107,6 +107,85 @@ async fn stdio_tools_share_runtime_state_across_calls() {
     );
 }
 
+#[tokio::test]
+async fn conflicting_reflection_over_stdio_removes_claim_from_active_snapshot() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "The user described a role conflict."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:task-8"
+            }),
+        )
+        .await
+        .unwrap();
+    let event_id = ingest
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_string();
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {
+                    "summary": "This reflection conflicts with the previous claim."
+                },
+                "supersede_claim_id": format!("{event_id}:claim:0"),
+                "replacement_claim": null
+            }),
+        )
+        .await
+        .unwrap();
+    let replacement_claim_id = reflection
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("replacement_claim_id"));
+    assert!(
+        replacement_claim_id.is_some_and(Value::is_null),
+        "conflicting reflection should not create a replacement claim: {reflection:?}"
+    );
+
+    let snapshot = client
+        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .await
+        .unwrap();
+    let claims = snapshot
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("snapshot"))
+        .and_then(|value| value.get("claims"))
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+
+    assert!(
+        !claims.contains(&"self.role is architect"),
+        "conflicting reflection should remove disputed claims from active snapshot: {claims:?}"
+    );
+}
+
 mod test_support {
     use super::*;
 

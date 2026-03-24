@@ -12,7 +12,10 @@ fn default_config_uses_stdio_transport() {
 
 #[test]
 fn startup_transport_uses_default_config_stdio() {
-    assert_eq!(startup_transport_from_default_config(), TransportKind::Stdio);
+    assert_eq!(
+        startup_transport_from_default_config(),
+        TransportKind::Stdio
+    );
 }
 
 #[tokio::test]

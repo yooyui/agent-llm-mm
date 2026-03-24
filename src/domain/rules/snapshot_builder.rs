@@ -5,12 +5,17 @@ use crate::domain::{
 
 pub fn build_snapshot(input: SnapshotRequest) -> Result<SelfSnapshot, DomainError> {
     let input = input.validate()?;
-    let evidence = input
-        .evidence
-        .iter()
-        .take(input.budget.max(1))
-        .cloned()
-        .collect::<Vec<_>>();
+    let mut evidence = Vec::new();
+    for reference in input.evidence {
+        if evidence.contains(&reference) {
+            continue;
+        }
+
+        evidence.push(reference);
+        if evidence.len() == input.budget.max(1) {
+            break;
+        }
+    }
 
     if evidence.is_empty() {
         return Err(DomainError::InsufficientEvidence);

@@ -694,6 +694,7 @@ fn parse_event_kind(value: &str) -> Result<EventKind, AppError> {
 fn parse_claim_status(value: &str) -> Result<ClaimStatus, AppError> {
     match value {
         "active" => Ok(ClaimStatus::Active),
+        "disputed" => Ok(ClaimStatus::Disputed),
         "superseded" => Ok(ClaimStatus::Superseded),
         _ => Err(AppError::Message(format!("unknown claim status: {value}"))),
     }

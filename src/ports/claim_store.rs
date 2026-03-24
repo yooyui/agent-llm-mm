@@ -5,6 +5,7 @@ use crate::{domain::claim::ClaimDraft, error::AppError};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ClaimStatus {
     Active,
+    Disputed,
     Superseded,
 }
 
@@ -12,6 +13,7 @@ impl ClaimStatus {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Active => "active",
+            Self::Disputed => "disputed",
             Self::Superseded => "superseded",
         }
     }

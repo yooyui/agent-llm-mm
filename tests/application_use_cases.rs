@@ -101,6 +101,34 @@ async fn reflection_supersedes_old_claim_and_persists_audit_record() {
 }
 
 #[tokio::test]
+async fn conflicting_reflection_marks_existing_claim_as_disputed() {
+    let deps = test_support::in_memory_deps();
+
+    let result = execute_reflection(
+        &deps,
+        ReflectionInput::new(
+            Reflection::new("Conflicting evidence should dispute the old claim."),
+            "claim-old",
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.reflection_id, "id-1");
+    assert_eq!(result.replacement_claim_id, None);
+
+    let old_claim = deps.claim("claim-old").expect("old claim should remain");
+    assert_eq!(old_claim.status, ClaimStatus::Disputed);
+
+    let reflection = deps
+        .reflection("id-1")
+        .expect("reflection audit record should be committed");
+    assert_eq!(reflection.superseded_claim_id.as_deref(), Some("claim-old"));
+    assert_eq!(reflection.replacement_claim_id, None);
+}
+
+#[tokio::test]
 async fn build_self_snapshot_returns_store_backed_snapshot_and_respects_budget() {
     let deps = test_support::snapshot_deps();
 
@@ -223,53 +251,64 @@ mod test_support {
     }
 
     pub fn snapshot_deps() -> InMemoryDeps {
-        let mut state = State::default();
-        state.committed.events = vec![
-            StoredEvent::new(
-                "evt-1".to_string(),
-                fixed_now(),
-                Event::new(Owner::User, EventKind::Observation, "evt-1"),
-            ),
-            StoredEvent::new(
-                "evt-2".to_string(),
-                fixed_now(),
-                Event::new(Owner::User, EventKind::Observation, "evt-2"),
-            ),
-            StoredEvent::new(
-                "evt-3".to_string(),
-                fixed_now(),
-                Event::new(Owner::User, EventKind::Observation, "evt-3"),
-            ),
-        ];
-        state.committed.episodes = vec![
-            ("episode:task-4".to_string(), "evt-1".to_string()),
-            ("episode:memory".to_string(), "evt-2".to_string()),
-        ];
-        state.committed.claims = vec![
-            StoredClaim::new(
-                "claim-active".to_string(),
-                ClaimDraft::new(Owner::Self_, "self.role", "is", "architect", Mode::Observed),
-                ClaimStatus::Active,
-            ),
-            StoredClaim::new(
-                "claim-superseded".to_string(),
-                ClaimDraft::new(
-                    Owner::Self_,
-                    "self.role",
-                    "is",
-                    "old_architect",
-                    Mode::Observed,
-                ),
-                ClaimStatus::Superseded,
-            ),
-        ];
-        InMemoryDeps::new(state)
+        InMemoryDeps::new(State {
+            committed: CommittedState {
+                events: vec![
+                    StoredEvent::new(
+                        "evt-1".to_string(),
+                        fixed_now(),
+                        Event::new(Owner::User, EventKind::Observation, "evt-1"),
+                    ),
+                    StoredEvent::new(
+                        "evt-2".to_string(),
+                        fixed_now(),
+                        Event::new(Owner::User, EventKind::Observation, "evt-2"),
+                    ),
+                    StoredEvent::new(
+                        "evt-3".to_string(),
+                        fixed_now(),
+                        Event::new(Owner::User, EventKind::Observation, "evt-3"),
+                    ),
+                ],
+                claims: vec![
+                    StoredClaim::new(
+                        "claim-active".to_string(),
+                        ClaimDraft::new(
+                            Owner::Self_,
+                            "self.role",
+                            "is",
+                            "architect",
+                            Mode::Observed,
+                        ),
+                        ClaimStatus::Active,
+                    ),
+                    StoredClaim::new(
+                        "claim-superseded".to_string(),
+                        ClaimDraft::new(
+                            Owner::Self_,
+                            "self.role",
+                            "is",
+                            "old_architect",
+                            Mode::Observed,
+                        ),
+                        ClaimStatus::Superseded,
+                    ),
+                ],
+                episodes: vec![
+                    ("episode:task-4".to_string(), "evt-1".to_string()),
+                    ("episode:memory".to_string(), "evt-2".to_string()),
+                ],
+                ..State::default().committed
+            },
+            ..State::default()
+        })
     }
 
     pub fn deps_with_fail_point(fail_point: FailPoint) -> InMemoryDeps {
-        let mut state = State::default();
-        state.fail_point = Some(fail_point);
-        InMemoryDeps::new(state)
+        InMemoryDeps::new(State {
+            fail_point: Some(fail_point),
+            ..State::default()
+        })
     }
 
     pub fn ingest_input() -> IngestInput {

@@ -53,7 +53,7 @@ fn derive_claims(event_id: &str, drafts: Vec<ClaimDraft>) -> Result<Vec<StoredCl
         .into_iter()
         .enumerate()
         .map(|(index, draft)| {
-            draft.validate(1)?;
+            draft.validate(0)?;
             Ok(StoredClaim::new(
                 format!("{event_id}:claim:{index}"),
                 draft,
