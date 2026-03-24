@@ -51,7 +51,10 @@ fn snapshot_budget_truncates_evidence_to_limit() {
 
     let snapshot = build_snapshot(request).unwrap();
 
-    assert_eq!(snapshot.evidence, vec!["event:evt-1".to_string(), "event:evt-2".to_string()]);
+    assert_eq!(
+        snapshot.evidence,
+        vec!["event:evt-1".to_string(), "event:evt-2".to_string()]
+    );
 }
 
 #[test]

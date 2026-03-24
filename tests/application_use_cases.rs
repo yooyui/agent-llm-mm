@@ -295,9 +295,10 @@ mod test_support {
     }
 
     pub fn deps_with_fail_point(fail_point: FailPoint) -> InMemoryDeps {
-        let mut state = State::default();
-        state.fail_point = Some(fail_point);
-        InMemoryDeps::new(state)
+        InMemoryDeps::new(State {
+            fail_point: Some(fail_point),
+            ..State::default()
+        })
     }
 
     pub fn ingest_input() -> IngestInput {
