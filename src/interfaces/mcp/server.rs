@@ -227,9 +227,7 @@ impl IdentityStore for Runtime {
 
 #[async_trait]
 impl CommitmentStore for Runtime {
-    async fn list_commitments(
-        &self,
-    ) -> Result<Vec<crate::domain::commitment::Commitment>, AppError> {
+    async fn list_commitments(&self) -> Result<Vec<crate::domain::commitment::Commitment>, AppError> {
         self.store.list_commitments().await
     }
 }

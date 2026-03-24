@@ -251,64 +251,53 @@ mod test_support {
     }
 
     pub fn snapshot_deps() -> InMemoryDeps {
-        InMemoryDeps::new(State {
-            committed: CommittedState {
-                events: vec![
-                    StoredEvent::new(
-                        "evt-1".to_string(),
-                        fixed_now(),
-                        Event::new(Owner::User, EventKind::Observation, "evt-1"),
-                    ),
-                    StoredEvent::new(
-                        "evt-2".to_string(),
-                        fixed_now(),
-                        Event::new(Owner::User, EventKind::Observation, "evt-2"),
-                    ),
-                    StoredEvent::new(
-                        "evt-3".to_string(),
-                        fixed_now(),
-                        Event::new(Owner::User, EventKind::Observation, "evt-3"),
-                    ),
-                ],
-                claims: vec![
-                    StoredClaim::new(
-                        "claim-active".to_string(),
-                        ClaimDraft::new(
-                            Owner::Self_,
-                            "self.role",
-                            "is",
-                            "architect",
-                            Mode::Observed,
-                        ),
-                        ClaimStatus::Active,
-                    ),
-                    StoredClaim::new(
-                        "claim-superseded".to_string(),
-                        ClaimDraft::new(
-                            Owner::Self_,
-                            "self.role",
-                            "is",
-                            "old_architect",
-                            Mode::Observed,
-                        ),
-                        ClaimStatus::Superseded,
-                    ),
-                ],
-                episodes: vec![
-                    ("episode:task-4".to_string(), "evt-1".to_string()),
-                    ("episode:memory".to_string(), "evt-2".to_string()),
-                ],
-                ..State::default().committed
-            },
-            ..State::default()
-        })
+        let mut state = State::default();
+        state.committed.events = vec![
+            StoredEvent::new(
+                "evt-1".to_string(),
+                fixed_now(),
+                Event::new(Owner::User, EventKind::Observation, "evt-1"),
+            ),
+            StoredEvent::new(
+                "evt-2".to_string(),
+                fixed_now(),
+                Event::new(Owner::User, EventKind::Observation, "evt-2"),
+            ),
+            StoredEvent::new(
+                "evt-3".to_string(),
+                fixed_now(),
+                Event::new(Owner::User, EventKind::Observation, "evt-3"),
+            ),
+        ];
+        state.committed.episodes = vec![
+            ("episode:task-4".to_string(), "evt-1".to_string()),
+            ("episode:memory".to_string(), "evt-2".to_string()),
+        ];
+        state.committed.claims = vec![
+            StoredClaim::new(
+                "claim-active".to_string(),
+                ClaimDraft::new(Owner::Self_, "self.role", "is", "architect", Mode::Observed),
+                ClaimStatus::Active,
+            ),
+            StoredClaim::new(
+                "claim-superseded".to_string(),
+                ClaimDraft::new(
+                    Owner::Self_,
+                    "self.role",
+                    "is",
+                    "old_architect",
+                    Mode::Observed,
+                ),
+                ClaimStatus::Superseded,
+            ),
+        ];
+        InMemoryDeps::new(state)
     }
 
     pub fn deps_with_fail_point(fail_point: FailPoint) -> InMemoryDeps {
-        InMemoryDeps::new(State {
-            fail_point: Some(fail_point),
-            ..State::default()
-        })
+        let mut state = State::default();
+        state.fail_point = Some(fail_point);
+        InMemoryDeps::new(state)
     }
 
     pub fn ingest_input() -> IngestInput {

@@ -1,6 +1,6 @@
 use std::sync::{
-    Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
 };
 
 use agent_llm_mm::{
@@ -114,7 +114,10 @@ mod test_support {
 
     #[async_trait]
     impl ModelPort for DecisionDeps {
-        async fn decide(&self, request: ModelDecisionRequest) -> Result<ModelDecision, AppError> {
+        async fn decide(
+            &self,
+            request: ModelDecisionRequest,
+        ) -> Result<ModelDecision, AppError> {
             self.model_calls.fetch_add(1, Ordering::SeqCst);
             *self.last_request.lock().unwrap() = Some(request.clone());
             self.model.decide(request).await

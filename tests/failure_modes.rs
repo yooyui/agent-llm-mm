@@ -38,15 +38,29 @@ async fn inferred_claim_without_evidence_is_rejected() {
 async fn reflection_marks_conflict_as_disputed_instead_of_deleting_history() {
     let deps = test_support::deps_for_failure_modes();
 
-    execute_reflection(&deps, test_support::conflicting_reflection())
+    let result = execute_reflection(&deps, test_support::conflicting_reflection())
         .await
         .unwrap();
 
-    assert!(deps.history_contains_status("disputed"));
+    let original_claim = deps
+        .claim("claim-conflict")
+        .expect("original conflicting claim should remain in history");
+    assert_eq!(original_claim.status, ClaimStatus::Disputed);
+    assert_ne!(original_claim.status, ClaimStatus::Superseded);
+    assert_eq!(result.replacement_claim_id, None);
+    assert!(
+        deps.claim("id-1:replacement").is_none(),
+        "conflict-only reflections must not create a replacement claim"
+    );
+    assert_eq!(
+        deps.claim_count(),
+        1,
+        "marking a conflict should preserve the original claim instead of replacing it"
+    );
 }
 
 #[tokio::test]
-async fn snapshot_budget_prevents_recent_event_hijack() {
+async fn snapshot_budget_deduplicates_recent_duplicate_evidence_before_truncating() {
     let deps = test_support::deps_for_failure_modes();
 
     let snapshot = execute_build_snapshot(&deps, test_support::budgeted_snapshot())
@@ -54,21 +68,14 @@ async fn snapshot_budget_prevents_recent_event_hijack() {
         .unwrap()
         .snapshot;
 
-    assert!(snapshot.evidence.len() <= 3);
-    assert!(
-        snapshot.evidence.contains(&"event:anchor".to_string()),
-        "stable evidence should survive budgeting: {:?}",
-        snapshot.evidence
-    );
     assert_eq!(
-        snapshot
-            .evidence
-            .iter()
-            .filter(|reference| reference.as_str() == "event:recent-noise")
-            .count(),
-        1,
-        "duplicate recent evidence should not consume the whole budget: {:?}",
-        snapshot.evidence
+        snapshot.evidence,
+        vec![
+            "event:recent-duplicate".to_string(),
+            "event:anchor".to_string(),
+            "event:baseline".to_string(),
+        ],
+        "the current data model only tracks ordered event references, so this regression models a recent-event hijack as duplicate recent references exhausting the budget"
     );
 }
 
@@ -165,9 +172,9 @@ impl Default for State {
                 )],
                 identity: IdentityCore::new(vec!["identity:self=architect".to_string()]),
                 event_references: vec![
-                    "event:recent-noise".to_string(),
-                    "event:recent-noise".to_string(),
-                    "event:recent-noise".to_string(),
+                    "event:recent-duplicate".to_string(),
+                    "event:recent-duplicate".to_string(),
+                    "event:recent-duplicate".to_string(),
                     "event:anchor".to_string(),
                     "event:baseline".to_string(),
                 ],
@@ -191,14 +198,19 @@ impl FailureModeDeps {
         }
     }
 
-    fn history_contains_status(&self, status: &str) -> bool {
+    fn claim(&self, claim_id: &str) -> Option<StoredClaim> {
         self.state
             .lock()
             .unwrap()
             .committed
             .claims
             .iter()
-            .any(|claim| claim.status.as_str() == status)
+            .find(|claim| claim.claim_id == claim_id)
+            .cloned()
+    }
+
+    fn claim_count(&self) -> usize {
+        self.state.lock().unwrap().committed.claims.len()
     }
 }
 

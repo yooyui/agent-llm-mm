@@ -1,7 +1,4 @@
-use crate::domain::{
-    DomainError,
-    types::{Mode, Owner},
-};
+use crate::domain::{DomainError, types::{Mode, Owner}};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ClaimDraft {
