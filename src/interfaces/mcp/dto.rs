@@ -8,7 +8,7 @@ use crate::{
         event::Event,
         reflection::Reflection,
         snapshot::{SelfSnapshot, SnapshotBudget},
-        types::{EventKind, Mode, Owner},
+        types::{EventKind, Mode, Namespace, Owner},
     },
 };
 use schemars::JsonSchema;
@@ -89,21 +89,32 @@ impl From<EventDto> for Event {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ClaimDraftDto {
     pub owner: OwnerDto,
+    pub namespace: Option<String>,
     pub subject: String,
     pub predicate: String,
     pub object: String,
     pub mode: ModeDto,
 }
 
-impl From<ClaimDraftDto> for ClaimDraft {
-    fn from(value: ClaimDraftDto) -> Self {
-        ClaimDraft::new(
-            value.owner.into(),
-            value.subject,
-            value.predicate,
-            value.object,
-            value.mode.into(),
-        )
+impl TryFrom<ClaimDraftDto> for ClaimDraft {
+    type Error = crate::domain::DomainError;
+
+    fn try_from(value: ClaimDraftDto) -> Result<Self, Self::Error> {
+        let owner = Owner::from(value.owner);
+        let mode = Mode::from(value.mode);
+        let namespace = value.namespace.map(Namespace::parse).transpose()?;
+
+        Ok(match namespace {
+            Some(namespace) => ClaimDraft::new_with_namespace(
+                owner,
+                namespace,
+                value.subject,
+                value.predicate,
+                value.object,
+                mode,
+            ),
+            None => ClaimDraft::new(owner, value.subject, value.predicate, value.object, mode),
+        })
     }
 }
 
@@ -114,13 +125,19 @@ pub struct IngestInteractionParams {
     pub episode_reference: Option<String>,
 }
 
-impl From<IngestInteractionParams> for IngestInput {
-    fn from(value: IngestInteractionParams) -> Self {
-        IngestInput::new(
+impl TryFrom<IngestInteractionParams> for IngestInput {
+    type Error = crate::domain::DomainError;
+
+    fn try_from(value: IngestInteractionParams) -> Result<Self, Self::Error> {
+        Ok(IngestInput::new(
             value.event.into(),
-            value.claim_drafts.into_iter().map(Into::into).collect(),
+            value
+                .claim_drafts
+                .into_iter()
+                .map(ClaimDraft::try_from)
+                .collect::<Result<Vec<_>, _>>()?,
             value.episode_reference,
-        )
+        ))
     }
 }
 
@@ -191,14 +208,22 @@ pub struct RunReflectionParams {
     pub reflection: ReflectionDto,
     pub supersede_claim_id: String,
     pub replacement_claim: Option<ClaimDraftDto>,
+    #[serde(default)]
+    pub replacement_evidence_event_ids: Vec<String>,
 }
 
-impl From<RunReflectionParams> for ReflectionInput {
-    fn from(value: RunReflectionParams) -> Self {
-        ReflectionInput::new(
+impl TryFrom<RunReflectionParams> for ReflectionInput {
+    type Error = crate::domain::DomainError;
+
+    fn try_from(value: RunReflectionParams) -> Result<Self, Self::Error> {
+        Ok(ReflectionInput::new(
             value.reflection.into(),
             value.supersede_claim_id,
-            value.replacement_claim.map(Into::into),
-        )
+            value
+                .replacement_claim
+                .map(ClaimDraft::try_from)
+                .transpose()?,
+            value.replacement_evidence_event_ids,
+        ))
     }
 }

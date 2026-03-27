@@ -14,7 +14,7 @@ use agent_llm_mm::{
         identity_core::IdentityCore,
         reflection::Reflection,
         snapshot::{SelfSnapshot, SnapshotBudget},
-        types::{EventKind, Mode, Owner},
+        types::{EventKind, Mode, Namespace, Owner},
     },
     error::AppError,
     ports::{
@@ -55,6 +55,7 @@ async fn ingest_writes_events_before_claims_and_commits_payloads() {
         .expect("derived claim should be committed");
     assert_eq!(claim.claim.subject(), "self.role");
     assert_eq!(claim.claim.object(), "architect");
+    assert_eq!(claim.claim.namespace().as_str(), "self");
     assert_eq!(claim.status, ClaimStatus::Active);
 
     assert_eq!(
@@ -68,8 +69,22 @@ async fn ingest_writes_events_before_claims_and_commits_payloads() {
 }
 
 #[tokio::test]
-async fn reflection_supersedes_old_claim_and_persists_audit_record() {
+async fn ingest_preserves_explicit_project_namespace_on_claims() {
     let deps = test_support::in_memory_deps();
+
+    let result = execute_ingest(&deps, test_support::project_ingest_input())
+        .await
+        .unwrap();
+
+    let claim = deps
+        .claim(&format!("{}:claim:0", result.event_id))
+        .expect("derived project claim should be committed");
+    assert_eq!(claim.claim.namespace().as_str(), "project/agent-llm-mm");
+}
+
+#[tokio::test]
+async fn reflection_supersedes_old_claim_and_persists_audit_record() {
+    let deps = test_support::reflection_deps();
 
     let result = execute_reflection(&deps, test_support::reflection_input())
         .await
@@ -89,6 +104,13 @@ async fn reflection_supersedes_old_claim_and_persists_audit_record() {
         .expect("replacement claim should be committed");
     assert_eq!(new_claim.claim.object(), "senior_architect");
     assert_eq!(new_claim.status, ClaimStatus::Active);
+    assert_eq!(
+        deps.evidence_links(),
+        vec![(
+            "id-1:replacement".to_string(),
+            "evt-reflection-1".to_string()
+        )]
+    );
 
     let reflection = deps
         .reflection("id-1")
@@ -118,6 +140,56 @@ async fn reflection_rejects_inferred_replacement_without_external_evidence() {
 }
 
 #[tokio::test]
+async fn reflection_accepts_inferred_replacement_with_explicit_evidence() {
+    let deps = test_support::reflection_deps();
+
+    let result = execute_reflection(
+        &deps,
+        test_support::inferred_reflection_with_evidence_input(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result.replacement_claim_id.as_deref(),
+        Some("id-1:replacement")
+    );
+    let replacement_claim = deps
+        .claim("id-1:replacement")
+        .expect("inferred replacement should be committed when evidence is provided");
+    assert_eq!(replacement_claim.claim.object(), "principal_architect");
+    assert_eq!(replacement_claim.status, ClaimStatus::Active);
+    assert_eq!(
+        deps.evidence_links(),
+        vec![
+            (
+                "id-1:replacement".to_string(),
+                "evt-reflection-1".to_string()
+            ),
+            (
+                "id-1:replacement".to_string(),
+                "evt-reflection-2".to_string()
+            )
+        ]
+    );
+}
+
+#[tokio::test]
+async fn reflection_rejects_missing_replacement_evidence_event_ids() {
+    let deps = test_support::in_memory_deps();
+
+    let result = execute_reflection(
+        &deps,
+        test_support::inferred_reflection_with_missing_evidence_input(),
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+    assert!(deps.claim("id-1:replacement").is_none());
+    assert!(deps.reflection("id-1").is_none());
+}
+
+#[tokio::test]
 async fn conflicting_reflection_marks_existing_claim_as_disputed() {
     let deps = test_support::in_memory_deps();
 
@@ -127,6 +199,7 @@ async fn conflicting_reflection_marks_existing_claim_as_disputed() {
             Reflection::new("Conflicting evidence should dispute the old claim."),
             "claim-old",
             None,
+            Vec::new(),
         ),
     )
     .await
@@ -168,7 +241,7 @@ async fn build_self_snapshot_returns_store_backed_snapshot_and_respects_budget()
     );
     assert_eq!(
         result.snapshot.claims,
-        vec!["self.role is architect".to_string()]
+        vec!["self:self.role is architect".to_string()]
     );
     assert_eq!(
         result.snapshot.evidence,
@@ -311,6 +384,27 @@ mod test_support {
         InMemoryDeps::new(state)
     }
 
+    pub fn reflection_deps() -> InMemoryDeps {
+        let mut state = State::default();
+        state.committed.events = vec![
+            StoredEvent::new(
+                "evt-reflection-1".to_string(),
+                chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+                Event::new(Owner::World, EventKind::Observation, "evt-reflection-1"),
+            ),
+            StoredEvent::new(
+                "evt-reflection-2".to_string(),
+                chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+                Event::new(Owner::World, EventKind::Observation, "evt-reflection-2"),
+            ),
+        ];
+        InMemoryDeps::new(state)
+    }
+
     pub fn deps_with_fail_point(fail_point: FailPoint) -> InMemoryDeps {
         InMemoryDeps::new(State {
             fail_point: Some(fail_point),
@@ -347,6 +441,26 @@ mod test_support {
                 "senior_architect",
                 Mode::Observed,
             )),
+            vec!["evt-reflection-1".to_string()],
+        )
+    }
+
+    pub fn project_ingest_input() -> IngestInput {
+        IngestInput::new(
+            Event::new(
+                Owner::User,
+                EventKind::Conversation,
+                "The project memory should stay scoped to the current project.",
+            ),
+            vec![ClaimDraft::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("agent-llm-mm"),
+                "project.memory",
+                "needs",
+                "structure",
+                Mode::Observed,
+            )],
+            Some("episode:project-memory".to_string()),
         )
     }
 
@@ -361,6 +475,40 @@ mod test_support {
                 "principal_architect",
                 Mode::Inferred,
             )),
+            Vec::new(),
+        )
+    }
+
+    pub fn inferred_reflection_with_evidence_input() -> ReflectionInput {
+        ReflectionInput::new(
+            Reflection::new("Evidence-backed inferred replacements should be accepted."),
+            "claim-old",
+            Some(ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "principal_architect",
+                Mode::Inferred,
+            )),
+            vec![
+                "evt-reflection-1".to_string(),
+                "evt-reflection-2".to_string(),
+            ],
+        )
+    }
+
+    pub fn inferred_reflection_with_missing_evidence_input() -> ReflectionInput {
+        ReflectionInput::new(
+            Reflection::new("Unknown evidence events should be rejected before persistence."),
+            "claim-old",
+            Some(ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "principal_architect",
+                Mode::Inferred,
+            )),
+            vec!["evt-missing".to_string()],
         )
     }
 
@@ -424,6 +572,7 @@ struct PendingIngest {
 #[derive(Debug, Default)]
 struct PendingReflection {
     claims: Vec<StoredClaim>,
+    evidence_links: Vec<(String, String)>,
     reflections: Vec<StoredReflection>,
     status_updates: Vec<(String, ClaimStatus)>,
 }
@@ -546,6 +695,17 @@ impl EventStore for InMemoryDeps {
             .iter()
             .map(StoredEvent::event_reference)
             .collect())
+    }
+
+    async fn has_event(&self, event_id: &str) -> Result<bool, AppError> {
+        Ok(self
+            .state
+            .lock()
+            .unwrap()
+            .committed
+            .events
+            .iter()
+            .any(|event| event.event_id == event_id))
     }
 }
 
@@ -786,6 +946,11 @@ impl ReflectionTransaction for InMemoryReflectionTransaction {
         Ok(())
     }
 
+    async fn link_evidence(&mut self, claim_id: String, event_id: String) -> Result<(), AppError> {
+        self.pending.evidence_links.push((claim_id, event_id));
+        Ok(())
+    }
+
     async fn append_reflection(&mut self, reflection: StoredReflection) -> Result<(), AppError> {
         self.pending.reflections.push(reflection);
         Ok(())
@@ -807,6 +972,10 @@ impl ReflectionTransaction for InMemoryReflectionTransaction {
         for claim in self.pending.claims {
             upsert_claim(&mut state.committed.claims, claim);
         }
+        state
+            .committed
+            .evidence_links
+            .extend(self.pending.evidence_links);
         state.committed.reflections.extend(self.pending.reflections);
         for (claim_id, status) in self.pending.status_updates {
             if let Some(claim) = state

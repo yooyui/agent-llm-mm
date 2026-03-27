@@ -13,7 +13,10 @@ use uuid::Uuid;
 
 use crate::{
     adapters::{model::mock::MockModel, sqlite::SqliteStore},
-    application::{build_self_snapshot, decide_with_snapshot, ingest_interaction, run_reflection},
+    application::{
+        build_self_snapshot, decide_with_snapshot, ingest_interaction,
+        ingest_interaction::IngestInput, run_reflection, run_reflection::ReflectionInput,
+    },
     domain::identity_core::IdentityCore,
     error::AppError,
     ports::{
@@ -30,10 +33,18 @@ use super::dto::{
 };
 
 pub async fn run_stdio_server() -> Result<()> {
-    let server = Server::from_config(AppConfig::default()).await?;
+    run_stdio_server_with_config(AppConfig::default()).await
+}
+
+pub async fn run_stdio_server_with_config(config: AppConfig) -> Result<()> {
+    let server = Server::from_config(config).await?;
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
+}
+
+pub async fn validate_stdio_runtime(config: &AppConfig) -> Result<(), AppError> {
+    Runtime::bootstrap(&config.database_url).await.map(|_| ())
 }
 
 #[derive(Clone)]
@@ -59,7 +70,9 @@ impl Server {
         &self,
         Parameters(params): Parameters<IngestInteractionParams>,
     ) -> Result<CallToolResult, McpError> {
-        let result = ingest_interaction::execute(&self.runtime, params.into())
+        let input =
+            IngestInput::try_from(params).map_err(|error| app_error_to_mcp(error.into()))?;
+        let result = ingest_interaction::execute(&self.runtime, input)
             .await
             .map_err(app_error_to_mcp)?;
         structured(result)
@@ -92,7 +105,9 @@ impl Server {
         &self,
         Parameters(params): Parameters<RunReflectionParams>,
     ) -> Result<CallToolResult, McpError> {
-        let result = run_reflection::execute(&self.runtime, params.into())
+        let input =
+            ReflectionInput::try_from(params).map_err(|error| app_error_to_mcp(error.into()))?;
+        let result = run_reflection::execute(&self.runtime, input)
             .await
             .map_err(app_error_to_mcp)?;
         structured(result)
@@ -164,6 +179,10 @@ impl EventStore for Runtime {
 
     async fn list_event_references(&self) -> Result<Vec<String>, AppError> {
         self.store.list_event_references().await
+    }
+
+    async fn has_event(&self, event_id: &str) -> Result<bool, AppError> {
+        self.store.has_event(event_id).await
     }
 }
 
@@ -260,7 +279,10 @@ impl ReflectionTransactionRunner for Runtime {
 }
 
 fn app_error_to_mcp(error: AppError) -> McpError {
-    McpError::internal_error(error.to_string(), None)
+    match error {
+        AppError::InvalidParams(message) => McpError::invalid_params(message, None),
+        AppError::Message(message) => McpError::internal_error(message, None),
+    }
 }
 
 fn structured<T>(value: T) -> Result<CallToolResult, McpError>

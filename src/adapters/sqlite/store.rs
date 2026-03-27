@@ -13,7 +13,7 @@ use crate::{
         commitment::Commitment,
         event::Event,
         identity_core::IdentityCore,
-        types::{EventKind, Mode, Owner},
+        types::{EventKind, Mode, Namespace, Owner},
     },
     error::AppError,
     ports::{
@@ -23,7 +23,10 @@ use crate::{
     },
 };
 
-use super::schema::INIT_SQL;
+use super::schema::{
+    OWNER_NAMESPACE_SCOPE_CONSTRAINT_NAME, claims_table_sql, init_sql,
+    legacy_namespace_backfill_expression,
+};
 
 #[derive(Clone)]
 pub struct SqliteStore {
@@ -37,11 +40,14 @@ impl SqliteStore {
             .create_if_missing(true)
             .foreign_keys(true);
         let pool = map_sqlite(SqlitePool::connect_with(options).await)?;
+        let mut connection = map_sqlite(pool.acquire().await)?;
+        let init_sql = init_sql();
 
-        for statement in INIT_SQL.split(';').filter(|part| !part.trim().is_empty()) {
-            map_sqlite(sqlx::query(statement).execute(&pool).await)?;
+        for statement in init_sql.split(';').filter(|part| !part.trim().is_empty()) {
+            map_sqlite(sqlx::query(statement).execute(connection.as_mut()).await)?;
         }
-        seed_baseline_commitments(&pool).await?;
+        ensure_claims_namespace_column(connection.as_mut()).await?;
+        seed_baseline_commitments(connection.as_mut()).await?;
 
         Ok(Self { pool })
     }
@@ -65,6 +71,17 @@ impl EventStore for SqliteStore {
             .map(|row| format!("event:{}", row.get::<String, _>("event_id")))
             .collect())
     }
+
+    async fn has_event(&self, event_id: &str) -> Result<bool, AppError> {
+        let count = map_sqlite(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events WHERE event_id = ?")
+                .bind(event_id)
+                .fetch_one(&self.pool)
+                .await,
+        )?;
+
+        Ok(count > 0)
+    }
 }
 
 #[async_trait]
@@ -82,6 +99,7 @@ impl ClaimStore for SqliteStore {
             sqlx::query(
                 r#"
                 SELECT claim_id, owner, subject, predicate, object, mode, status
+                , namespace
                 FROM claims
                 WHERE status = ?
                 ORDER BY rowid
@@ -364,6 +382,19 @@ impl ReflectionTransaction for SqliteReflectionTransaction<'_> {
         self.note_result(result)
     }
 
+    async fn link_evidence(&mut self, claim_id: String, event_id: String) -> Result<(), AppError> {
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            insert_evidence_link(transaction.as_mut(), &claim_id, &event_id).await
+        };
+        self.note_result(result)
+    }
+
     async fn append_reflection(&mut self, reflection: StoredReflection) -> Result<(), AppError> {
         self.ensure_writable()?;
 
@@ -457,13 +488,18 @@ async fn upsert_claim_row<'e, E>(executor: E, claim: &StoredClaim) -> Result<(),
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
+    claim.claim.validate_namespace_owner().map_err(|error| {
+        AppError::Message(format!("invalid claim namespace mapping: {error:?}"))
+    })?;
+
     map_sqlite(
         sqlx::query(
             r#"
-            INSERT INTO claims (claim_id, owner, subject, predicate, object, mode, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO claims (claim_id, owner, namespace, subject, predicate, object, mode, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(claim_id) DO UPDATE SET
                 owner = excluded.owner,
+                namespace = excluded.namespace,
                 subject = excluded.subject,
                 predicate = excluded.predicate,
                 object = excluded.object,
@@ -473,6 +509,7 @@ where
         )
         .bind(&claim.claim_id)
         .bind(owner_as_str(claim.claim.owner()))
+        .bind(claim.claim.namespace().as_str())
         .bind(claim.claim.subject())
         .bind(claim.claim.predicate())
         .bind(claim.claim.object())
@@ -596,7 +633,10 @@ where
     Ok(())
 }
 
-async fn seed_baseline_commitments(pool: &SqlitePool) -> Result<(), AppError> {
+async fn seed_baseline_commitments<'e, E>(executor: E) -> Result<(), AppError>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
     map_sqlite(
         sqlx::query(
             r#"
@@ -606,8 +646,93 @@ async fn seed_baseline_commitments(pool: &SqlitePool) -> Result<(), AppError> {
         )
         .bind("forbid:write_identity_core_directly")
         .bind("self")
-        .execute(pool)
+        .execute(executor)
         .await,
+    )?;
+
+    Ok(())
+}
+
+async fn ensure_claims_namespace_column(
+    connection: &mut sqlx::SqliteConnection,
+) -> Result<(), AppError> {
+    let namespace_column_exists = map_sqlite(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM pragma_table_info('claims') WHERE name = 'namespace'",
+        )
+        .fetch_one(&mut *connection)
+        .await,
+    )? > 0;
+    let namespace_is_not_null = if namespace_column_exists {
+        map_sqlite(
+            sqlx::query_scalar::<_, i64>(
+                r#"SELECT "notnull" FROM pragma_table_info('claims') WHERE name = 'namespace'"#,
+            )
+            .fetch_one(&mut *connection)
+            .await,
+        )? == 1
+    } else {
+        false
+    };
+    let claims_has_scope_check = if namespace_column_exists {
+        map_sqlite(
+            sqlx::query_scalar::<_, String>(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'claims'",
+            )
+            .fetch_one(&mut *connection)
+            .await,
+        )?
+        .contains(OWNER_NAMESPACE_SCOPE_CONSTRAINT_NAME)
+    } else {
+        false
+    };
+
+    if !namespace_column_exists || !namespace_is_not_null || !claims_has_scope_check {
+        rebuild_claims_table_with_namespace(connection, namespace_column_exists).await?;
+    }
+
+    Ok(())
+}
+
+async fn rebuild_claims_table_with_namespace(
+    connection: &mut sqlx::SqliteConnection,
+    legacy_table_has_namespace: bool,
+) -> Result<(), AppError> {
+    let create_claims_table_sql = claims_table_sql(false);
+    let namespace_expression = legacy_namespace_backfill_expression(legacy_table_has_namespace);
+    let copy_sql = format!(
+        r#"
+        INSERT INTO claims (claim_id, owner, namespace, subject, predicate, object, mode, status)
+        SELECT claim_id, owner, {namespace_expression}, subject, predicate, object, mode, status
+        FROM claims_legacy
+        "#
+    );
+
+    map_sqlite(
+        sqlx::query("PRAGMA foreign_keys = OFF")
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(
+        sqlx::query("ALTER TABLE claims RENAME TO claims_legacy")
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(
+        sqlx::query(&create_claims_table_sql)
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(sqlx::query(&copy_sql).execute(&mut *connection).await)?;
+    map_sqlite(
+        sqlx::query("DROP TABLE claims_legacy")
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&mut *connection)
+            .await,
     )?;
 
     Ok(())
@@ -618,15 +743,21 @@ fn map_sqlite<T>(result: Result<T, sqlx::Error>) -> Result<T, AppError> {
 }
 
 fn stored_claim_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<StoredClaim, AppError> {
+    let claim = ClaimDraft::new(
+        parse_owner(&row.get::<String, _>("owner"))?,
+        row.get::<String, _>("subject"),
+        row.get::<String, _>("predicate"),
+        row.get::<String, _>("object"),
+        parse_mode(&row.get::<String, _>("mode"))?,
+    )
+    .with_namespace(parse_namespace(&row.get::<String, _>("namespace"))?);
+    claim.validate_namespace_owner().map_err(|error| {
+        AppError::Message(format!("invalid stored claim namespace mapping: {error:?}"))
+    })?;
+
     Ok(StoredClaim::new(
         row.get("claim_id"),
-        ClaimDraft::new(
-            parse_owner(&row.get::<String, _>("owner"))?,
-            row.get::<String, _>("subject"),
-            row.get::<String, _>("predicate"),
-            row.get::<String, _>("object"),
-            parse_mode(&row.get::<String, _>("mode"))?,
-        ),
+        claim,
         parse_claim_status(&row.get::<String, _>("status"))?,
     ))
 }
@@ -688,6 +819,12 @@ fn parse_mode(value: &str) -> Result<Mode, AppError> {
         "draft" => Ok(Mode::Draft),
         _ => Err(AppError::Message(format!("unknown mode: {value}"))),
     }
+}
+
+fn parse_namespace(value: &str) -> Result<Namespace, AppError> {
+    Namespace::parse(value).map_err(|error| {
+        AppError::Message(format!("invalid stored namespace `{value}`: {error:?}"))
+    })
 }
 
 fn event_kind_as_str(kind: EventKind) -> &'static str {

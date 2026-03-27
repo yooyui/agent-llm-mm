@@ -1,8 +1,9 @@
+use serde::Serialize;
 use std::path::Path;
 
 pub const DATABASE_URL_ENV_VAR: &str = "AGENT_LLM_MM_DATABASE_URL";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum TransportKind {
     Stdio,
 }

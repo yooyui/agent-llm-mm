@@ -1,4 +1,4 @@
 pub mod dto;
 pub mod server;
 
-pub use server::run_stdio_server;
+pub use server::{run_stdio_server, run_stdio_server_with_config, validate_stdio_runtime};

@@ -6,7 +6,8 @@ use crate::{
     },
     error::AppError,
     ports::{
-        ClaimStatus, Clock, IdGenerator, ReflectionTransactionRunner, StoredClaim, StoredReflection,
+        ClaimStatus, Clock, EventStore, IdGenerator, ReflectionTransactionRunner, StoredClaim,
+        StoredReflection,
     },
 };
 
@@ -15,6 +16,7 @@ pub struct ReflectionInput {
     reflection: Reflection,
     supersede_claim_id: String,
     replacement_claim: Option<ClaimDraft>,
+    replacement_evidence_event_ids: Vec<String>,
 }
 
 impl ReflectionInput {
@@ -22,11 +24,13 @@ impl ReflectionInput {
         reflection: Reflection,
         supersede_claim_id: impl Into<String>,
         replacement_claim: Option<ClaimDraft>,
+        replacement_evidence_event_ids: Vec<String>,
     ) -> Self {
         Self {
             reflection,
             supersede_claim_id: supersede_claim_id.into(),
             replacement_claim,
+            replacement_evidence_event_ids,
         }
     }
 }
@@ -39,12 +43,13 @@ pub struct ReflectionResult {
 
 pub async fn execute<D>(deps: &D, input: ReflectionInput) -> Result<ReflectionResult, AppError>
 where
-    D: ReflectionTransactionRunner + IdGenerator + Clock + Sync,
+    D: ReflectionTransactionRunner + EventStore + IdGenerator + Clock + Sync,
 {
     let ReflectionInput {
         reflection,
         supersede_claim_id,
         replacement_claim,
+        replacement_evidence_event_ids,
     } = input;
     let reflection_id = deps.next_id().await?;
     let recorded_at = deps.now().await?;
@@ -55,7 +60,14 @@ where
     });
     let replacement_claim_id = match (decision, replacement_claim) {
         (ReflectionDecision::SupersedeWithReplacement, Some(claim)) => {
-            claim.validate(0)?;
+            for event_id in &replacement_evidence_event_ids {
+                if !deps.has_event(event_id).await? {
+                    return Err(AppError::InvalidParams(format!(
+                        "unknown replacement evidence event id: {event_id}"
+                    )));
+                }
+            }
+            claim.validate(replacement_evidence_event_ids.len())?;
             let claim_id = format!("{reflection_id}:replacement");
             transaction
                 .upsert_claim(StoredClaim::new(
@@ -64,6 +76,11 @@ where
                     ClaimStatus::Active,
                 ))
                 .await?;
+            for event_id in &replacement_evidence_event_ids {
+                transaction
+                    .link_evidence(claim_id.clone(), event_id.clone())
+                    .await?;
+            }
             Some(claim_id)
         }
         (ReflectionDecision::SupersedeWithReplacement, None) => {

@@ -4,10 +4,12 @@ use thiserror::Error;
 pub enum AppError {
     #[error("{0}")]
     Message(String),
+    #[error("{0}")]
+    InvalidParams(String),
 }
 
 impl From<crate::domain::DomainError> for AppError {
     fn from(value: crate::domain::DomainError) -> Self {
-        Self::Message(format!("{value:?}"))
+        Self::InvalidParams(format!("{value:?}"))
     }
 }

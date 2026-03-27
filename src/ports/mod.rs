@@ -45,6 +45,7 @@ pub trait IngestTransactionRunner {
 #[async_trait]
 pub trait ReflectionTransaction {
     async fn upsert_claim(&mut self, claim: StoredClaim) -> Result<(), AppError>;
+    async fn link_evidence(&mut self, claim_id: String, event_id: String) -> Result<(), AppError>;
     async fn append_reflection(&mut self, reflection: StoredReflection) -> Result<(), AppError>;
     async fn update_claim_status(
         &mut self,

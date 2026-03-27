@@ -1,0 +1,12 @@
+# Example snippet for C:\Users\<you>\.codex\config.toml
+
+[mcp_servers.agent-llm-mm]
+command = "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+args = [
+  "-NoLogo",
+  "-NoProfile",
+  "-File",
+  "D:\\Code\\agent_llm_mm\\.worktrees\\codex-self-agent-mcp\\scripts\\agent-llm-mm.ps1",
+  "serve",
+]
+env = { AGENT_LLM_MM_DATABASE_URL = "sqlite:///D:/back/agent-llm-mm-codex.sqlite" }

@@ -109,6 +109,7 @@ mod test_support {
             Reflection::new("A conflicting reflection should mark the claim as disputed."),
             "claim-conflict",
             None,
+            Vec::new(),
         )
     }
 
@@ -153,6 +154,7 @@ struct PendingIngest {
 #[derive(Default)]
 struct PendingReflection {
     claims: Vec<StoredClaim>,
+    evidence_links: Vec<(String, String)>,
     reflections: Vec<StoredReflection>,
     status_updates: Vec<(String, ClaimStatus)>,
 }
@@ -276,6 +278,17 @@ impl EventStore for FailureModeDeps {
             .committed
             .event_references
             .clone())
+    }
+
+    async fn has_event(&self, event_id: &str) -> Result<bool, AppError> {
+        Ok(self
+            .state
+            .lock()
+            .unwrap()
+            .committed
+            .events
+            .iter()
+            .any(|event| event.event_id == event_id))
     }
 }
 
@@ -433,6 +446,11 @@ impl ReflectionTransaction for FailureModeReflectionTransaction {
         Ok(())
     }
 
+    async fn link_evidence(&mut self, claim_id: String, event_id: String) -> Result<(), AppError> {
+        self.pending.evidence_links.push((claim_id, event_id));
+        Ok(())
+    }
+
     async fn append_reflection(&mut self, reflection: StoredReflection) -> Result<(), AppError> {
         self.pending.reflections.push(reflection);
         Ok(())
@@ -454,6 +472,10 @@ impl ReflectionTransaction for FailureModeReflectionTransaction {
         for claim in self.pending.claims {
             upsert_claim(&mut state.committed.claims, claim);
         }
+        state
+            .committed
+            .evidence_links
+            .extend(self.pending.evidence_links);
         state.committed.reflections.extend(self.pending.reflections);
         for (claim_id, status) in self.pending.status_updates {
             let claim = state

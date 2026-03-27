@@ -40,10 +40,11 @@ async fn stdio_tools_share_runtime_state_across_calls() {
                 },
                 "claim_drafts": [
                     {
-                        "owner": "Self_",
-                        "subject": "self.role",
-                        "predicate": "is",
-                        "object": "architect",
+                        "owner": "World",
+                        "namespace": "project/agent-llm-mm",
+                        "subject": "project.memory",
+                        "predicate": "needs",
+                        "object": "structure",
                         "mode": "Observed"
                     }
                 ],
@@ -79,7 +80,7 @@ async fn stdio_tools_share_runtime_state_across_calls() {
         .filter_map(Value::as_str)
         .collect::<Vec<_>>();
     assert!(
-        claims.contains(&"self.role is architect"),
+        claims.contains(&"project/agent-llm-mm:project.memory needs structure"),
         "snapshot claims missing ingested claim: {claims:?}"
     );
 
@@ -184,7 +185,7 @@ async fn conflicting_reflection_over_stdio_removes_claim_from_active_snapshot() 
         .collect::<Vec<_>>();
 
     assert!(
-        !claims.contains(&"self.role is architect"),
+        !claims.contains(&"self:self.role is architect"),
         "conflicting reflection should remove disputed claims from active snapshot: {claims:?}"
     );
 }
@@ -261,6 +262,203 @@ async fn fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment() {
         model_decision.is_some_and(Value::is_null),
         "blocked decisions should not call the model: {decision:?}"
     );
+}
+
+#[tokio::test]
+async fn invalid_namespace_is_reported_as_invalid_params_over_stdio() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "This should fail because the namespace is incompatible."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "namespace": "user/default",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": null
+            }),
+        )
+        .await
+        .unwrap();
+
+    let error = response
+        .get("error")
+        .expect("invalid params should return error");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
+}
+
+#[tokio::test]
+async fn inferred_replacement_reflection_with_evidence_is_accepted_over_stdio() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let mut evidence_event_ids = Vec::new();
+    for summary in [
+        "The first external observation supports the inferred replacement.",
+        "The second external observation independently supports the inferred replacement.",
+    ] {
+        let response = client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "World",
+                        "kind": "Observation",
+                        "summary": summary
+                    },
+                    "claim_drafts": [],
+                    "episode_reference": "episode:reflection-evidence-source"
+                }),
+            )
+            .await
+            .unwrap();
+        let event_id = response
+            .get("result")
+            .and_then(|value| value.get("structuredContent"))
+            .and_then(|value| value.get("event_id"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .unwrap();
+        evidence_event_ids.push(event_id);
+    }
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "The user suggested the role may have evolved."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:reflection-evidence"
+            }),
+        )
+        .await
+        .unwrap();
+    let superseded_claim_id = ingest
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str)
+        .map(|event_id| format!("{event_id}:claim:0"))
+        .unwrap();
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {
+                    "summary": "Two external observations support promoting the inferred replacement."
+                },
+                "supersede_claim_id": superseded_claim_id,
+                "replacement_claim": {
+                    "owner": "Self_",
+                    "subject": "self.role",
+                    "predicate": "is",
+                    "object": "principal_architect",
+                    "mode": "Inferred"
+                },
+                "replacement_evidence_event_ids": evidence_event_ids
+            }),
+        )
+        .await
+        .unwrap();
+
+    let replacement_claim_id = reflection
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("replacement_claim_id"))
+        .and_then(Value::as_str);
+    assert!(
+        replacement_claim_id.is_some_and(|claim_id| claim_id.ends_with(":replacement")),
+        "replacement claim id should be present and use the reflection replacement suffix: {reflection:?}"
+    );
+}
+
+#[tokio::test]
+async fn missing_replacement_evidence_event_ids_are_invalid_params_over_stdio() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "The user suggested the role may have evolved."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:reflection-missing-evidence"
+            }),
+        )
+        .await
+        .unwrap();
+    let superseded_claim_id = ingest
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str)
+        .map(|event_id| format!("{event_id}:claim:0"))
+        .unwrap();
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {
+                    "summary": "Unknown evidence ids should be rejected before persistence."
+                },
+                "supersede_claim_id": superseded_claim_id,
+                "replacement_claim": {
+                    "owner": "Self_",
+                    "subject": "self.role",
+                    "predicate": "is",
+                    "object": "principal_architect",
+                    "mode": "Inferred"
+                },
+                "replacement_evidence_event_ids": ["evt-missing"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    let error = reflection
+        .get("error")
+        .expect("unknown evidence ids should be reported as invalid params");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
 }
 
 mod test_support {

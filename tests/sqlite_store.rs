@@ -4,7 +4,7 @@ use agent_llm_mm::{
         event::Event,
         identity_core::IdentityCore,
         reflection::Reflection,
-        types::{EventKind, Mode, Owner},
+        types::{EventKind, Mode, Namespace, Owner},
     },
     ports::{
         ClaimStatus, ClaimStore, CommitmentStore, IdentityStore, IngestTransactionRunner,
@@ -13,6 +13,7 @@ use agent_llm_mm::{
 };
 use chrono::{DateTime, Utc};
 use sqlx::{Row, sqlite::SqlitePool};
+use std::path::PathBuf;
 
 #[tokio::test]
 async fn sqlite_store_bootstraps_all_tables() {
@@ -34,6 +35,57 @@ async fn sqlite_store_bootstraps_all_tables() {
     assert!(tables.contains(&"reflections".to_string()));
     assert!(tables.contains(&"identity_claims".to_string()));
     assert!(tables.contains(&"commitments".to_string()));
+
+    let claims_sql = sqlx::query_scalar::<_, String>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'claims'",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    assert!(
+        claims_sql.contains("CHECK"),
+        "claims table should include a database-level namespace compatibility check"
+    );
+}
+
+#[test]
+fn sqlite_owner_namespace_sql_rules_have_single_source() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let schema_source =
+        std::fs::read_to_string(manifest_dir.join("src/adapters/sqlite/schema.rs")).unwrap();
+    let store_source =
+        std::fs::read_to_string(manifest_dir.join("src/adapters/sqlite/store.rs")).unwrap();
+
+    assert!(
+        schema_source.contains("claims_table_sql("),
+        "schema.rs should define the shared claims table SQL builder"
+    );
+    assert!(
+        schema_source.contains("legacy_namespace_backfill_expression("),
+        "schema.rs should define the shared legacy namespace backfill expression"
+    );
+    assert!(
+        store_source.contains("claims_table_sql("),
+        "store.rs should use the shared claims table SQL builder"
+    );
+    assert!(
+        store_source.contains("legacy_namespace_backfill_expression("),
+        "store.rs should use the shared legacy namespace backfill expression"
+    );
+
+    for forbidden_fragment in [
+        "CONSTRAINT owner_namespace_scope CHECK (",
+        "OR (owner = 'user' AND namespace LIKE 'user/%')",
+        "OR (owner = 'world' AND (namespace = 'world' OR namespace LIKE 'project/%'))",
+        "OR (owner = 'unknown' AND (namespace = 'world' OR namespace LIKE 'project/%'))",
+        "CASE owner WHEN 'self' THEN 'self' WHEN 'user' THEN 'user/default' ELSE 'world' END",
+        "COALESCE(NULLIF(namespace, ''), CASE owner WHEN 'self' THEN 'self' WHEN 'user' THEN 'user/default' ELSE 'world' END)",
+    ] {
+        assert!(
+            !store_source.contains(forbidden_fragment),
+            "store.rs should not inline owner/namespace SQL fragment: {forbidden_fragment}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -44,7 +96,7 @@ async fn sqlite_round_trips_claim_with_evidence() {
         .unwrap();
     let claim_row = sqlx::query(
         r#"
-        SELECT claim_id, subject, object, status
+        SELECT claim_id, namespace, subject, object, status
         FROM claims
         WHERE claim_id = ?
         "#,
@@ -67,11 +119,87 @@ async fn sqlite_round_trips_claim_with_evidence() {
     .unwrap();
 
     assert_eq!(claim_row.get::<String, _>("claim_id"), ids.claim_id);
+    assert_eq!(claim_row.get::<String, _>("namespace"), "self");
     assert_eq!(claim_row.get::<String, _>("subject"), "self.role");
     assert_eq!(claim_row.get::<String, _>("object"), "architect");
     assert_eq!(claim_row.get::<String, _>("status"), "active");
     assert_eq!(evidence_rows.len(), 1);
     assert_eq!(evidence_rows[0].get::<String, _>("event_id"), ids.event_id);
+}
+
+#[tokio::test]
+async fn sqlite_bootstrap_backfills_namespace_for_legacy_claim_rows() {
+    let context = test_support::new_legacy_claim_store().await;
+
+    let namespace = sqlx::query_scalar::<_, String>(
+        "SELECT namespace FROM claims WHERE claim_id = 'legacy-claim'",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    let namespace_not_null = sqlx::query_scalar::<_, i64>(
+        r#"SELECT "notnull" FROM pragma_table_info('claims') WHERE name = 'namespace'"#,
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    let legacy_invalid_insert = sqlx::query(
+        r#"
+        INSERT INTO claims (claim_id, owner, namespace, subject, predicate, object, mode, status)
+        VALUES ('legacy-invalid-check', 'self', 'user/default', 'self.role', 'is', 'architect', 'observed', 'active')
+        "#,
+    )
+    .execute(&context.pool)
+    .await;
+
+    assert_eq!(namespace, "user/default");
+    assert_eq!(namespace_not_null, 1);
+    assert!(
+        legacy_invalid_insert.is_err(),
+        "legacy migrations should restore the same namespace check constraint as fresh databases"
+    );
+}
+
+#[tokio::test]
+async fn sqlite_store_rejects_owner_namespace_mismatch_on_write() {
+    let context = test_support::new_sqlite_store().await;
+
+    let result = context
+        .store
+        .upsert_claim(StoredClaim::new(
+            "claim-invalid-write".to_string(),
+            ClaimDraft::new_with_namespace(
+                Owner::Self_,
+                Namespace::for_user("default"),
+                "self.role",
+                "is",
+                "architect",
+                Mode::Observed,
+            ),
+            ClaimStatus::Active,
+        ))
+        .await;
+
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn sqlite_database_rejects_corrupt_namespace_owner_pair_before_read() {
+    let context = test_support::new_sqlite_store().await;
+
+    let insert_result = sqlx::query(
+        r#"
+        INSERT INTO claims (claim_id, owner, namespace, subject, predicate, object, mode, status)
+        VALUES ('claim-invalid-read', 'self', 'user/default', 'self.role', 'is', 'architect', 'observed', 'active')
+        "#,
+    )
+    .execute(&context.pool)
+    .await;
+
+    assert!(
+        insert_result.is_err(),
+        "database check constraints should reject corrupt owner/namespace pairs before reads"
+    );
 }
 
 #[tokio::test]
@@ -223,6 +351,49 @@ mod test_support {
         let path =
             std::env::temp_dir().join(format!("agent-llm-mm-{}.sqlite", uuid::Uuid::new_v4()));
         let database_url = format!("sqlite://{}", path.to_string_lossy().replace('\\', "/"));
+        let store = SqliteStore::bootstrap(&database_url).await.unwrap();
+        let pool = SqlitePool::connect(&database_url).await.unwrap();
+
+        TestContext { store, pool }
+    }
+
+    pub async fn new_legacy_claim_store() -> TestContext {
+        let path = std::env::temp_dir().join(format!(
+            "agent-llm-mm-legacy-{}.sqlite",
+            uuid::Uuid::new_v4()
+        ));
+        let database_url = format!("sqlite://{}", path.to_string_lossy().replace('\\', "/"));
+        std::fs::File::create(&path).unwrap();
+        let pool = SqlitePool::connect(&database_url).await.unwrap();
+
+        sqlx::query(
+            r#"
+            CREATE TABLE claims (
+                claim_id TEXT PRIMARY KEY,
+                owner TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                predicate TEXT NOT NULL,
+                object TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                status TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            INSERT INTO claims (claim_id, owner, subject, predicate, object, mode, status)
+            VALUES ('legacy-claim', 'user', 'user.preference', 'likes', 'concise', 'observed', 'active')
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        drop(pool);
+
         let store = SqliteStore::bootstrap(&database_url).await.unwrap();
         let pool = SqlitePool::connect(&database_url).await.unwrap();
 

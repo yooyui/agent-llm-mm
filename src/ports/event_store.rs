@@ -28,4 +28,5 @@ impl StoredEvent {
 pub trait EventStore {
     async fn append_event(&self, event: StoredEvent) -> Result<(), AppError>;
     async fn list_event_references(&self) -> Result<Vec<String>, AppError>;
+    async fn has_event(&self, event_id: &str) -> Result<bool, AppError>;
 }

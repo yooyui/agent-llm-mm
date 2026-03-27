@@ -37,7 +37,8 @@ impl StoredClaim {
 
     pub fn snapshot_value(&self) -> String {
         format!(
-            "{} {} {}",
+            "{}:{} {} {}",
+            self.claim.namespace(),
             self.claim.subject(),
             self.claim.predicate(),
             self.claim.object()
