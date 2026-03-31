@@ -1,6 +1,6 @@
 # OpenAI Compatible Provider And Claude Code Integration Design
 
-> Historical note: this design draft is kept for traceability. It reflects an earlier direction that relied on environment variables and `Claude Code` specific integration steps. The implemented mainline approach was later adjusted to config-file driven provider loading; current behavior is documented in [README.md](/D:/Code/agent_llm_mm/README.md), [project-status.md](/D:/Code/agent_llm_mm/docs/project-status.md), and [2026-03-31-openai-compatible-provider-config-file.md](/D:/Code/agent_llm_mm/docs/superpowers/plans/2026-03-31-openai-compatible-provider-config-file.md).
+> Historical note: this design draft is kept for traceability. It reflects an earlier direction that relied on environment variables and `Claude Code` specific integration steps. The implemented mainline approach was later adjusted to config-file driven provider loading; current behavior is documented in [README.md](../../../README.md), [project-status.md](../../project-status.md), and [2026-03-31-openai-compatible-provider-config-file.md](../plans/2026-03-31-openai-compatible-provider-config-file.md).
 
 **日期：** 2026-03-28
 **状态：** Draft approved in conversation, pending file review

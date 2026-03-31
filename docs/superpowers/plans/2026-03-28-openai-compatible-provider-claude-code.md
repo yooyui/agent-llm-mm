@@ -1,6 +1,6 @@
 # OpenAI Compatible Provider And Claude Code Integration Implementation Plan
 
-> Historical note: this plan is retained as an earlier implementation plan draft. It assumed environment-variable driven provider loading and `Claude Code` specific registration. The current mainline implementation instead uses config-file driven provider loading; see [2026-03-31-openai-compatible-provider-config-file.md](/D:/Code/agent_llm_mm/docs/superpowers/plans/2026-03-31-openai-compatible-provider-config-file.md), [project-status.md](/D:/Code/agent_llm_mm/docs/project-status.md), and [README.md](/D:/Code/agent_llm_mm/README.md).
+> Historical note: this plan is retained as an earlier implementation plan draft. It assumed environment-variable driven provider loading and `Claude Code` specific registration. The current mainline implementation instead uses config-file driven provider loading; see [2026-03-31-openai-compatible-provider-config-file.md](2026-03-31-openai-compatible-provider-config-file.md), [project-status.md](../../project-status.md), and [README.md](../../../README.md).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -1,6 +1,6 @@
 # 当前工作说明（2026-03-25，按 2026-03-27 实现复核更新）
 
-> 说明：本文档保留为 `2026-03-27` 视角下的实现快照。其关于“真实模型 provider 尚未接入”“测试总数为 50”等结论属于当时判断，不代表当前主线最新状态。当前稳定入口请以 [README.md](/D:/Code/agent_llm_mm/README.md)、[project-status.md](/D:/Code/agent_llm_mm/docs/project-status.md) 和 [roadmap.md](/D:/Code/agent_llm_mm/docs/roadmap.md) 为准。
+> 说明：本文档保留为 `2026-03-27` 视角下的实现快照。其关于“真实模型 provider 尚未接入”“测试总数为 50”等结论属于当时判断，不代表当前主线最新状态。当前稳定入口请以 [README.md](../README.md)、[project-status.md](project-status.md) 和 [roadmap.md](roadmap.md) 为准。
 
 ## 概览
 

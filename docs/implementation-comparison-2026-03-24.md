@@ -1,13 +1,13 @@
 # 功能实现比对（2026-03-24，按 2026-03-27 实现复核更新）
 
-> 说明：本文档是“原始设计日志”与 `2026-03-27` 时点实现之间的历史比对，不是当前仓库最新状态说明。其关于“真实模型 provider 仍未接入”等表述属于当时判断。当前稳定状态请以 [project-status.md](/D:/Code/agent_llm_mm/docs/project-status.md) 与 [README.md](/D:/Code/agent_llm_mm/README.md) 为准。
+> 说明：本文档是“原始设计日志”与 `2026-03-27` 时点实现之间的历史比对，不是当前仓库最新状态说明。其关于“真实模型 provider 仍未接入”等表述属于当时判断。当前稳定状态请以 [project-status.md](project-status.md) 与 [README.md](../README.md) 为准。
 
 ## 比对对象
 
 本文件用于对比以下两份材料：
 
-- 原始设计日志：[llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md)
-- 当前实现说明：[current-work-2026-03-25.md](/D:/Code/agent_llm_mm/docs/current-work-2026-03-25.md)
+- 原始设计日志：[llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md](llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md)
+- 当前实现说明：[current-work-2026-03-25.md](current-work-2026-03-25.md)
 
 比对基线：
 

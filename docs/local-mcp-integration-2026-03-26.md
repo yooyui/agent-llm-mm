@@ -22,7 +22,7 @@
 
 入口脚本：
 
-- [scripts/agent-llm-mm.ps1](/D:/Code/agent_llm_mm/scripts/agent-llm-mm.ps1)
+- [scripts/agent-llm-mm.ps1](../scripts/agent-llm-mm.ps1)
 
 ## 3. 本机预检
 
@@ -71,7 +71,7 @@ pwsh -File .\scripts\agent-llm-mm.ps1 serve
 
 可直接参考：
 
-- [examples/codex-mcp-config.toml](/D:/Code/agent_llm_mm/examples/codex-mcp-config.toml)
+- [examples/codex-mcp-config.toml](../examples/codex-mcp-config.toml)
 
 推荐做法：
 

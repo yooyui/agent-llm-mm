@@ -132,32 +132,32 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 
 ### 面向 GitHub 协作
 
-- [文档总览](/D:/Code/agent_llm_mm/docs/document-map.md)
-- [当前实现状态](/D:/Code/agent_llm_mm/docs/project-status.md)
-- [未来路线图](/D:/Code/agent_llm_mm/docs/roadmap.md)
-- [发布准备评估](/D:/Code/agent_llm_mm/docs/release-readiness.md)
-- [协作说明](/D:/Code/agent_llm_mm/CONTRIBUTING.md)
+- [文档总览](docs/document-map.md)
+- [当前实现状态](docs/project-status.md)
+- [未来路线图](docs/roadmap.md)
+- [发布准备评估](docs/release-readiness.md)
+- [协作说明](CONTRIBUTING.md)
 
 ### 三语说明
 
-- [项目说明（中文）](/D:/Code/agent_llm_mm/docs/project-overview.zh-CN.md)
-- [Project Overview (English)](/D:/Code/agent_llm_mm/docs/project-overview.en.md)
-- [プロジェクト概要（日本語）](/D:/Code/agent_llm_mm/docs/project-overview.ja.md)
+- [项目说明（中文）](docs/project-overview.zh-CN.md)
+- [Project Overview (English)](docs/project-overview.en.md)
+- [プロジェクト概要（日本語）](docs/project-overview.ja.md)
 
 ### 接入与验证
 
-- [本机 MCP 接入说明](/D:/Code/agent_llm_mm/docs/local-mcp-integration-2026-03-26.md)
-- [测试指南](/D:/Code/agent_llm_mm/docs/testing-guide-2026-03-24.md)
-- [Codex MCP 配置样例](/D:/Code/agent_llm_mm/examples/codex-mcp-config.toml)
-- [Provider 配置样例](/D:/Code/agent_llm_mm/examples/agent-llm-mm.example.toml)
+- [本机 MCP 接入说明](docs/local-mcp-integration-2026-03-26.md)
+- [测试指南](docs/testing-guide-2026-03-24.md)
+- [Codex MCP 配置样例](examples/codex-mcp-config.toml)
+- [Provider 配置样例](examples/agent-llm-mm.example.toml)
 
 ### 原始资料与历史快照
 
-- [原始讨论整理稿](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-2026-03-23.zh-CN.md)
-- [原始讨论逐轮日志](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md)
-- [当前工作说明（2026-03-25）](/D:/Code/agent_llm_mm/docs/current-work-2026-03-25.md)
-- [功能实现比对（2026-03-24）](/D:/Code/agent_llm_mm/docs/implementation-comparison-2026-03-24.md)
-- [阶段计划（2026-03-27）](/D:/Code/agent_llm_mm/docs/2026-03-27-plan.md)
+- [原始讨论整理稿](docs/llm-agent-memory-self-dialogue-2026-03-23.zh-CN.md)
+- [原始讨论逐轮日志](docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md)
+- [当前工作说明（2026-03-25）](docs/current-work-2026-03-25.md)
+- [功能实现比对（2026-03-24）](docs/implementation-comparison-2026-03-24.md)
+- [阶段计划（2026-03-27）](docs/2026-03-27-plan.md)
 
 ## 接入注意事项
 
@@ -174,6 +174,6 @@ This repository was developed through iterative implementation and discussion wi
 
 ## License
 
-This repository is licensed under the Apache License 2.0. See [LICENSE](/D:/Code/agent_llm_mm/LICENSE) and [NOTICE](/D:/Code/agent_llm_mm/NOTICE).
+This repository is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 Copyright `2026` `yooyui`

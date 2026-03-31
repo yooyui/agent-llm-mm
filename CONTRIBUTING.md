@@ -4,10 +4,10 @@ Thanks for your interest in improving `agent_llm_mm`.
 
 ## Before You Start
 
-- Read [README.md](/D:/Code/agent_llm_mm/README.md)
-- Read [当前实现状态](/D:/Code/agent_llm_mm/docs/project-status.md)
-- Read [路线图](/D:/Code/agent_llm_mm/docs/roadmap.md)
-- Read [测试指南](/D:/Code/agent_llm_mm/docs/testing-guide-2026-03-24.md)
+- Read [README.md](README.md)
+- Read [当前实现状态](docs/project-status.md)
+- Read [路线图](docs/roadmap.md)
+- Read [测试指南](docs/testing-guide-2026-03-24.md)
 
 This repository is a public technical demo and MVP. Please keep changes aligned with that positioning. Avoid turning incomplete experimental capabilities into product claims in docs or code comments.
 
@@ -49,11 +49,11 @@ By intentionally submitting a contribution to this repository, you agree that it
 
 If your change affects project positioning or collaboration, update the relevant docs:
 
-- [README.md](/D:/Code/agent_llm_mm/README.md)
-- [文档总览](/D:/Code/agent_llm_mm/docs/document-map.md)
-- [当前实现状态](/D:/Code/agent_llm_mm/docs/project-status.md)
-- [路线图](/D:/Code/agent_llm_mm/docs/roadmap.md)
-- [发布准备评估](/D:/Code/agent_llm_mm/docs/release-readiness.md)
+- [README.md](README.md)
+- [文档总览](docs/document-map.md)
+- [当前实现状态](docs/project-status.md)
+- [路线图](docs/roadmap.md)
+- [发布准备评估](docs/release-readiness.md)
 
 ## Acknowledgement
 

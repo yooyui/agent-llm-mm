@@ -69,7 +69,7 @@ Suggested first release title:
 
 Recommended source file:
 
-- [2026-03-31-initial-public-release.md](/D:/Code/agent_llm_mm/docs/releases/2026-03-31-initial-public-release.md)
+- [2026-03-31-initial-public-release.md](releases/2026-03-31-initial-public-release.md)
 
 ## Remaining Blocking Item
 
