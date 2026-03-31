@@ -12,7 +12,10 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::{
-    adapters::{model::mock::MockModel, sqlite::SqliteStore},
+    adapters::{
+        model::{mock::MockModel, openai_compatible::OpenAiCompatibleModel},
+        sqlite::SqliteStore,
+    },
     application::{
         build_self_snapshot, decide_with_snapshot, ingest_interaction,
         ingest_interaction::IngestInput, run_reflection, run_reflection::ReflectionInput,
@@ -25,7 +28,7 @@ use crate::{
         ModelDecisionRequest, ModelPort, ReflectionStore, ReflectionTransaction,
         ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
     },
-    support::config::AppConfig,
+    support::config::{AppConfig, ModelConfig},
 };
 
 use super::dto::{
@@ -33,7 +36,8 @@ use super::dto::{
 };
 
 pub async fn run_stdio_server() -> Result<()> {
-    run_stdio_server_with_config(AppConfig::default()).await
+    let config = AppConfig::load().map_err(anyhow::Error::msg)?;
+    run_stdio_server_with_config(config).await
 }
 
 pub async fn run_stdio_server_with_config(config: AppConfig) -> Result<()> {
@@ -44,7 +48,7 @@ pub async fn run_stdio_server_with_config(config: AppConfig) -> Result<()> {
 }
 
 pub async fn validate_stdio_runtime(config: &AppConfig) -> Result<(), AppError> {
-    Runtime::bootstrap(&config.database_url).await.map(|_| ())
+    Runtime::bootstrap(config).await.map(|_| ())
 }
 
 #[derive(Clone)]
@@ -55,7 +59,7 @@ pub struct Server {
 
 impl Server {
     async fn from_config(config: AppConfig) -> Result<Self, AppError> {
-        let runtime = Runtime::bootstrap(&config.database_url).await?;
+        let runtime = Runtime::bootstrap(&config).await?;
         Ok(Self {
             runtime,
             tool_router: Self::tool_router(),
@@ -128,15 +132,23 @@ impl ServerHandler for Server {
 #[derive(Clone)]
 struct Runtime {
     store: SqliteStore,
-    model: MockModel,
+    model: RuntimeModel,
+}
+
+#[derive(Clone)]
+enum RuntimeModel {
+    Mock(MockModel),
+    OpenAiCompatible(OpenAiCompatibleModel),
 }
 
 impl Runtime {
-    async fn bootstrap(database_url: &str) -> Result<Self, AppError> {
-        let store = SqliteStore::bootstrap(database_url).await?;
+    async fn bootstrap(config: &AppConfig) -> Result<Self, AppError> {
+        config.validate_model_config().map_err(AppError::Message)?;
+
+        let store = SqliteStore::bootstrap(&config.database_url).await?;
         let runtime = Self {
             store,
-            model: MockModel,
+            model: build_runtime_model(config)?,
         };
         runtime.ensure_default_identity().await?;
         Ok(runtime)
@@ -154,6 +166,15 @@ impl Runtime {
             }
             Err(error) => Err(error),
         }
+    }
+}
+
+fn build_runtime_model(config: &AppConfig) -> Result<RuntimeModel, AppError> {
+    match &config.model_config {
+        ModelConfig::Mock => Ok(RuntimeModel::Mock(MockModel)),
+        ModelConfig::OpenAiCompatible(model_config) => Ok(RuntimeModel::OpenAiCompatible(
+            OpenAiCompatibleModel::new(model_config.clone())?,
+        )),
     }
 }
 
@@ -256,7 +277,10 @@ impl CommitmentStore for Runtime {
 #[async_trait]
 impl ModelPort for Runtime {
     async fn decide(&self, request: ModelDecisionRequest) -> Result<ModelDecision, AppError> {
-        self.model.decide(request).await
+        match &self.model {
+            RuntimeModel::Mock(model) => model.decide(request).await,
+            RuntimeModel::OpenAiCompatible(model) => model.decide(request).await,
+        }
     }
 }
 

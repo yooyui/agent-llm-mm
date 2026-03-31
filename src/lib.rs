@@ -47,7 +47,8 @@ pub async fn run_doctor(config: AppConfig) -> Result<DoctorReport> {
 
 pub async fn run() -> Result<()> {
     support::tracing::init_tracing();
-    run_command(AppCommand::Serve, AppConfig::default())
+    let config = AppConfig::load().map_err(anyhow::Error::msg)?;
+    run_command(AppCommand::Serve, config)
         .await
         .map(|_| ())
 }

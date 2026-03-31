@@ -1,0 +1,11 @@
+agent_llm_mm
+Copyright 2026 yooyui
+
+Author and maintainer: yooyui
+GitHub: https://github.com/yooyui
+
+This repository was developed through iterative implementation and discussion with OpenAI Codex.
+Thanks to OpenAI for the tooling and research ecosystem that made this workflow possible.
+
+OpenAI and Codex are referenced solely as tools used in the development workflow.
+This repository is an independent project and is not endorsed by or affiliated with OpenAI.

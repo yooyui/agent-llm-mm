@@ -2,7 +2,7 @@ use agent_llm_mm::{
     run_command, run_doctor, startup_transport_from_default_config,
     support::{
         cli::{AppCommand, command_from_args},
-        config::{AppConfig, TransportKind},
+        config::{AppConfig, ModelConfig, ModelProviderKind, TransportKind},
     },
 };
 use std::{time::Duration, vec};
@@ -64,12 +64,17 @@ async fn doctor_bootstraps_configured_sqlite_database_and_returns_report() {
     let config = AppConfig {
         transport: TransportKind::Stdio,
         database_url: database_url.clone(),
+        model_provider: ModelProviderKind::Mock,
+        model_config: ModelConfig::Mock,
     };
 
     let report = run_doctor(config).await.expect("doctor should pass");
 
     assert_eq!(report.transport, TransportKind::Stdio);
     assert_eq!(report.database_url, database_url);
+    assert_eq!(report.provider, ModelProviderKind::Mock);
+    assert_eq!(report.base_url, None);
+    assert_eq!(report.model, None);
     assert!(
         database_path.exists(),
         "doctor should create sqlite database"
@@ -108,6 +113,8 @@ async fn serve_command_uses_explicit_config_for_bootstrap() {
     let config = AppConfig {
         transport: TransportKind::Stdio,
         database_url,
+        model_provider: ModelProviderKind::Mock,
+        model_config: ModelConfig::Mock,
     };
 
     let handle = tokio::spawn(run_command(AppCommand::Serve, config));

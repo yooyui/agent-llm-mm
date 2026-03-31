@@ -1,6 +1,7 @@
 param(
     [ValidateSet("serve", "doctor")]
-    [string]$Mode = "serve"
+    [string]$Mode = "serve",
+    [string]$ConfigPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,6 +11,11 @@ $projectRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
 
 Push-Location $projectRoot
 try {
+    if ($ConfigPath) {
+        $resolvedConfigPath = (Resolve-Path $ConfigPath).Path
+        $env:AGENT_LLM_MM_CONFIG = $resolvedConfigPath
+    }
+
     & cargo run --quiet -- $Mode
     exit $LASTEXITCODE
 }

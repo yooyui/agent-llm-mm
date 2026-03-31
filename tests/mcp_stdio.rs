@@ -2,12 +2,18 @@ use std::{
     io::{self, BufRead, BufReader, Write},
     path::Path,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    sync::Arc,
 };
 
-use agent_llm_mm::support::config::DATABASE_URL_ENV_VAR;
+use agent_llm_mm::support::config::{CONFIG_PATH_ENV_VAR, DATABASE_URL_ENV_VAR};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tempfile::TempDir;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+    sync::oneshot,
+};
 
 #[tokio::test]
 async fn server_exposes_expected_tools_over_stdio() {
@@ -264,6 +270,75 @@ async fn fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn decide_with_snapshot_over_stdio_uses_openai_compatible_provider_from_config_file() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "provider_selected_action"
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let mut client = test_support::spawn_stdio_client_with_config(config).await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "decide_with_snapshot",
+            json!({
+                "task": "summarize current memory",
+                "action": "read_identity_core",
+                "snapshot": {
+                    "identity": ["identity:self=architect"],
+                    "commitments": [],
+                    "claims": ["self.role is architect"],
+                    "evidence": ["event:evt-1"],
+                    "episodes": ["episode:task-6"]
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+    let action = response
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("decision"))
+        .and_then(|value| value.get("action"))
+        .and_then(Value::as_str);
+
+    assert_eq!(
+        action,
+        Some("provider_selected_action"),
+        "unexpected stdio response: {response:?}"
+    );
+    assert_eq!(
+        stub.last_request_path().await.as_deref(),
+        Some("/chat/completions")
+    );
+}
+
 #[tokio::test]
 async fn invalid_namespace_is_reported_as_invalid_params_over_stdio() {
     let mut client = test_support::spawn_stdio_client().await.unwrap();
@@ -469,6 +544,18 @@ mod test_support {
         StdioClient::spawn(&database.url, Some(database.temp_dir))
     }
 
+    pub async fn spawn_stdio_client_with_config(config_template: String) -> io::Result<StdioClient> {
+        let database = database_override()?;
+        let config_path = database.temp_dir.path().join("agent-llm-mm.local.toml");
+        let config = config_template.replace("__DATABASE_URL__", &database.url);
+        std::fs::write(&config_path, config)?;
+
+        StdioClient::spawn_with_env(
+            Some(database.temp_dir),
+            &[(CONFIG_PATH_ENV_VAR, config_path.to_string_lossy().into_owned())],
+        )
+    }
+
     struct DatabaseOverride {
         temp_dir: TempDir,
         url: String,
@@ -482,6 +569,12 @@ mod test_support {
         stdout: BufReader<ChildStdout>,
     }
 
+    pub struct StubServer {
+        base_url: String,
+        last_request_path: Arc<tokio::sync::Mutex<Option<String>>>,
+        shutdown: Option<oneshot::Sender<()>>,
+    }
+
     #[derive(Debug, Deserialize)]
     pub struct Tool {
         pub name: String,
@@ -489,8 +582,21 @@ mod test_support {
 
     impl StdioClient {
         fn spawn(database_url: &str, database_dir: Option<TempDir>) -> io::Result<Self> {
-            let mut child = Command::new(env!("CARGO_BIN_EXE_agent_llm_mm"))
-                .env(DATABASE_URL_ENV_VAR, database_url)
+            Self::spawn_with_env(
+                database_dir,
+                &[(DATABASE_URL_ENV_VAR, database_url.to_string())],
+            )
+        }
+
+        fn spawn_with_env(
+            database_dir: Option<TempDir>,
+            envs: &[(&str, String)],
+        ) -> io::Result<Self> {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_agent_llm_mm"));
+            for (key, value) in envs {
+                command.env(key, value);
+            }
+            let mut child = command
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -614,6 +720,74 @@ mod test_support {
         fn drop(&mut self) {
             let _ = self.child.kill();
             let _ = self.child.wait();
+        }
+    }
+
+    impl StubServer {
+        pub async fn spawn(status: u16, body: Value) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+            let address = listener.local_addr().expect("local addr");
+            let base_url = format!("http://{address}");
+            let last_request_path = Arc::new(tokio::sync::Mutex::new(None));
+            let request_path = Arc::clone(&last_request_path);
+            let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+            let response_body = body.to_string();
+
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = &mut shutdown_rx => {}
+                    accept = listener.accept() => {
+                        if let Ok((mut stream, _)) = accept {
+                            let mut buffer = vec![0_u8; 16 * 1024];
+                            let bytes_read = stream.read(&mut buffer).await.expect("read");
+                            let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+                            let path = request
+                                .lines()
+                                .next()
+                                .and_then(|line| line.split_whitespace().nth(1))
+                                .map(str::to_string);
+                            *request_path.lock().await = path;
+
+                            let status_text = match status {
+                                200 => "OK",
+                                503 => "Service Unavailable",
+                                _ => "Test Status",
+                            };
+                            let response = format!(
+                                "HTTP/1.1 {status} {status_text}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                                response_body.len(),
+                                response_body
+                            );
+                            stream
+                                .write_all(response.as_bytes())
+                                .await
+                                .expect("write");
+                        }
+                    }
+                }
+            });
+
+            Self {
+                base_url,
+                last_request_path,
+                shutdown: Some(shutdown_tx),
+            }
+        }
+
+        pub fn base_url(&self) -> String {
+            self.base_url.clone()
+        }
+
+        pub async fn last_request_path(&self) -> Option<String> {
+            self.last_request_path.lock().await.clone()
+        }
+    }
+
+    impl Drop for StubServer {
+        fn drop(&mut self) {
+            if let Some(shutdown) = self.shutdown.take() {
+                let _ = shutdown.send(());
+            }
         }
     }
 

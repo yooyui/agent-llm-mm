@@ -6,7 +6,7 @@ args = [
   "-NoLogo",
   "-NoProfile",
   "-File",
-  "D:\\Code\\agent_llm_mm\\.worktrees\\codex-self-agent-mcp\\scripts\\agent-llm-mm.ps1",
+  "D:\\Code\\agent_llm_mm\\scripts\\agent-llm-mm.ps1",
   "serve",
 ]
-env = { AGENT_LLM_MM_DATABASE_URL = "sqlite:///D:/back/agent-llm-mm-codex.sqlite" }
+env = { AGENT_LLM_MM_CONFIG = "D:/Code/agent_llm_mm/agent-llm-mm.local.toml" }

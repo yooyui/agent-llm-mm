@@ -1,0 +1,11 @@
+transport = "stdio"
+database_url = "sqlite:///D:/back/agent-llm-mm-codex.sqlite"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "https://api.openai.com/v1"
+api_key = "REPLACE_WITH_YOUR_API_KEY"
+model = "gpt-4o-mini"
+timeout_ms = 30000
