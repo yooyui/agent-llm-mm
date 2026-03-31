@@ -5,10 +5,33 @@
 - 稳定入口文档：适合放到 GitHub 给协作者快速理解当前项目
 - 原始资料与历史快照：保留研究过程、实现复核和阶段性判断
 
-## 1. 建议先读
+## 1. 一句话说明
+
+`agent_llm_mm` 是一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载，以及 `openai-compatible` 模型接入。
+
+## 2. 多语言项目说明
+
+- [project-overview.zh-CN.md](project-overview.zh-CN.md)
+- [project-overview.en.md](project-overview.en.md)
+- [project-overview.ja.md](project-overview.ja.md)
+
+这些文件适合先快速理解项目，再决定是否深入到状态、路线图和实现细节。
+
+## 3. 项目介绍与状态入口
 
 - [README.md](../README.md)
-  - 仓库首页入口、快速开始、文档导航
+  - 仓库首页入口、项目介绍、快速开始、文档导航
+- [project-status.md](project-status.md)
+  - 当前实现边界、已实现 / 部分实现 / 未实现
+- [release-readiness.md](release-readiness.md)
+  - 当前 demo 是否适合发布到 GitHub
+- [roadmap.md](roadmap.md)
+  - 近期 / 中期 / 后期规划
+
+## 4. 建议先读
+
+- [README.md](../README.md)
+  - 先看项目一句话说明和多语言入口
 - [CONTRIBUTING.md](../CONTRIBUTING.md)
   - 公开协作入口、验证要求与文档更新预期
 - [project-status.md](project-status.md)
@@ -18,22 +41,14 @@
 - [roadmap.md](roadmap.md)
   - 近期 / 中期 / 后期规划
 
-## 2. 三语项目说明
-
-- [project-overview.zh-CN.md](project-overview.zh-CN.md)
-- [project-overview.en.md](project-overview.en.md)
-- [project-overview.ja.md](project-overview.ja.md)
-
-这些文件适合直接转发给中文、英文和日文协作者，用来快速解释项目是什么、现在到哪一步、边界在哪里。
-
-## 2.1 发布物料
+## 5. 发布物料
 
 - [github-publish-prep-2026-03-31.md](github-publish-prep-2026-03-31.md)
   - GitHub description、topics、首页文案和发布阻塞项
 - [2026-03-31-initial-public-release.md](releases/2026-03-31-initial-public-release.md)
   - 首次公开发布的 release note 草稿
 
-## 3. 接入与验证文档
+## 6. 接入与验证文档
 
 - [local-mcp-integration-2026-03-26.md](local-mcp-integration-2026-03-26.md)
   - 如何把本项目接入本机 AI 客户端
@@ -42,7 +57,7 @@
 - [examples/codex-mcp-config.toml](../examples/codex-mcp-config.toml)
   - Codex 本机 MCP 配置样例
 
-## 4. 原始资料与历史快照
+## 7. 原始资料与历史快照
 
 ### 原始讨论资料
 
@@ -69,7 +84,7 @@
 - [2026-03-28-openai-compatible-provider-claude-code-design.md](superpowers/specs/2026-03-28-openai-compatible-provider-claude-code-design.md)
   - 较早的 provider 设计稿，保留用于追溯，不代表当前最终实现
 
-## 5. 阅读建议
+## 8. 阅读建议
 
 - 如果你是第一次看这个仓库：先读 README，再读 `project-status.md` 与 `release-readiness.md`
 - 如果你想接入本地客户端：再读 `local-mcp-integration-2026-03-26.md`

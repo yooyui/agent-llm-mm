@@ -1,8 +1,16 @@
 # agent_llm_mm
 
-`agent_llm_mm` 是一个面向本机 AI 客户端的 Rust MCP `stdio` 服务，当前聚焦于把“长期记忆 + 自我快照 + 反思修订”的最小工程闭环稳定跑通，并以 SQLite 持久化作为本地集成基础。
+## 一句话说明
 
-## 当前定位
+一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载，以及 `openai-compatible` 模型接入。
+
+## 主多语言文档
+
+- [项目说明（中文）](docs/project-overview.zh-CN.md)
+- [Project Overview (English)](docs/project-overview.en.md)
+- [プロジェクト概要（日本語）](docs/project-overview.ja.md)
+
+## 项目介绍
 
 - 类型：本机 `stdio` MCP 服务
 - 存储：SQLite
@@ -11,6 +19,13 @@
 - 最新 fresh 验证：`2026-03-31`
   - `cargo test` 全量通过，共 58 个测试
   - `pwsh -File .\scripts\agent-llm-mm.ps1 doctor` 返回 `status = ok`
+
+## 先看这些
+
+- [当前实现状态](docs/project-status.md)
+- [发布准备评估](docs/release-readiness.md)
+- [未来路线图](docs/roadmap.md)
+- [文档总览](docs/document-map.md)
 
 ## 公开仓库说明
 
@@ -137,12 +152,6 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 - [未来路线图](docs/roadmap.md)
 - [发布准备评估](docs/release-readiness.md)
 - [协作说明](CONTRIBUTING.md)
-
-### 三语说明
-
-- [项目说明（中文）](docs/project-overview.zh-CN.md)
-- [Project Overview (English)](docs/project-overview.en.md)
-- [プロジェクト概要（日本語）](docs/project-overview.ja.md)
 
 ### 接入与验证
 
