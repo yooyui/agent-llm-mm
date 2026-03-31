@@ -26,6 +26,13 @@
 
 这些文件适合直接转发给中文、英文和日文协作者，用来快速解释项目是什么、现在到哪一步、边界在哪里。
 
+## 2.1 发布物料
+
+- [github-publish-prep-2026-03-31.md](/D:/Code/agent_llm_mm/docs/github-publish-prep-2026-03-31.md)
+  - GitHub description、topics、首页文案和发布阻塞项
+- [2026-03-31-initial-public-release.md](/D:/Code/agent_llm_mm/docs/releases/2026-03-31-initial-public-release.md)
+  - 首次公开发布的 release note 草稿
+
 ## 3. 接入与验证文档
 
 - [local-mcp-integration-2026-03-26.md](/D:/Code/agent_llm_mm/docs/local-mcp-integration-2026-03-26.md)
