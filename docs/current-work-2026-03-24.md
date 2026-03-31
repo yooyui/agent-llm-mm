@@ -1,5 +1,7 @@
 # 当前工作说明（2026-03-24）
 
+> 说明：本文档保留为 `2026-03-24` 阶段快照，其中关于 reflection、默认数据库路径和测试统计的结论已被后续实现推进。当前仓库状态请以 [current-work-2026-03-25.md](/D:/Code/agent_llm_mm/docs/current-work-2026-03-25.md) 为准。
+
 ## 概览
 
 - 当前工作分支：`codex/self-agent-mcp`

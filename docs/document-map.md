@@ -57,6 +57,10 @@
 
 - [2026-03-27-plan.md](/D:/Code/agent_llm_mm/docs/2026-03-27-plan.md)
   - 某一轮阶段计划，不等于当前稳定路线图
+- [2026-03-28-openai-compatible-provider-claude-code.md](/D:/Code/agent_llm_mm/docs/superpowers/plans/2026-03-28-openai-compatible-provider-claude-code.md)
+  - 较早的 provider 实现计划草稿，已被后续配置文件方案替代
+- [2026-03-28-openai-compatible-provider-claude-code-design.md](/D:/Code/agent_llm_mm/docs/superpowers/specs/2026-03-28-openai-compatible-provider-claude-code-design.md)
+  - 较早的 provider 设计稿，保留用于追溯，不代表当前最终实现
 
 ## 5. 阅读建议
 

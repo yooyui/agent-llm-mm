@@ -1,329 +1,232 @@
-# 功能实现比对（2026-03-24）
+# 功能实现比对（2026-03-24，按 2026-03-27 实现复核更新）
+
+> 说明：本文档是“原始设计日志”与 `2026-03-27` 时点实现之间的历史比对，不是当前仓库最新状态说明。其关于“真实模型 provider 仍未接入”等表述属于当时判断。当前稳定状态请以 [project-status.md](/D:/Code/agent_llm_mm/docs/project-status.md) 与 [README.md](/D:/Code/agent_llm_mm/README.md) 为准。
 
 ## 比对对象
 
 本文件用于对比以下两份材料：
 
 - 原始设计日志：[llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md)
-- 当前实现说明：[current-work-2026-03-24.md](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/docs/current-work-2026-03-24.md)
+- 当前实现说明：[current-work-2026-03-25.md](/D:/Code/agent_llm_mm/docs/current-work-2026-03-25.md)
 
 比对基线：
 
-- 当前工作分支：`codex/self-agent-mcp`
-- 当前实现提交：`d23af005b50297cf557b9eede2f080fd1672b1a0`
+- 当前分支：`master`
+- 当前实现提交：`16599bfe94a41eaf9eb6efa46d8934a86e8ea7b7`
 
 ## 总结结论
 
-当前分支已经实现了原始设计日志中“最小可运行回路”的核心骨架，即：
+当前仓库已经实现了原始设计日志中“最小可运行回路”的工程骨架：
 
-`events -> claims -> episodes -> self_snapshot -> decision -> reflection`
+`events -> claims -> self_snapshot -> decision -> reflection`
 
-但当前实现仍然是最小闭环，不是原始日志里描述的“完整自我机制”。如果把原始日志看作完整目标，那么当前状态更准确的定位是：
+而且相比更早阶段，当前实现已经额外补上了两块关键能力：
 
-- 已完成：最小运行链路、关键不变量、MCP stdio 暴露、SQLite 持久化、门控决策、基础反思路径
-- 部分完成：snapshot 控制、episode 建模、reflection 策略、持久化作用域
-- 尚未完成：namespace 体系、丰富 schema、identity/commitment 真正反思修订、多层 memory 体系、程序性记忆
+- `namespace` 最小闭环
+- 显式 evidence 驱动的 inferred replacement reflection
 
-因此，[current-work-2026-03-24.md](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/docs/current-work-2026-03-24.md) 作为“当前分支实现状态说明”是成立的；但如果把它理解为“原始设计目标完成说明”，则仍然偏乐观。
+但如果把原始设计日志视为“完整自我机制”的目标，那么当前状态仍然只能定位为：
 
-## 一、已实现能力
+- 已完成：MVP 工程闭环、本机 MCP 接入、关键不变量、SQLite 持久化、最小 evidence-aware reflection
+- 部分完成：snapshot 预算、episodes、reflection 产品语义、默认存储作用域
+- 尚未完成：rich schema、identity/commitment 深层修订、多层 memory 完整形态、真实模型能力
+
+## 一、已实现
 
 ### 1. 最小运行回路已落地
 
-原始日志给出的最小运行链路见：
+当前代码已经具备从事件到反思的最小链路：
 
-- [raw-log#L1155](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1155) 到 [raw-log#L1161](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1161)
-
-当前实现中的对应位置：
-
-- 事件写入与 claim 派生：[ingest_interaction.rs:66](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/application/ingest_interaction.rs#L66)
-- snapshot 组装：[build_self_snapshot.rs:20](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/application/build_self_snapshot.rs#L20)
-- 决策前门控：[decide_with_snapshot.rs:20](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/application/decide_with_snapshot.rs#L20)
-- 反思写回：[run_reflection.rs:40](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/application/run_reflection.rs#L40)
+- `ingest_interaction` 负责写入事件并派生命题
+- `build_self_snapshot` 从持久化数据构建快照
+- `decide_with_snapshot` 在 gate 通过后调用模型接口
+- `run_reflection` 负责争议化或 supersede 现有 claim
 
 判断：已实现。
 
-### 2. `identity_core` 不能被普通 ingest 直接改写
+### 2. `namespace` 最小体系已落地
 
-原始日志要求：
+这项能力在更早的比对里曾被判定为未实现，但按当前仓库复核后，这个结论已经不成立。
 
-- [raw-log#L1140](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1140)
+当前实现已经具备：
 
-当前实现：
+- `self`
+- `world`
+- `user/<id>`
+- `project/<id>`
 
-- [identity_core.rs:18](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/identity_core.rs#L18) 到 [identity_core.rs:22](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/identity_core.rs#L22)
+并且这些语义已经贯穿：
 
-判断：已实现，而且边界清晰。
+- domain 校验
+- DTO 输入解析
+- SQLite `CHECK` 约束
+- legacy schema 回填
 
-### 3. 推断型命题具备证据门槛
+判断：已实现最小版。
 
-原始日志要求：
+### 3. `identity_core` 不能被普通 ingest 直接改写
 
-- [raw-log#L1139](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1139)
+当前 `identity_core` 仍然有非常强的保护边界：
 
-当前实现：
+- 普通 ingest 不能直接更新 identity
+- baseline commitment 也会阻断直接写 identity 的动作
 
-- [claim.rs:41](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/claim.rs#L41) 到 [claim.rs:46](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/claim.rs#L46)
+判断：已实现。
 
-补充说明：
+### 4. 推断型命题具备证据门槛
 
-- ingest 路径会对 draft claim 做证据校验：[ingest_interaction.rs:51](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/application/ingest_interaction.rs#L51)
-- reflection 路径已收紧为 fail-closed：[run_reflection.rs:56](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/application/run_reflection.rs#L56)
+当前实现里：
 
-判断：已实现最小版，但不是最终理想语义。
+- ingest 路径对 inferred claim 仍要求证据门槛
+- reflection 路径已经支持显式 evidence event id 列表
+- evidence event id 不存在时，会在应用层返回参数错误
 
-### 4. commitment 在行动前参与门控
+因此“推断型内容必须有外部支撑”这条最小不变量已经成立。
 
-原始日志要求：
+判断：已实现最小版。
 
-- [raw-log#L1142](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1142)
+### 5. commitment 在行动前参与门控
 
-当前实现：
+当前快照会携带 commitment，`decide_with_snapshot` 在调用模型前会先过 gate：
 
-- snapshot 携带 commitment：[build_self_snapshot.rs:27](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/application/build_self_snapshot.rs#L27)
-- gate 判断：[commitment_gate.rs:8](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/rules/commitment_gate.rs#L8)
-- 具体冲突规则：[conflict.rs:1](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/rules/conflict.rs#L1)
-- 决策前阻断：[decide_with_snapshot.rs:27](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/application/decide_with_snapshot.rs#L27)
+- 冲突动作会被直接阻断
+- 被阻断时不会继续调用模型
+- 这条路径已经有真实 `stdio` E2E 覆盖
 
-判断：已实现，但规则仍是单条 baseline 规则，不是完整 commitment 系统。
+判断：已实现，但规则仍非常基础。
 
-### 5. snapshot 构建必须带 evidence
+### 6. 快照构建必须带 evidence
 
-原始日志要求：
+当前 `self_snapshot` 构建要求：
 
-- [raw-log#L1147](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1147)
+- evidence 不能为空
+- evidence 会去重
+- evidence 会按预算截断
 
-当前实现：
+判断：已实现最小版。
 
-- snapshot 验证与 evidence 去重保底：[snapshot_builder.rs:6](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/rules/snapshot_builder.rs#L6)
-
-判断：已实现最小版，当前是“必须带 evidence reference”，还不是“回拉结构化原始证据”。
-
-## 二、部分实现能力
+## 二、部分实现
 
 ### 1. `self_snapshot` 已有，但预算模型还是简化版
 
-原始日志期望：
-
-- [raw-log#L1141](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1141)
-
-当前实现：
-
-- [snapshot.rs:3](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/snapshot.rs#L3)
-- [snapshot_builder.rs:8](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/rules/snapshot_builder.rs#L8)
-
-差异：
-
-- 当前只有统一的 `SnapshotBudget`
-- 实际仅用于 evidence 截断
-- 没有对 identity、commitments、claims、episodes 分别施加独立预算
+当前只有统一 `SnapshotBudget`，主要控制 evidence 的数量，不是对多层内容分别控预算。
 
 判断：部分实现。
 
-### 2. `episodes` 已存在，但还不是原始日志里的“自传闭环”
+### 2. `episodes` 已存在，但仍偏占位
 
-原始日志期望：
+当前 episode 语义主要体现在：
 
-- [raw-log#L1114](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1114)
-- [raw-log#L1144](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1144)
+- `episode_reference`
+- `episode_reference -> event_id` 关联
 
-当前实现：
+尚未形成原始日志中的 richer episode/autobiography 层。
 
-- 领域对象：[episode.rs:3](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/episode.rs#L3)
-- 持久化层实际只有 `episode_reference -> event_id` 关联：[schema.rs:28](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/adapters/sqlite/schema.rs#L28)
+判断：部分实现。
 
-差异：
+### 3. reflection 已有，但只覆盖 claim 级别修订
 
-- 目前没有 `goal/action_summary/outcome/lesson/self_effect`
-- 也没有完整 episode 聚合流程
-- 当前 snapshot 里只有 episode 引用字符串
+当前 reflection 能做的事情主要是：
 
-判断：只有占位式实现。
+- `Conflict` 时把旧 claim 标为 `Disputed`
+- `Failure` 路径下 supersede 旧 claim，并可带 replacement claim
+- 记录最小审计信息
 
-### 3. reflection 机制已存在，但只覆盖 claim 冲突与 supersede
+它还不能：
 
-原始日志期望：
+- 修订 `identity_core`
+- 修订 `commitments`
+- 做周期性反思
+- 做 richer reasoning
 
-- [raw-log#L1145](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1145)
-- [raw-log#L1161](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1161)
-
-当前实现：
-
-- 触发与决策枚举：[reflection_policy.rs:1](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/rules/reflection_policy.rs#L1)
-- 反思应用逻辑：[run_reflection.rs:40](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/application/run_reflection.rs#L40)
-
-差异：
-
-- 支持 `Conflict`、`Failure`、`Manual`
-- 不支持原始日志中的周期性反思
-- 不会修订 `identity_core`
-- 不会修订 `commitments`
-- 反思记录也只有最简 `summary`
-
-判断：部分实现，且明显偏最小化。
+判断：部分实现。
 
 ### 4. 默认 SQLite 持久化已落地，但作用域策略未定型
 
-当前实现说明在 [current-work-2026-03-24.md#L25](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/docs/current-work-2026-03-24.md#L25) 到 [current-work-2026-03-24.md#L33](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/docs/current-work-2026-03-24.md#L33) 已说明默认持久化行为。
+当前默认路径已经是文件型 SQLite，能保证跨重启连续性，但默认语义尚未正式收口为：
 
-当前代码：
+- 按用户共享
+- 按项目隔离
+- 按 workspace 隔离
 
-- [config.rs:25](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/support/config.rs#L25)
+判断：部分实现。
 
-差异：
+## 三、未实现
 
-- 当前默认路径是固定 temp 文件
-- 具备跨重启连续性
-- 但尚未定义为“按用户共享”还是“按项目隔离”
+### 1. richer schema 仍未落地
 
-判断：已可用，但不是最终产品语义。
+原始日志中大量 richer 字段还没有进入当前 schema，包括但不限于：
 
-## 三、未实现能力
-
-### 1. `namespace` 体系未落地
-
-原始日志明确要求：
-
-- [raw-log#L1128](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1128)
-- [raw-log#L1138](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1138)
-
-当前实现：
-
-- 只有粗粒度 `Owner`：[types.rs:1](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/types.rs#L1)
-
-未实现点：
-
-- `self`
-- `user/<id>`
-- `project/<id>`
-- `world`
-
-这类可路由 namespace 当前都不存在。
-
-### 2. 丰富 schema 基本未落地
-
-原始日志为各层对象定义了较丰富字段：
-
-- [raw-log#L1109](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1109) 到 [raw-log#L1115](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1115)
-
-当前 SQLite schema：
-
-- [schema.rs:1](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/adapters/sqlite/schema.rs#L1) 到 [schema.rs:51](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/adapters/sqlite/schema.rs#L51)
-
-缺失的代表性字段包括：
-
-- `namespace`
-- `kind`
 - `confidence`
 - `stability`
-- `valid_from` / `valid_to`
-- `hardness`
+- `valid_from`
+- `valid_to`
 - `priority`
-- `scope`
-- `activation_condition`
-- `expiry_condition`
 - `goal`
 - `outcome`
 - `lesson`
 - `self_effect`
-- `trigger`
-- `input_refs`
-- `decision`
 - `rationale`
 
-### 3. `identity_core` 仍是字符串列表，不是慢变量层
+判断：未实现。
 
-原始日志期望：
+### 2. `identity_core` 仍不是慢变量层
 
-- [raw-log#L1112](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1112)
+当前 `identity_core` 仍更接近：
 
-当前实现：
+- 字符串列表
+- 基线身份声明
 
-- [identity_core.rs:3](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/domain/identity_core.rs#L3)
+还不是带维度、稳定性和生效区间的 slow-variable 层。
 
-未实现点：
+判断：未实现。
 
-- `dimension`
-- `confidence`
-- `stability_score`
-- `status`
-- `effective_from`
-- `effective_to`
+### 3. reflection 还不能真正修订 `identity_core` 或 `commitments`
 
-### 4. reflection 还不能真正修订 `identity_core` 或 `commitments`
+当前 reflection 只会更新 claim 状态以及 replacement claim，不会形成更深层的自我修订规则。
 
-原始日志要求：
+判断：未实现。
 
-- [raw-log#L1140](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1140)
-- [raw-log#L1161](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L1161)
+### 4. working memory / procedural memory 仍未独立建模
 
-当前实现：
+当前覆盖更多集中在 episodic / semantic 的最小子集，尚未形成更完整的多层 memory 体系。
 
-- `run_reflection` 只更新 claim 状态和 replacement claim：[run_reflection.rs:56](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/src/application/run_reflection.rs#L56)
+判断：未实现。
 
-未实现点：
+### 5. 真实模型 provider 仍未接入
 
-- identity_core 形成或修订规则
-- commitments 重写或失效规则
-- 周期阈值触发反思
+`decide_with_snapshot` 仍依赖 mock model，因此不能把它视为生产级决策能力。
 
-### 5. 四层 memory 模型只覆盖了部分层
+判断：未实现。
 
-原始日志的四层划分见：
+## 四、当前进度解读
 
-- [raw-log#L468](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L468)
-- [raw-log#L487](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L487)
-- [raw-log#L506](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L506)
-- [raw-log#L526](/D:/Code/agent_llm_mm/docs/llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md#L526)
+如果只看工程闭环，当前进度已经明显超过“概念验证”阶段：
 
-当前覆盖情况：
+- 本机 `stdio` MCP 服务已可启动
+- SQLite 已可落盘
+- `doctor` / `serve` 已可用
+- 工具暴露面稳定
+- 自动化 E2E 已覆盖关键链路
 
-- `episodic / semantic`：有最小子集
-- `working memory`：未单独建模
-- `procedural memory`：基本未落地
+但如果对照原始设计日志的完整目标，当前仍处于“骨架完整、语义未满”的阶段。更准确的说法是：
 
-## 四、对当前工作说明文档的判断
-
-[current-work-2026-03-24.md](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/docs/current-work-2026-03-24.md) 在以下方面是准确的：
-
-- 已清楚记录最后一轮修复项
-- 已清楚记录当前实现边界
-- 已承认后续仍需补 reflection evidence-aware、默认 DB 作用域、baseline policy 上移等事项
-
-尤其这些位置和本次比对高度一致：
-
-- 反思路径证据约束：[current-work-2026-03-24.md#L14](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/docs/current-work-2026-03-24.md#L14)
-- 默认 stdio SQLite：[current-work-2026-03-24.md#L25](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/docs/current-work-2026-03-24.md#L25)
-- commitment gate：[current-work-2026-03-24.md#L35](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/docs/current-work-2026-03-24.md#L35)
-- 后续建议：[current-work-2026-03-24.md#L145](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/docs/current-work-2026-03-24.md#L145)
-
-但这份文档没有系统列出与原始日志之间的结构性差距，尤其没有显式强调：
-
-- `namespace` 缺失
-- 丰富 schema 缺失
-- `episodes` 仍非自传闭环
-- reflection 不能修订 `identity_core` / `commitments`
-- working/procedural memory 未落地
-
-因此，这份说明文档适合作为“当前分支状态说明”，不适合作为“原始设计目标完成说明”。
+“原始设计日志的 MVP 工程化落地已经完成，但 richer memory semantics 和产品语义仍在后续规划中。”
 
 ## 五、最终结论
 
-如果对照原始日志看，当前实现已经到达：
+当前分支的准确定位应当是：
 
-- 一个可信的最小可运行闭环
-- 一个有测试、有持久化、有真实 stdio E2E 的工程骨架
-- 一个已把关键错误路径封住的最小 self-agent memory 原型
+“一个具备 namespace、持久化、MCP `stdio` 接入、evidence-aware reflection 最小正向路径和自动化验证的 self-agent memory MVP”
 
-但距离原始日志中的完整目标，仍至少还差下面几块：
+而不是：
 
-1. `namespace` 与归属隔离
-2. 更丰富的 memory schema
-3. 完整 episode / autobiography 层
-4. evidence-aware reflection
-5. reflection 驱动的 identity / commitment 修订
-6. 更完整的多层 memory 体系
+“原始设计日志的完整实现”
 
-所以，当前分支的准确定位应当是：
+因此，说明文档应该明确标注：
 
-“原始设计日志的 MVP 工程化落地”，而不是“原始设计日志的完整实现”。
+- 哪些能力已经实现
+- 哪些能力只是最小化版本
+- 哪些能力仍是后期规划
+
+只有这样，文档才不会对当前实现边界做出过度承诺。

@@ -1,116 +1,165 @@
-# 当前工作说明（2026-03-25）
+# 当前工作说明（2026-03-25，按 2026-03-27 实现复核更新）
+
+> 说明：本文档保留为 `2026-03-27` 视角下的实现快照。其关于“真实模型 provider 尚未接入”“测试总数为 50”等结论属于当时判断，不代表当前主线最新状态。当前稳定入口请以 [README.md](/D:/Code/agent_llm_mm/README.md)、[project-status.md](/D:/Code/agent_llm_mm/docs/project-status.md) 和 [roadmap.md](/D:/Code/agent_llm_mm/docs/roadmap.md) 为准。
 
 ## 概览
 
-- 当前工作分支：`codex/self-agent-mcp`
-- 当前提交基线：`ff2f5eb661fdf516b8ce28d24fc28d9e0682f543`
-- 当前状态：工作树有未提交改动，但已完成本地 fresh 验证
-- 运行形态：Rust 单 crate，MCP stdio 服务，架构为 `Functional Core + Imperative Shell`
+- 当前分支：`master`
+- 当前提交基线：`16599bfe94a41eaf9eb6efa46d8934a86e8ea7b7`
+- 当前状态：工作树干净，已按当前仓库状态完成源码复核与全量测试复核
+- 运行形态：Rust 单 crate，MCP `stdio` 服务，架构为 `Functional Core + Imperative Shell`
 
-本轮工作的目标，是在上一轮 `namespace` 垂直切片的基础上继续收口两类问题：
+本说明不再只描述单一开发轮次，而是汇总截至 `2026-03-27` 的当前实现状态，用于回答三个问题：
 
-1. 把 SQLite 中 `owner <-> namespace` 的 SQL 规则抽成单一来源，减少 schema / migration / store 三处漂移风险
-2. 把 `run_reflection` 从“fail-closed 拒绝 inferred replacement”推进到“显式 evidence 输入驱动的 evidence-aware reflection”，并补齐坏输入的参数级校验
+1. 当前仓库到底已经实现了什么
+2. 还停留在哪些最小化或占位式语义
+3. 后续应该优先往哪里继续推进
 
-## 本轮已完成内容
+## 当前进度判断
 
-### 1. SQLite `owner/namespace` 规则已抽成单一 SQL 来源
+如果把整体工作拆成三个层次，当前进度可以这样判断：
 
-本轮把 SQLite 适配层里重复的规则定义收敛到了 `schema` 模块：
+- 工程 MVP 闭环：已完成
+  - `events -> claims -> self_snapshot -> decision -> reflection` 的最小链路已经打通
+- 本机 MCP 接入：已完成
+  - `stdio`、SQLite、`doctor` / `serve`、自动化 E2E 都已经可用
+- 完整产品语义：部分完成
+  - 目前仍是“可验证的最小闭环”，不是原始设计里更丰富的完整自我机制
 
-- `owner_namespace_scope` 约束名集中定义
-- `claims` 表建表 SQL 通过共享 builder 生成
-- legacy `claims` 迁移时的默认 namespace 回填表达式集中定义
-- `store` 层不再内嵌 owner/namespace 规则字面量
+## 已实现
 
-这样带来的直接收益是：
+### 1. `namespace` 已在 domain / SQLite / MCP 三层闭环
 
-- fresh bootstrap 与 legacy rebuild 使用同一套 SQL 规则
-- 后续修改 owner/namespace 兼容性时，只需要改一个地方
-- 避免 schema 与 migration 语义漂移
+当前仓库已经不是“只有 `Owner`、没有 `Namespace`”的状态，而是具备最小可用的 namespace 体系：
 
-同时保留了上一轮已经落地的数据库级硬约束：
+- domain 层已有 `Namespace`
+- 支持 `self`
+- 支持 `world`
+- 支持 `user/<id>`
+- 支持 `project/<id>`
+- `ClaimDraft` 已校验 `owner <-> namespace` 兼容关系
+- SQLite `claims` 表有数据库级 `CHECK` 约束
+- MCP DTO 已支持显式传入 `namespace`
 
-- fresh 数据库的 `claims` 表继续具备 `CHECK` 约束
-- legacy 数据库重建后也恢复相同的 `CHECK` 约束
-- 非法 `owner/namespace` 组合会被数据库直接拒绝
+因此，“owner/namespace 的最小路由语义”已经实现，不再属于待办项。
 
 ### 2. `run_reflection` 已支持显式 evidence 驱动的 inferred replacement
 
-本轮为 `run_reflection` 新增了显式证据输入能力：
+当前 `run_reflection` 已具备下面这些语义：
 
-- `ReflectionInput` 新增 `replacement_evidence_event_ids`
+- `ReflectionInput` 支持 `replacement_evidence_event_ids`
 - 当 replacement claim 为 `Mode::Inferred` 时，不再一律 fail-closed
-- 只要显式 evidence 列表满足校验条件，就允许 inferred replacement 通过
-- replacement claim 写入成功后，会同步写入对应的 `evidence_links`
+- 只要显式 evidence event id 列表满足校验条件，就允许 inferred replacement
+- replacement claim 成功写入后，会同步写入 `evidence_links`
+- 传入不存在的 event id 时，会在应用层返回 `invalid_params`
 
-当前采用的是最小闭环设计：
+这意味着 reflection 已经从“只有拒绝分支”推进到“显式 evidence 驱动的最小正向分支”。
 
-- 不做复杂 evidence weight
-- 不做自动相似度检索
-- 不扩展到更复杂的 reflection policy
-- 只使用显式传入的 event id 列表完成证据门槛与可追溯性闭环
+### 3. SQLite 规则已收敛到单一来源
 
-这样既保留了 KISS / YAGNI，也把上一轮“只有拒绝分支，没有允许分支”的状态推进到了真正可验证的 evidence-aware 路径。
+当前 SQLite 适配层中，`owner <-> namespace` 的关键 SQL 规则已集中到 `schema` 模块：
 
-### 3. 缺失 evidence event id 现在会在应用层被拒绝
+- `claims` 表建表 SQL 通过共享 builder 生成
+- legacy `claims` 迁移时的 namespace 回填表达式也来自共享定义
+- `store` 层不再内嵌重复 SQL 片段
 
-review 过程中发现一个关键缺口：
+这降低了 schema / migration / store 三处漂移的风险，并且有测试锁住。
 
-- `replacement_evidence_event_ids` 虽然控制了 inferred replacement 的证据数量
-- 但如果传入的 event id 根本不存在，错误会在 SQLite 外键阶段才爆出
-- 这种错误原先会表现为 `-32603 internal_error`
+### 4. MCP `stdio` 接入链已经可用
 
-本轮对此做了修复：
+当前仓库已经具备完整的本机接入骨架：
 
-- `EventStore` 新增 `has_event` 能力
-- `run_reflection` 在进入事务写入前，先检查每个 evidence event id 是否存在
-- 缺失 event id 时直接返回 `AppError::InvalidParams`
-- stdio 路径会将其映射为 `-32602 invalid_params`
+- `scripts/agent-llm-mm.ps1` 支持 `doctor` / `serve`
+- `doctor` 会验证 SQLite bootstrap 和 runtime 初始化
+- `serve` 会启动 MCP `stdio` 服务
+- 当前 MCP 暴露 4 个工具：
+  - `ingest_interaction`
+  - `build_self_snapshot`
+  - `decide_with_snapshot`
+  - `run_reflection`
 
-这意味着当前行为已经从“数据库层被动兜底”升级为“应用层主动校验 + 协议层正确报错”。
+### 5. baseline commitment gate 已真实生效
 
-### 4. 测试文档已补齐
+当前 `decide_with_snapshot` 并不是完全空壳：
 
-本轮还新增了测试文档：
+- snapshot 会带上 commitments
+- baseline commitment 已可从 fresh runtime 读出
+- forbidden action 会在模型调用前被 gate 阻断
+- 对应行为已由真实 `stdio` E2E 覆盖
 
-- [testing-guide-2026-03-24.md](/D:/Code/agent_llm_mm/.worktrees/codex-self-agent-mcp/docs/testing-guide-2026-03-24.md)
+## 部分实现
 
-文档覆盖了：
+### 1. `decide_with_snapshot` 仍然依赖 mock model
 
-- 全量验证命令
-- `sqlite_store` / `mcp_stdio` / `application_use_cases` 的定向测试方式
-- `evidence-aware reflection` 的自动化与手工验证方式
-- `replacement_evidence_event_ids` 必须引用已持久化 event 的前置条件
-- 常见失败与排查路径
+当前决策链分成两段：
 
-## 本轮涉及的核心文件
+- 前半段：真实 gate
+- 后半段：mock 决策
 
-- `src/adapters/sqlite/schema.rs`
-- `src/adapters/sqlite/store.rs`
-- `src/application/run_reflection.rs`
-- `src/interfaces/mcp/dto.rs`
-- `src/interfaces/mcp/server.rs`
-- `src/ports/event_store.rs`
-- `src/ports/mod.rs`
-- `tests/application_use_cases.rs`
-- `tests/failure_modes.rs`
-- `tests/mcp_stdio.rs`
-- `tests/sqlite_store.rs`
-- `docs/testing-guide-2026-03-24.md`
+因此它更适合作为流程调试和集成验证能力，而不是可以正式对外承诺的决策引擎。
+
+### 2. `self_snapshot` 预算模型仍是简化版
+
+当前的 `SnapshotBudget` 只有一个统一上限，实际效果主要体现在：
+
+- evidence 去重
+- evidence 截断
+- 至少保留一条 evidence
+
+它还不是对 `identity / commitments / claims / episodes` 分别施加预算的完整模型。
+
+### 3. `episodes` 仍是轻量引用层
+
+当前实现里，episode 更多是：
+
+- 一个 `episode_reference`
+- 关联若干 `event_id`
+
+它还不是原始设计中更完整的 autobiography/episode 层，目前没有：
+
+- `goal`
+- `action_summary`
+- `outcome`
+- `lesson`
+- `self_effect`
+
+### 4. 默认数据库路径已可用，但作用域语义未定型
+
+当前默认配置已经从“内存库”推进为“文件型 SQLite”：
+
+- 重启后状态可持续
+- 可以用环境变量覆盖数据库路径
+- 本机接入已具备落盘基础
+
+但还没有把默认路径正式定义为：
+
+- 按用户共享
+- 按项目隔离
+- 按 workspace 隔离
+
+## 未实现
+
+下面这些能力仍然没有实现，文档中不应把它们写成“已经具备”：
+
+- 自动 evidence lookup
+- evidence weight / relation 等 richer evidence 语义
+- reflection 对 `identity_core` 的形成或修订
+- reflection 对 `commitments` 的重写、失效或升级
+- richer `identity_core` schema
+- richer `claim` / `episode` / `reflection` schema
+- working memory / procedural memory 的独立建模
+- 真实 LLM provider
 
 ## 本地验证结果
 
-以下验证已在当前工作树上 fresh 运行通过：
+以下验证已在当前仓库状态上 fresh 运行通过：
 
-- `cargo fmt --check`
-- `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo test`
 
 测试结果摘要：
 
 - `application_use_cases`: 11 passed
-- `bootstrap`: 4 passed
+- `bootstrap`: 9 passed
 - `decision_flow`: 2 passed
 - `domain_invariants`: 4 passed
 - `domain_snapshot`: 6 passed
@@ -118,92 +167,47 @@ review 过程中发现一个关键缺口：
 - `mcp_stdio`: 7 passed
 - `sqlite_store`: 8 passed
 
-本轮新增或强化的关键测试包括：
+合计：50 个测试通过。
+
+当前最关键的回归点包括：
 
 - `sqlite_owner_namespace_sql_rules_have_single_source`
 - `reflection_accepts_inferred_replacement_with_explicit_evidence`
 - `reflection_rejects_missing_replacement_evidence_event_ids`
 - `inferred_replacement_reflection_with_evidence_is_accepted_over_stdio`
 - `missing_replacement_evidence_event_ids_are_invalid_params_over_stdio`
+- `fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment`
 
-## 子代理执行与审查结论
-
-### 本轮使用的子代理
-
-- SQLite 规则抽取实现子代理：`019d1f4a-8fa6-7b53-bdd6-6c18e3a03495`
-- 代码审查子代理：`019d1f58-f1b0-7532-a2c0-564c5b4ad2c2`
-
-### SQLite 规则抽取结论
-
-子代理将 owner/namespace 的 SQL 规则成功集中到 `schema` 层，并通过共享接口供 `store` 使用。其工作产出与主线程的 reflection 改动已完成集成，未发现明显冲突。
-
-### Review 结论
-
-review 最初指出了 1 个需要修复的 P1：
-
-- `replacement_evidence_event_ids` 只做数量校验，没有在应用层验证 event 是否存在
-- 坏输入会拖到 SQLite 外键阶段，再被映射成 `internal_error`
-
-该问题已在本轮修复，并新增两条回归测试锁住：
-
-- application：`reflection_rejects_missing_replacement_evidence_event_ids`
-- stdio：`missing_replacement_evidence_event_ids_are_invalid_params_over_stdio`
-
-修复后，当前这一轮没有保留阻塞性 findings。
-
-## 当前工作的总体判断
+## 当前结论
 
 如果评价标准是：
 
-- `owner/namespace` SQL 规则是否已经去重并形成单一来源
-- inferred replacement 是否已经具备显式 evidence 驱动的正向分支
-- 坏 evidence id 输入是否会得到参数级错误而不是基础设施错误
+- namespace 最小闭环是否已落地
+- evidence-aware reflection 是否已有显式输入驱动的正向路径
+- SQLite / MCP `stdio` / 脚本入口是否已具备本机可接入的最小稳定性
 
-那么本轮答案是：已经完成，并且有本地验证支撑。
+那么当前答案是：已经达到，并且有自动化验证支撑。
 
-如果评价标准提升为“reflection 是否已经是完整产品语义”，答案仍然是否定的。当前实现虽然已经从 fail-closed 推进到 evidence-aware，但仍然属于最小版本：
+如果评价标准提升为“是否已经实现完整自我机制产品语义”，答案仍然是否定的。当前仓库更准确的定位是：
 
-- 只支持显式 evidence event id 列表
-- 不支持自动 evidence lookup
-- 不支持 richer reflection reasoning
-- 不涉及 identity_core / commitments 的更深层修订策略
+“一个已完成工程闭环和本机接入闭环的 self-agent memory MVP”，而不是“原始设计目标的完整实现”。
 
-## 后续建议
+## 后期规划
 
-### 建议 1：把 reflection 的 evidence lookup 从“显式输入”升级为“显式输入 + 可选查询”
+### 近期优先项
 
-当前最小设计已经可用，但仍依赖调用方先知道 event id。下一步可考虑：
+1. 明确默认 SQLite 路径的作用域语义，并补自动化测试
+2. 把测试文档继续升级为更接近 release gate 的操作说明
+3. 明确哪些工具可以作为正式接入能力，哪些继续保留为实验能力
 
-- 保留显式输入分支
-- 增加可选的 store 查询能力
-- 在查询结果可证明存在时，允许 inferred replacement 通过
+### 中期演进项
 
-### 建议 2：把 `EventStore::has_event` 扩展为更丰富的 evidence 查询接口
+1. 把 reflection 从“显式 evidence 输入”推进到“显式输入 + 可选查询”
+2. 把 `EventStore::has_event` 扩展为更明确的 evidence-oriented 查询接口
+3. 逐步丰富 `identity_core`、`episodes` 与相关 schema
 
-如果后续要支持：
+### 后期规划
 
-- 至少两条独立证据
-- 证据去重
-- evidence weight / relation
-
-那么单纯的 `has_event` 不够，需要更明确的 evidence-oriented port。
-
-### 建议 3：把 testing guide 继续升级为 release gate 文档
-
-当前测试文档已经适合日常开发使用。后续如果这条分支要长期维护，建议继续补：
-
-- 提交前清单
-- 典型坏输入样例
-- 默认数据库作用域验证步骤
-
-## 结论
-
-当前这条分支已经达到：
-
-- `namespace` 规则在 domain / SQLite / MCP 三层上的闭环
-- SQLite owner/namespace 规则的单一来源化
-- evidence-aware reflection 的最小正向闭环
-- 缺失 evidence id 的参数级报错收口
-- 配套测试文档可直接供后续开发使用
-
-它仍不是“完整自我机制”的最终形态，但已经把本轮两个明确目标都推进到了可验证、可继续集成的状态。
+1. 接入真实模型 provider，替换 mock 决策路径
+2. 补 working memory / procedural memory 的独立层次
+3. 评估更丰富的 transport、配置与数据隔离策略是否值得进入产品化路线
