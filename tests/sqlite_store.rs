@@ -6,9 +6,11 @@ use agent_llm_mm::{
         reflection::Reflection,
         types::{EventKind, Mode, Namespace, Owner},
     },
+    error::AppError,
     ports::{
-        ClaimStatus, ClaimStore, CommitmentStore, IdentityStore, IngestTransactionRunner,
-        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
+        ClaimStatus, ClaimStore, CommitmentStore, EventStore, EvidenceQuery, IdentityStore,
+        IngestTransactionRunner, ReflectionTransactionRunner, StoredClaim, StoredEvent,
+        StoredReflection,
     },
 };
 use chrono::{DateTime, Utc};
@@ -46,6 +48,73 @@ async fn sqlite_store_bootstraps_all_tables() {
         claims_sql.contains("CHECK"),
         "claims table should include a database-level namespace compatibility check"
     );
+}
+
+#[tokio::test]
+async fn sqlite_query_evidence_event_ids_is_recent_first_and_filtered() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "evt-world-old".to_string(),
+            now,
+            Event::new(Owner::World, EventKind::Observation, "older world obs"),
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "evt-user-note".to_string(),
+            now + chrono::Duration::seconds(60),
+            Event::new(Owner::User, EventKind::Conversation, "user conversation"),
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "evt-world-new".to_string(),
+            now + chrono::Duration::seconds(120),
+            Event::new(Owner::World, EventKind::Observation, "newer world obs"),
+        ))
+        .await
+        .unwrap();
+
+    let results = context
+        .store
+        .query_evidence_event_ids(EvidenceQuery {
+            owner: Some(Owner::World),
+            kind: Some(EventKind::Observation),
+            limit: Some(2),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        results,
+        vec!["evt-world-new".to_string(), "evt-world-old".to_string()]
+    );
+}
+
+#[cfg(target_pointer_width = "64")]
+#[tokio::test]
+async fn sqlite_query_evidence_event_ids_rejects_limit_above_i64_max() {
+    let context = test_support::new_sqlite_store().await;
+    let excessive_limit = (i64::MAX as u64 + 1) as usize;
+
+    let result = context
+        .store
+        .query_evidence_event_ids(EvidenceQuery {
+            owner: None,
+            kind: None,
+            limit: Some(excessive_limit),
+        })
+        .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
 }
 
 #[test]
@@ -304,6 +373,220 @@ async fn sqlite_reflection_transactions_commit_and_roll_back_as_expected() {
 }
 
 #[tokio::test]
+async fn sqlite_reflection_transactions_replace_identity_and_commitments_atomically() {
+    let context = test_support::new_sqlite_store().await;
+    test_support::seed_claim(&context.store, "claim-old")
+        .await
+        .unwrap();
+    context
+        .store
+        .save_identity(IdentityCore::new(vec![
+            "identity:self=architect".to_string(),
+            "identity:style=rigorous".to_string(),
+        ]))
+        .await
+        .unwrap();
+
+    let mut ok_tx = context.store.begin_reflection_transaction().await.unwrap();
+    let loaded_identity = ok_tx.load_identity().await.unwrap();
+    let loaded_commitments = ok_tx.load_commitments().await.unwrap();
+    assert_eq!(
+        loaded_identity.canonical_claims(),
+        &[
+            "identity:self=architect".to_string(),
+            "identity:style=rigorous".to_string(),
+        ]
+    );
+    assert_eq!(
+        loaded_commitments,
+        vec![agent_llm_mm::domain::commitment::Commitment::new(
+            Owner::Self_,
+            "forbid:write_identity_core_directly",
+        )]
+    );
+
+    ok_tx
+        .replace_identity(IdentityCore::new(vec![
+            "identity:self=staff_architect".to_string(),
+            "identity:style=evidence-first".to_string(),
+        ]))
+        .await
+        .unwrap();
+    ok_tx
+        .replace_commitments(vec![
+            agent_llm_mm::domain::commitment::Commitment::new(
+                Owner::Self_,
+                "prefer:evidence_backed_identity_updates",
+            ),
+            agent_llm_mm::domain::commitment::Commitment::new(
+                Owner::Self_,
+                "forbid:write_identity_core_directly",
+            ),
+        ])
+        .await
+        .unwrap();
+    ok_tx
+        .append_reflection(
+            StoredReflection::new(
+                "refl-audit".to_string(),
+                test_support::fixed_now(),
+                Reflection::new("replace claim and update deeper self state"),
+                Some("claim-old".to_string()),
+                Some("claim-new".to_string()),
+            )
+            .with_supporting_evidence_event_ids(vec![
+                "evt-reflection-1".to_string(),
+                "evt-reflection-3".to_string(),
+            ])
+            .with_requested_identity_update(Some(
+                agent_llm_mm::domain::reflection::ReflectionIdentityUpdate::new(vec![
+                    "identity:self=staff_architect".to_string(),
+                    "identity:style=evidence-first".to_string(),
+                ]),
+            ))
+            .with_requested_commitment_updates(Some(vec![
+                agent_llm_mm::domain::commitment::Commitment::new(
+                    Owner::Self_,
+                    "prefer:evidence_backed_identity_updates",
+                ),
+                agent_llm_mm::domain::commitment::Commitment::new(
+                    Owner::Self_,
+                    "forbid:write_identity_core_directly",
+                ),
+            ])),
+        )
+        .await
+        .unwrap();
+    ok_tx
+        .update_claim_status("claim-old", ClaimStatus::Superseded)
+        .await
+        .unwrap();
+    ok_tx.commit().await.unwrap();
+
+    let persisted_identity = context.store.load_identity().await.unwrap();
+    let persisted_commitments = context.store.list_commitments().await.unwrap();
+    let reflection_row = sqlx::query(
+        r#"
+        SELECT
+            supporting_evidence_event_ids,
+            requested_identity_update,
+            requested_commitment_updates
+        FROM reflections
+        WHERE reflection_id = 'refl-audit'
+        "#,
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+
+    assert_eq!(
+        persisted_identity.canonical_claims(),
+        &[
+            "identity:self=staff_architect".to_string(),
+            "identity:style=evidence-first".to_string(),
+        ]
+    );
+    assert_eq!(
+        persisted_commitments,
+        vec![
+            agent_llm_mm::domain::commitment::Commitment::new(
+                Owner::Self_,
+                "prefer:evidence_backed_identity_updates",
+            ),
+            agent_llm_mm::domain::commitment::Commitment::new(
+                Owner::Self_,
+                "forbid:write_identity_core_directly",
+            ),
+        ]
+    );
+    assert_eq!(
+        serde_json::from_str::<Vec<String>>(
+            &reflection_row.get::<String, _>("supporting_evidence_event_ids"),
+        )
+        .unwrap(),
+        vec![
+            "evt-reflection-1".to_string(),
+            "evt-reflection-3".to_string(),
+        ]
+    );
+    assert_eq!(
+        serde_json::from_str::<agent_llm_mm::domain::reflection::ReflectionIdentityUpdate>(
+            &reflection_row.get::<String, _>("requested_identity_update"),
+        )
+        .unwrap()
+        .canonical_claims,
+        vec![
+            "identity:self=staff_architect".to_string(),
+            "identity:style=evidence-first".to_string(),
+        ]
+    );
+    assert_eq!(
+        serde_json::from_str::<Vec<agent_llm_mm::domain::commitment::Commitment>>(
+            &reflection_row.get::<String, _>("requested_commitment_updates"),
+        )
+        .unwrap(),
+        vec![
+            agent_llm_mm::domain::commitment::Commitment::new(
+                Owner::Self_,
+                "prefer:evidence_backed_identity_updates",
+            ),
+            agent_llm_mm::domain::commitment::Commitment::new(
+                Owner::Self_,
+                "forbid:write_identity_core_directly",
+            ),
+        ]
+    );
+
+    let mut failing_tx = context.store.begin_reflection_transaction().await.unwrap();
+    failing_tx
+        .replace_identity(IdentityCore::new(vec![
+            "identity:self=rolled_back".to_string(),
+        ]))
+        .await
+        .unwrap();
+    failing_tx
+        .replace_commitments(vec![agent_llm_mm::domain::commitment::Commitment::new(
+            Owner::Self_,
+            "prefer:should_roll_back",
+        )])
+        .await
+        .unwrap();
+    failing_tx
+        .append_reflection(
+            StoredReflection::new(
+                "refl-audit-rollback".to_string(),
+                test_support::fixed_now(),
+                Reflection::new("this deeper update should roll back"),
+                Some("claim-missing".to_string()),
+                None,
+            )
+            .with_supporting_evidence_event_ids(vec!["evt-reflection-9".to_string()]),
+        )
+        .await
+        .unwrap();
+
+    let update_result = failing_tx
+        .update_claim_status("claim-missing", ClaimStatus::Superseded)
+        .await;
+    assert!(update_result.is_err());
+    let commit_result = failing_tx.commit().await;
+    assert!(commit_result.is_err());
+
+    let rolled_back_identity = context.store.load_identity().await.unwrap();
+    let rolled_back_commitments = context.store.list_commitments().await.unwrap();
+    let rolled_back_reflection_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM reflections WHERE reflection_id = 'refl-audit-rollback'",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+
+    assert_eq!(rolled_back_identity, persisted_identity);
+    assert_eq!(rolled_back_commitments, persisted_commitments);
+    assert_eq!(rolled_back_reflection_count, 0);
+}
+
+#[tokio::test]
 async fn sqlite_store_persists_identity_and_reads_commitments_for_snapshot_ports() {
     let context = test_support::new_sqlite_store().await;
 
@@ -331,6 +614,73 @@ async fn sqlite_store_persists_identity_and_reads_commitments_for_snapshot_ports
         commitments[0].description(),
         "forbid:write_identity_core_directly"
     );
+}
+
+#[tokio::test]
+async fn sqlite_bootstrap_migrates_legacy_reflections_table_with_audit_columns() {
+    let path = std::env::temp_dir().join(format!(
+        "agent-llm-mm-legacy-reflections-{}.sqlite",
+        uuid::Uuid::new_v4()
+    ));
+    let database_url = format!("sqlite://{}", path.to_string_lossy().replace('\\', "/"));
+    std::fs::File::create(&path).unwrap();
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+
+    sqlx::query(
+        r#"
+        CREATE TABLE reflections (
+            reflection_id TEXT PRIMARY KEY,
+            recorded_at TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            superseded_claim_id TEXT,
+            replacement_claim_id TEXT
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"
+        INSERT INTO reflections (
+            reflection_id,
+            recorded_at,
+            summary,
+            superseded_claim_id,
+            replacement_claim_id
+        )
+        VALUES ('legacy-refl', '2026-03-23T10:00:00Z', 'legacy reflection row', 'claim-old', NULL)
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    drop(pool);
+
+    let _store = agent_llm_mm::adapters::sqlite::SqliteStore::bootstrap(&database_url)
+        .await
+        .unwrap();
+    let migrated_pool = SqlitePool::connect(&database_url).await.unwrap();
+
+    let columns = sqlx::query("SELECT name FROM pragma_table_info('reflections') ORDER BY cid")
+        .fetch_all(&migrated_pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.get::<String, _>("name"))
+        .collect::<Vec<_>>();
+    let legacy_summary = sqlx::query_scalar::<_, String>(
+        "SELECT summary FROM reflections WHERE reflection_id = 'legacy-refl'",
+    )
+    .fetch_one(&migrated_pool)
+    .await
+    .unwrap();
+
+    assert!(columns.contains(&"supporting_evidence_event_ids".to_string()));
+    assert!(columns.contains(&"requested_identity_update".to_string()));
+    assert!(columns.contains(&"requested_commitment_updates".to_string()));
+    assert_eq!(legacy_summary, "legacy reflection row");
 }
 
 mod test_support {

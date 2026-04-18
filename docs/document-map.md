@@ -21,6 +21,10 @@
 
 - [README.md](../README.md)
   - 仓库首页入口、项目介绍、快速开始、文档导航
+- [development-macos.md](development-macos.md)
+  - macOS 环境准备、配置、预检、启动和验证
+- [development-windows.md](development-windows.md)
+  - Windows 环境准备、配置、预检、启动和验证
 - [project-status.md](project-status.md)
   - 当前实现边界、已实现 / 部分实现 / 未实现
 - [release-readiness.md](release-readiness.md)
@@ -79,14 +83,17 @@
 
 - [2026-03-27-plan.md](2026-03-27-plan.md)
   - 某一轮阶段计划，不等于当前稳定路线图
+- [2026-04-19-self-agent-memory-self-revision-mvp.md](superpowers/plans/2026-04-19-self-agent-memory-self-revision-mvp.md)
+  - 基于 2026-04-19 self-revision 设计初稿拆出的实现计划，默认面向 subagent 执行
 - [2026-03-28-openai-compatible-provider-claude-code.md](superpowers/plans/2026-03-28-openai-compatible-provider-claude-code.md)
   - 较早的 provider 实现计划草稿，已被后续配置文件方案替代
 - [2026-03-28-openai-compatible-provider-claude-code-design.md](superpowers/specs/2026-03-28-openai-compatible-provider-claude-code-design.md)
   - 较早的 provider 设计稿，保留用于追溯，不代表当前最终实现
+- [2026-04-19-self-agent-memory-self-revision-mvp-design.md](superpowers/specs/2026-04-19-self-agent-memory-self-revision-mvp-design.md)
+  - 基于原始逐轮日志与再次确认问答整合出的 self-revision MVP 设计初稿
 
 ## 8. 阅读建议
 
 - 如果你是第一次看这个仓库：先读 README，再读 `project-status.md` 与 `release-readiness.md`
-- 如果你想接入本地客户端：再读 `local-mcp-integration-2026-03-26.md`
-- 如果你要继续开发：再读 `testing-guide-2026-03-24.md` 与 `roadmap.md`
+- 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md` 或 `testing-guide-2026-03-24.md`
 - 如果你想追溯设计来源：最后读原始讨论资料和历史快照

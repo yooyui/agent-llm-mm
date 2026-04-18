@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fs, path::PathBuf, str::FromStr};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -17,9 +17,10 @@ use crate::{
     },
     error::AppError,
     ports::{
-        ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventStore, IdentityStore,
-        IngestTransaction, IngestTransactionRunner, ReflectionStore, ReflectionTransaction,
-        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
+        ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
+        IdentityStore, IngestTransaction, IngestTransactionRunner, ReflectionStore,
+        ReflectionTransaction, ReflectionTransactionRunner, StoredClaim, StoredEvent,
+        StoredReflection,
     },
 };
 
@@ -35,6 +36,8 @@ pub struct SqliteStore {
 
 impl SqliteStore {
     pub async fn bootstrap(database_url: &str) -> Result<Self, AppError> {
+        ensure_sqlite_parent_directory(database_url)?;
+
         let options = SqliteConnectOptions::from_str(database_url)
             .map_err(|error| AppError::Message(error.to_string()))?
             .create_if_missing(true)
@@ -47,10 +50,59 @@ impl SqliteStore {
             map_sqlite(sqlx::query(statement).execute(connection.as_mut()).await)?;
         }
         ensure_claims_namespace_column(connection.as_mut()).await?;
+        ensure_reflection_audit_columns(connection.as_mut()).await?;
         seed_baseline_commitments(connection.as_mut()).await?;
 
         Ok(Self { pool })
     }
+}
+
+fn ensure_sqlite_parent_directory(database_url: &str) -> Result<(), AppError> {
+    let Some(path) = sqlite_file_path(database_url) else {
+        return Ok(());
+    };
+
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    if parent.as_os_str().is_empty() {
+        return Ok(());
+    }
+
+    fs::create_dir_all(parent).map_err(|error| {
+        AppError::Message(format!(
+            "failed to create sqlite parent directory {}: {error}",
+            parent.display()
+        ))
+    })?;
+
+    Ok(())
+}
+
+fn sqlite_file_path(database_url: &str) -> Option<PathBuf> {
+    let path = database_url.strip_prefix("sqlite://")?;
+    let path = path.split_once('?').map_or(path, |(path, _)| path);
+    if path.is_empty() || path == ":memory:" {
+        return None;
+    }
+
+    #[cfg(windows)]
+    let path = normalize_windows_sqlite_path(path);
+
+    #[cfg(not(windows))]
+    let path = path.to_string();
+
+    Some(PathBuf::from(path))
+}
+
+#[cfg(windows)]
+fn normalize_windows_sqlite_path(path: &str) -> String {
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+        return path[1..].to_string();
+    }
+
+    path.to_string()
 }
 
 #[async_trait]
@@ -69,6 +121,57 @@ impl EventStore for SqliteStore {
         Ok(rows
             .into_iter()
             .map(|row| format!("event:{}", row.get::<String, _>("event_id")))
+            .collect())
+    }
+
+    async fn query_evidence_event_ids(
+        &self,
+        query: EvidenceQuery,
+    ) -> Result<Vec<String>, AppError> {
+        let mut sql =
+            String::from("SELECT event_id, recorded_at, owner, kind, summary FROM events");
+        let mut predicates = Vec::new();
+
+        if query.owner.is_some() {
+            predicates.push("owner = ?");
+        }
+
+        if query.kind.is_some() {
+            predicates.push("kind = ?");
+        }
+
+        if !predicates.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&predicates.join(" AND "));
+        }
+
+        sql.push_str(" ORDER BY recorded_at DESC, rowid DESC LIMIT ?");
+
+        let mut rows = {
+            let mut query_builder = sqlx::query(&sql);
+
+            if let Some(owner) = query.owner {
+                query_builder = query_builder.bind(owner_as_str(owner));
+            }
+
+            if let Some(kind) = query.kind {
+                query_builder = query_builder.bind(event_kind_as_str(kind));
+            }
+
+            let limit = query.limit.unwrap_or(10);
+            let limit = i64::try_from(limit).map_err(|_| {
+                AppError::InvalidParams(
+                    "evidence query limit exceeds the supported maximum".to_string(),
+                )
+            })?;
+            query_builder = query_builder.bind(limit);
+
+            map_sqlite(query_builder.fetch_all(&self.pool).await)?
+        };
+
+        Ok(rows
+            .drain(..)
+            .map(|row| row.get::<String, _>("event_id"))
             .collect())
     }
 
@@ -165,45 +268,12 @@ impl ReflectionStore for SqliteStore {
 #[async_trait]
 impl IdentityStore for SqliteStore {
     async fn load_identity(&self) -> Result<IdentityCore, AppError> {
-        let rows = map_sqlite(
-            sqlx::query(
-                r#"
-                SELECT claim
-                FROM identity_claims
-                ORDER BY position
-                "#,
-            )
-            .fetch_all(&self.pool)
-            .await,
-        )?;
-
-        if rows.is_empty() {
-            return Err(AppError::Message("missing identity".to_string()));
-        }
-
-        Ok(IdentityCore::new(
-            rows.into_iter().map(|row| row.get("claim")).collect(),
-        ))
+        load_identity_rows(&self.pool).await
     }
 
     async fn save_identity(&self, identity: IdentityCore) -> Result<(), AppError> {
         let mut tx = map_sqlite(self.pool.begin().await)?;
-        map_sqlite(
-            sqlx::query("DELETE FROM identity_claims")
-                .execute(tx.as_mut())
-                .await,
-        )?;
-
-        for (position, claim) in identity.canonical_claims().iter().enumerate() {
-            map_sqlite(
-                sqlx::query("INSERT INTO identity_claims (position, claim) VALUES (?, ?)")
-                    .bind(position as i64)
-                    .bind(claim)
-                    .execute(tx.as_mut())
-                    .await,
-            )?;
-        }
-
+        replace_identity_rows(tx.as_mut(), &identity).await?;
         map_sqlite(tx.commit().await)?;
         Ok(())
     }
@@ -212,26 +282,7 @@ impl IdentityStore for SqliteStore {
 #[async_trait]
 impl CommitmentStore for SqliteStore {
     async fn list_commitments(&self) -> Result<Vec<Commitment>, AppError> {
-        let rows = map_sqlite(
-            sqlx::query(
-                r#"
-                SELECT owner, description
-                FROM commitments
-                ORDER BY rowid
-                "#,
-            )
-            .fetch_all(&self.pool)
-            .await,
-        )?;
-
-        rows.into_iter()
-            .map(|row| {
-                Ok(Commitment::new(
-                    parse_owner(&row.get::<String, _>("owner"))?,
-                    row.get::<String, _>("description"),
-                ))
-            })
-            .collect()
+        load_commitment_rows(&self.pool).await
     }
 }
 
@@ -408,6 +459,58 @@ impl ReflectionTransaction for SqliteReflectionTransaction<'_> {
         self.note_result(result)
     }
 
+    async fn load_identity(&mut self) -> Result<IdentityCore, AppError> {
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            load_identity_rows(transaction.as_mut()).await
+        };
+        self.note_result(result)
+    }
+
+    async fn replace_identity(&mut self, identity: IdentityCore) -> Result<(), AppError> {
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            replace_identity_rows(transaction.as_mut(), &identity).await
+        };
+        self.note_result(result)
+    }
+
+    async fn load_commitments(&mut self) -> Result<Vec<Commitment>, AppError> {
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            load_commitment_rows(transaction.as_mut()).await
+        };
+        self.note_result(result)
+    }
+
+    async fn replace_commitments(&mut self, commitments: Vec<Commitment>) -> Result<(), AppError> {
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            replace_commitment_rows(transaction.as_mut(), &commitments).await
+        };
+        self.note_result(result)
+    }
+
     async fn update_claim_status(
         &mut self,
         claim_id: &str,
@@ -577,6 +680,11 @@ async fn insert_reflection<'e, E>(
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
+    let supporting_evidence_event_ids = serialize_json(&reflection.supporting_evidence_event_ids)?;
+    let requested_identity_update = serialize_optional_json(&reflection.requested_identity_update)?;
+    let requested_commitment_updates =
+        serialize_optional_json(&reflection.requested_commitment_updates)?;
+
     map_sqlite(
         sqlx::query(
             r#"
@@ -585,9 +693,12 @@ where
                 recorded_at,
                 summary,
                 superseded_claim_id,
-                replacement_claim_id
+                replacement_claim_id,
+                supporting_evidence_event_ids,
+                requested_identity_update,
+                requested_commitment_updates
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&reflection.reflection_id)
@@ -595,6 +706,9 @@ where
         .bind(reflection.reflection.summary())
         .bind(&reflection.superseded_claim_id)
         .bind(&reflection.replacement_claim_id)
+        .bind(supporting_evidence_event_ids)
+        .bind(requested_identity_update)
+        .bind(requested_commitment_updates)
         .execute(executor)
         .await,
     )?;
@@ -694,6 +808,47 @@ async fn ensure_claims_namespace_column(
     Ok(())
 }
 
+async fn ensure_reflection_audit_columns(
+    connection: &mut sqlx::SqliteConnection,
+) -> Result<(), AppError> {
+    let columns = map_sqlite(
+        sqlx::query("SELECT name FROM pragma_table_info('reflections')")
+            .fetch_all(&mut *connection)
+            .await,
+    )?
+    .into_iter()
+    .map(|row| row.get::<String, _>("name"))
+    .collect::<Vec<_>>();
+
+    if !columns.contains(&"supporting_evidence_event_ids".to_string()) {
+        map_sqlite(
+            sqlx::query(
+                "ALTER TABLE reflections ADD COLUMN supporting_evidence_event_ids TEXT NOT NULL DEFAULT '[]'",
+            )
+            .execute(&mut *connection)
+            .await,
+        )?;
+    }
+
+    if !columns.contains(&"requested_identity_update".to_string()) {
+        map_sqlite(
+            sqlx::query("ALTER TABLE reflections ADD COLUMN requested_identity_update TEXT")
+                .execute(&mut *connection)
+                .await,
+        )?;
+    }
+
+    if !columns.contains(&"requested_commitment_updates".to_string()) {
+        map_sqlite(
+            sqlx::query("ALTER TABLE reflections ADD COLUMN requested_commitment_updates TEXT")
+                .execute(&mut *connection)
+                .await,
+        )?;
+    }
+
+    Ok(())
+}
+
 async fn rebuild_claims_table_with_namespace(
     connection: &mut sqlx::SqliteConnection,
     legacy_table_has_namespace: bool,
@@ -736,6 +891,122 @@ async fn rebuild_claims_table_with_namespace(
     )?;
 
     Ok(())
+}
+
+async fn load_identity_rows<'e, E>(executor: E) -> Result<IdentityCore, AppError>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
+    let rows = map_sqlite(
+        sqlx::query(
+            r#"
+            SELECT claim
+            FROM identity_claims
+            ORDER BY position
+            "#,
+        )
+        .fetch_all(executor)
+        .await,
+    )?;
+
+    if rows.is_empty() {
+        return Err(AppError::Message("missing identity".to_string()));
+    }
+
+    Ok(IdentityCore::new(
+        rows.into_iter().map(|row| row.get("claim")).collect(),
+    ))
+}
+
+async fn replace_identity_rows(
+    connection: &mut sqlx::SqliteConnection,
+    identity: &IdentityCore,
+) -> Result<(), AppError> {
+    map_sqlite(
+        sqlx::query("DELETE FROM identity_claims")
+            .execute(&mut *connection)
+            .await,
+    )?;
+
+    for (position, claim) in identity.canonical_claims().iter().enumerate() {
+        map_sqlite(
+            sqlx::query("INSERT INTO identity_claims (position, claim) VALUES (?, ?)")
+                .bind(position as i64)
+                .bind(claim)
+                .execute(&mut *connection)
+                .await,
+        )?;
+    }
+
+    Ok(())
+}
+
+async fn load_commitment_rows<'e, E>(executor: E) -> Result<Vec<Commitment>, AppError>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
+    let rows = map_sqlite(
+        sqlx::query(
+            r#"
+            SELECT owner, description
+            FROM commitments
+            ORDER BY rowid
+            "#,
+        )
+        .fetch_all(executor)
+        .await,
+    )?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(Commitment::new(
+                parse_owner(&row.get::<String, _>("owner"))?,
+                row.get::<String, _>("description"),
+            ))
+        })
+        .collect()
+}
+
+async fn replace_commitment_rows(
+    connection: &mut sqlx::SqliteConnection,
+    commitments: &[Commitment],
+) -> Result<(), AppError> {
+    map_sqlite(
+        sqlx::query("DELETE FROM commitments")
+            .execute(&mut *connection)
+            .await,
+    )?;
+
+    for commitment in commitments {
+        map_sqlite(
+            sqlx::query(
+                r#"
+                INSERT INTO commitments (description, owner)
+                VALUES (?, ?)
+                "#,
+            )
+            .bind(commitment.description())
+            .bind(owner_as_str(commitment.owner()))
+            .execute(&mut *connection)
+            .await,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn serialize_json<T>(value: &T) -> Result<String, AppError>
+where
+    T: serde::Serialize,
+{
+    serde_json::to_string(value).map_err(|error| AppError::Message(error.to_string()))
+}
+
+fn serialize_optional_json<T>(value: &Option<T>) -> Result<Option<String>, AppError>
+where
+    T: serde::Serialize,
+{
+    value.as_ref().map(serialize_json).transpose()
 }
 
 fn map_sqlite<T>(result: Result<T, sqlx::Error>) -> Result<T, AppError> {

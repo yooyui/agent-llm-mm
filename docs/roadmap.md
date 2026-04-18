@@ -2,21 +2,11 @@
 
 本路线图面向 GitHub 协作与后续开发沟通，强调“当前已承诺什么、下一步先做什么、哪些还只是中长期方向”。
 
+当前已收口的一项基础语义是：默认 SQLite 路径表示“本机用户共享的持久化默认库”；如果需要正式数据、测试数据或实验数据隔离，应显式设置不同的 `database_url`。
+
 ## 近期
 
-### 1. 收口默认 SQLite 作用域语义
-
-目标：
-
-- 明确默认数据库路径到底代表“按用户共享”还是“按项目隔离”
-- 把该语义写进文档与回归测试
-
-原因：
-
-- 这是当前最容易影响真实使用方式的边界
-- 也是协作者最容易误解的地方
-
-### 2. 收口 release gate 文档
+### 1. 收口 release gate 文档
 
 目标：
 
@@ -28,7 +18,7 @@
 - 当前已有测试基础
 - 但公开协作时，还需要更稳定的“提交前 / 发布前”规则
 
-### 3. 明确能力承诺边界
+### 2. 明确能力承诺边界
 
 目标：
 
@@ -39,6 +29,18 @@
 
 - `decide_with_snapshot` 已可走 `openai-compatible` provider，但仍不是完整决策引擎
 - richer memory semantics 尚未落地
+
+### 3. 收口 reflection 的 deeper-update 契约
+
+目标：
+
+- 在已支持显式 `replacement_evidence_event_ids`、结构化 `replacement_evidence_query` 和最小 `identity_core` / `commitments` 更新的基础上，继续明确输入约束、保底规则与审计边界
+- 为后续 richer schema、版本化策略和更广泛证据能力奠基
+
+原因：
+
+- 反思路径的最小 deep-update 闭环已经落地，下一步不应再引入新的接口漂移，而应优先把规则与边界收口清楚
+- 这将减少后续 evidence 语义与 schema 改造的反复成本
 
 ## 中期
 
@@ -55,12 +57,13 @@
 - OpenRouter
 - 本地模型网关
 
-### 2. 把 reflection 从显式输入推进到“显式输入 + 可选查询”
+### 2. 把 reflection 从“显式输入 + 可选查询 + 最小 deep update”推进到 richer 语义
 
 目标：
 
 - 保留显式 `replacement_evidence_event_ids`
-- 同时探索更合适的 evidence 查询接口
+- 保留现有最小 `identity_core` / `commitments` 更新能力
+- 在现有窄化查询基础上扩展 richer query 语义、更广泛 evidence 能力与更稳定的 deep-update policy
 
 ### 3. 丰富 evidence 语义
 

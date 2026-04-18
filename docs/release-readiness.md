@@ -52,9 +52,9 @@
 
 ### 3. 自动化验证已经存在
 
-截至 `2026-03-31` 的 fresh 验证结果：
+截至 `2026-04-18` 的 fresh 验证结果：
 
-- `cargo test` 全量通过，共 58 个测试
+- `cargo test` 全量通过，共 80 个测试
 - `doctor` 返回 `status = ok`
 
 ### 4. 当前边界已经能被文档清楚说明
@@ -64,7 +64,7 @@
 - `openai-compatible` provider 已接入
 - provider 配置走本地 TOML 文件
 - richer memory semantics 还在后续阶段
-- 默认数据库作用域语义还未最终定型
+- 默认数据库作用域已明确为“本机用户共享默认库，隔离靠显式 `database_url`”
 
 只要这些边界在 README 和说明文档里写清楚，这个仓库就适合发布为协作型 demo。
 
@@ -82,14 +82,14 @@
 
 当前已经有骨架，但还没有完整实现：
 
-- deeper reflection
+- minimal deeper reflection 已有，但 richer schema / versioned reflection policy 仍未完成
 - richer identity model
 - richer episode model
 - procedural memory
 
-### 3. 数据隔离策略未完全收口
+### 3. 数据隔离策略已有最小可发布结论
 
-SQLite 落盘已经可用，但默认路径语义仍需进一步收口，否则协作者容易误判真实使用方式。
+SQLite 落盘已经可用，默认路径语义也已收口为“本机用户共享默认库”。剩余注意点不在于语义不清，而在于正式数据、测试数据和实验数据仍应通过显式 `database_url` 主动隔离。
 
 ## 建议的发布口径
 

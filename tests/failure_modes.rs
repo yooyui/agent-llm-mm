@@ -17,9 +17,10 @@ use agent_llm_mm::{
     },
     error::AppError,
     ports::{
-        ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, IdGenerator,
-        IdentityStore, IngestTransaction, IngestTransactionRunner, ReflectionTransaction,
-        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
+        ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
+        IdGenerator, IdentityStore, IngestTransaction, IngestTransactionRunner,
+        ReflectionTransaction, ReflectionTransactionRunner, StoredClaim, StoredEvent,
+        StoredReflection,
     },
 };
 use async_trait::async_trait;
@@ -60,6 +61,77 @@ async fn reflection_marks_conflict_as_disputed_instead_of_deleting_history() {
 }
 
 #[tokio::test]
+async fn reflection_rejects_identity_or_commitment_updates_without_resolved_evidence() {
+    let deps = test_support::deps_for_failure_modes();
+
+    let result =
+        execute_reflection(&deps, test_support::reflection_updates_without_evidence()).await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &["identity:self=architect".to_string()]
+    );
+    assert_eq!(
+        deps.commitments(),
+        vec![Commitment::new(
+            Owner::Self_,
+            "forbid:write_identity_core_directly",
+        )]
+    );
+    assert!(deps.reflection("id-1").is_none());
+}
+
+#[tokio::test]
+async fn reflection_rejects_empty_identity_update_even_with_supporting_evidence() {
+    let deps = test_support::deps_for_failure_modes();
+
+    let result = execute_reflection(
+        &deps,
+        test_support::reflection_updates_with_empty_identity(),
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &["identity:self=architect".to_string()]
+    );
+    assert!(deps.reflection("id-1").is_none());
+}
+
+#[tokio::test]
+async fn reflection_commit_failure_rolls_back_claim_identity_commitment_and_audit_updates() {
+    let deps = test_support::deps_with_fail_point(FailPoint::CommitReflection);
+
+    let result = execute_reflection(&deps, test_support::reflection_updates_with_evidence()).await;
+
+    assert!(
+        matches!(result, Err(AppError::Message(message)) if message == "injected reflection commit failure")
+    );
+    assert_eq!(
+        deps.claim("claim-conflict")
+            .expect("original claim should remain")
+            .status,
+        ClaimStatus::Active
+    );
+    assert!(deps.claim("id-1:replacement").is_none());
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &["identity:self=architect".to_string()]
+    );
+    assert_eq!(
+        deps.commitments(),
+        vec![Commitment::new(
+            Owner::Self_,
+            "forbid:write_identity_core_directly",
+        )]
+    );
+    assert!(deps.reflection("id-1").is_none());
+    assert!(deps.evidence_links().is_empty());
+}
+
+#[tokio::test]
 async fn snapshot_budget_deduplicates_recent_duplicate_evidence_before_truncating() {
     let deps = test_support::deps_for_failure_modes();
 
@@ -84,6 +156,13 @@ mod test_support {
 
     pub fn deps_for_failure_modes() -> FailureModeDeps {
         FailureModeDeps::new(State::default())
+    }
+
+    pub fn deps_with_fail_point(fail_point: FailPoint) -> FailureModeDeps {
+        FailureModeDeps::new(State {
+            fail_point: Some(fail_point),
+            ..State::default()
+        })
     }
 
     pub fn inferred_without_evidence() -> IngestInput {
@@ -113,6 +192,50 @@ mod test_support {
         )
     }
 
+    pub fn reflection_updates_without_evidence() -> ReflectionInput {
+        ReflectionInput::new(
+            Reflection::new("Identity-only updates still require supporting evidence."),
+            "claim-conflict",
+            None,
+            Vec::new(),
+        )
+        .with_identity_update(vec!["identity:self=principal_architect".to_string()])
+        .with_commitment_updates(vec![Commitment::new(
+            Owner::Self_,
+            "prefer:reflect_before_identity_changes",
+        )])
+    }
+
+    pub fn reflection_updates_with_evidence() -> ReflectionInput {
+        ReflectionInput::new(
+            Reflection::new("Reflection should replace claim, identity, and commitments together."),
+            "claim-conflict",
+            Some(ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "principal_architect",
+                Mode::Observed,
+            )),
+            vec!["evt-reflection-1".to_string()],
+        )
+        .with_identity_update(vec!["identity:self=principal_architect".to_string()])
+        .with_commitment_updates(vec![Commitment::new(
+            Owner::Self_,
+            "prefer:reflect_before_identity_changes",
+        )])
+    }
+
+    pub fn reflection_updates_with_empty_identity() -> ReflectionInput {
+        ReflectionInput::new(
+            Reflection::new("Identity updates cannot clear the canonical identity list."),
+            "claim-conflict",
+            None,
+            vec!["evt-reflection-1".to_string()],
+        )
+        .with_identity_update(Vec::new())
+    }
+
     pub fn budgeted_snapshot() -> BuildSelfSnapshotInput {
         BuildSelfSnapshotInput {
             budget: SnapshotBudget::new(3),
@@ -125,11 +248,17 @@ struct FailureModeDeps {
     state: Arc<Mutex<State>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FailPoint {
+    CommitReflection,
+}
+
 #[derive(Clone)]
 struct State {
     committed: CommittedState,
     now: DateTime<Utc>,
     next_id: usize,
+    fail_point: Option<FailPoint>,
 }
 
 #[derive(Clone)]
@@ -157,6 +286,8 @@ struct PendingReflection {
     evidence_links: Vec<(String, String)>,
     reflections: Vec<StoredReflection>,
     status_updates: Vec<(String, ClaimStatus)>,
+    identity: Option<IdentityCore>,
+    commitments: Option<Vec<Commitment>>,
 }
 
 impl Default for State {
@@ -183,12 +314,19 @@ impl Default for State {
                 episode_references: vec!["episode:failure-modes".to_string()],
                 reflections: Vec::new(),
                 evidence_links: Vec::new(),
-                events: Vec::new(),
+                events: vec![StoredEvent::new(
+                    "evt-reflection-1".to_string(),
+                    chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                    Event::new(Owner::World, EventKind::Observation, "evt-reflection-1"),
+                )],
             },
             now: chrono::DateTime::parse_from_rfc3339("2026-03-23T10:00:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
             next_id: 1,
+            fail_point: None,
         }
     }
 }
@@ -213,6 +351,29 @@ impl FailureModeDeps {
 
     fn claim_count(&self) -> usize {
         self.state.lock().unwrap().committed.claims.len()
+    }
+
+    fn identity(&self) -> IdentityCore {
+        self.state.lock().unwrap().committed.identity.clone()
+    }
+
+    fn commitments(&self) -> Vec<Commitment> {
+        self.state.lock().unwrap().committed.commitments.clone()
+    }
+
+    fn reflection(&self, reflection_id: &str) -> Option<StoredReflection> {
+        self.state
+            .lock()
+            .unwrap()
+            .committed
+            .reflections
+            .iter()
+            .find(|reflection| reflection.reflection_id == reflection_id)
+            .cloned()
+    }
+
+    fn evidence_links(&self) -> Vec<(String, String)> {
+        self.state.lock().unwrap().committed.evidence_links.clone()
     }
 }
 
@@ -278,6 +439,38 @@ impl EventStore for FailureModeDeps {
             .committed
             .event_references
             .clone())
+    }
+
+    async fn query_evidence_event_ids(
+        &self,
+        query: EvidenceQuery,
+    ) -> Result<Vec<String>, AppError> {
+        let mut events = self.state.lock().unwrap().committed.events.clone();
+
+        if let Some(owner) = query.owner {
+            events.retain(|event| event.event.owner() == owner);
+        }
+
+        if let Some(kind) = query.kind {
+            events.retain(|event| event.event.kind() == kind);
+        }
+
+        events.sort_by(|lhs, rhs| {
+            rhs.recorded_at
+                .cmp(&lhs.recorded_at)
+                .then_with(|| rhs.event_id.cmp(&lhs.event_id))
+        });
+
+        let limit = query.limit.unwrap_or(10);
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        Ok(events
+            .into_iter()
+            .take(limit)
+            .map(|event| event.event_id)
+            .collect())
     }
 
     async fn has_event(&self, event_id: &str) -> Result<bool, AppError> {
@@ -456,6 +649,39 @@ impl ReflectionTransaction for FailureModeReflectionTransaction {
         Ok(())
     }
 
+    async fn load_identity(&mut self) -> Result<IdentityCore, AppError> {
+        if let Some(identity) = &self.pending.identity {
+            return Ok(identity.clone());
+        }
+
+        Ok(self.deps.state.lock().unwrap().committed.identity.clone())
+    }
+
+    async fn replace_identity(&mut self, identity: IdentityCore) -> Result<(), AppError> {
+        self.pending.identity = Some(identity);
+        Ok(())
+    }
+
+    async fn load_commitments(&mut self) -> Result<Vec<Commitment>, AppError> {
+        if let Some(commitments) = &self.pending.commitments {
+            return Ok(commitments.clone());
+        }
+
+        Ok(self
+            .deps
+            .state
+            .lock()
+            .unwrap()
+            .committed
+            .commitments
+            .clone())
+    }
+
+    async fn replace_commitments(&mut self, commitments: Vec<Commitment>) -> Result<(), AppError> {
+        self.pending.commitments = Some(commitments);
+        Ok(())
+    }
+
     async fn update_claim_status(
         &mut self,
         claim_id: &str,
@@ -468,6 +694,11 @@ impl ReflectionTransaction for FailureModeReflectionTransaction {
     }
 
     async fn commit(self: Box<Self>) -> Result<(), AppError> {
+        if self.deps.state.lock().unwrap().fail_point == Some(FailPoint::CommitReflection) {
+            return Err(AppError::Message(
+                "injected reflection commit failure".to_string(),
+            ));
+        }
         let mut state = self.deps.state.lock().unwrap();
         for claim in self.pending.claims {
             upsert_claim(&mut state.committed.claims, claim);
@@ -477,6 +708,12 @@ impl ReflectionTransaction for FailureModeReflectionTransaction {
             .evidence_links
             .extend(self.pending.evidence_links);
         state.committed.reflections.extend(self.pending.reflections);
+        if let Some(identity) = self.pending.identity {
+            state.committed.identity = identity;
+        }
+        if let Some(commitments) = self.pending.commitments {
+            state.committed.commitments = commitments;
+        }
         for (claim_id, status) in self.pending.status_updates {
             let claim = state
                 .committed

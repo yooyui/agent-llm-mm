@@ -1,3 +1,4 @@
+use crate::ports::EvidenceQuery;
 use crate::{
     application::{
         build_self_snapshot::BuildSelfSnapshotInput, decide_with_snapshot::DecideWithSnapshotInput,
@@ -5,11 +6,13 @@ use crate::{
     },
     domain::{
         claim::ClaimDraft,
+        commitment::Commitment,
         event::Event,
-        reflection::Reflection,
+        reflection::{Reflection, ReflectionIdentityUpdate},
         snapshot::{SelfSnapshot, SnapshotBudget},
         types::{EventKind, Mode, Namespace, Owner},
     },
+    error::AppError,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -119,6 +122,18 @@ impl TryFrom<ClaimDraftDto> for ClaimDraft {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CommitmentDto {
+    pub owner: OwnerDto,
+    pub description: String,
+}
+
+impl From<CommitmentDto> for Commitment {
+    fn from(value: CommitmentDto) -> Self {
+        Commitment::new(value.owner.into(), value.description)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct IngestInteractionParams {
     pub event: EventDto,
     pub claim_drafts: Vec<ClaimDraftDto>,
@@ -204,26 +219,93 @@ impl From<ReflectionDto> for Reflection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ReflectionIdentityUpdateDto {
+    pub canonical_claims: Vec<String>,
+}
+
+impl From<ReflectionIdentityUpdateDto> for ReflectionIdentityUpdate {
+    fn from(value: ReflectionIdentityUpdateDto) -> Self {
+        ReflectionIdentityUpdate::new(value.canonical_claims)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct EvidenceQueryDto {
+    #[serde(default)]
+    pub owner: Option<OwnerDto>,
+    #[serde(default)]
+    pub kind: Option<EventKindDto>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+impl TryFrom<EvidenceQueryDto> for EvidenceQuery {
+    type Error = AppError;
+
+    fn try_from(value: EvidenceQueryDto) -> Result<Self, Self::Error> {
+        if let Some(limit) = value.limit {
+            i64::try_from(limit).map_err(|_| {
+                AppError::InvalidParams(
+                    "replacement evidence query limit exceeds the supported maximum".to_string(),
+                )
+            })?;
+        }
+
+        Ok(Self {
+            owner: value.owner.map(Owner::from),
+            kind: value.kind.map(EventKind::from),
+            limit: value.limit,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RunReflectionParams {
     pub reflection: ReflectionDto,
     pub supersede_claim_id: String,
     pub replacement_claim: Option<ClaimDraftDto>,
     #[serde(default)]
     pub replacement_evidence_event_ids: Vec<String>,
+    #[serde(default)]
+    pub replacement_evidence_query: Option<EvidenceQueryDto>,
+    #[serde(default)]
+    pub identity_update: Option<ReflectionIdentityUpdateDto>,
+    #[serde(default)]
+    pub commitment_updates: Option<Vec<CommitmentDto>>,
 }
 
 impl TryFrom<RunReflectionParams> for ReflectionInput {
-    type Error = crate::domain::DomainError;
+    type Error = AppError;
 
     fn try_from(value: RunReflectionParams) -> Result<Self, Self::Error> {
-        Ok(ReflectionInput::new(
+        let mut input = ReflectionInput::new(
             value.reflection.into(),
             value.supersede_claim_id,
             value
                 .replacement_claim
                 .map(ClaimDraft::try_from)
-                .transpose()?,
+                .transpose()
+                .map_err(AppError::from)?,
             value.replacement_evidence_event_ids,
-        ))
+        );
+
+        if let Some(replacement_evidence_query) = value.replacement_evidence_query {
+            input = input.with_replacement_evidence_query(replacement_evidence_query.try_into()?);
+        }
+
+        if let Some(identity_update) = value.identity_update {
+            input = input.with_identity_update(identity_update.canonical_claims);
+        }
+
+        if let Some(commitment_updates) = value.commitment_updates {
+            input = input.with_commitment_updates(
+                commitment_updates
+                    .into_iter()
+                    .map(Commitment::from)
+                    .collect(),
+            );
+        }
+
+        Ok(input)
     }
 }

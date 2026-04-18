@@ -49,13 +49,15 @@
 `run_reflection` 已支持：
 
 - 审计友好的 supersede / dispute 行为
-- `replacement_evidence_event_ids`
+- 显式 `replacement_evidence_event_ids`
+- 一套窄化的结构化 `replacement_evidence_query` 首批能力（首版证据检索基础）
+- 一条最小可用的 `identity_core` / `commitments` 深层修订路径，并把 supporting evidence 与请求的更新内容写入 reflection 审计记录
 - 缺失 evidence event id 时返回 `invalid_params`
 
 ### 5. 本机接入入口
 
-- `scripts/agent-llm-mm.ps1 doctor`
-- `scripts/agent-llm-mm.ps1 serve`
+- `scripts/agent-llm-mm.sh doctor`
+- `scripts/agent-llm-mm.sh serve`
 - 可作为本机 MCP 子进程被 Codex 类客户端接入
 
 ### 6. `openai-compatible` provider
@@ -93,31 +95,40 @@
 
 它还不是带 `goal / outcome / lesson / self_effect` 的完整自传式建模。
 
-### 5. 默认数据库作用域
+### 5. `identity_core` / `commitments` 深层修订
+
+- 当前已经能通过 `run_reflection` 最小更新 `identity_core`
+- 当前已经能通过 `run_reflection` 最小更新 `commitments`
+- 反思审计会记录 supporting evidence 与请求的更新载荷
+
+但它仍然只是首版收口，不是 richer schema、版本化 slow-variable 层或完整策略系统。
+
+### 6. 默认数据库作用域
 
 - 已可稳定落盘
-- 但“按用户共享 / 按项目隔离 / 按 workspace 隔离”的正式策略尚未收口
+- 默认语义已收口为“本机用户共享的持久化默认库”
+- 若需要按项目、按环境或按实验隔离，应显式配置不同的 `database_url`
 
 ## 未实现
 
-- 自动 evidence lookup
+- richer 自动 evidence lookup（当前仅有 `owner / kind / limit` 的窄化 evidence-oriented 查询基础）
 - evidence weight / relation
-- reflection 对 `identity_core` 的形成或深层修订
-- reflection 对 `commitments` 的重写、升级或失效
+- `identity_core` 的 richer schema 与版本化形成机制
+- `commitments` 的 richer schema、升级 / 失效策略与更细粒度生命周期
 - 更多 provider 类型
 - richer `claim / episode / identity` schema
 - working memory / procedural memory 的独立建模
 
 ## 当前验证状态
 
-截至 `2026-03-31`，已 fresh 运行：
+截至 `2026-04-18`，已 fresh 运行：
 
 - `cargo test`
-- `pwsh -File .\scripts\agent-llm-mm.ps1 doctor`
+- `./scripts/agent-llm-mm.sh doctor` 或 `cargo run --quiet -- doctor`
 
 结果：
 
-- `cargo test` 全量通过，共 58 个测试
+- `cargo test` 全量通过，共 80 个测试
 - `doctor` 返回 JSON，且 `status = ok`
 
 ## 对外描述建议

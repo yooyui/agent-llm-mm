@@ -23,8 +23,8 @@ use crate::{
     domain::identity_core::IdentityCore,
     error::AppError,
     ports::{
-        ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, IdGenerator,
-        IdentityStore, IngestTransaction, IngestTransactionRunner, ModelDecision,
+        ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
+        IdGenerator, IdentityStore, IngestTransaction, IngestTransactionRunner, ModelDecision,
         ModelDecisionRequest, ModelPort, ReflectionStore, ReflectionTransaction,
         ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
     },
@@ -109,8 +109,7 @@ impl Server {
         &self,
         Parameters(params): Parameters<RunReflectionParams>,
     ) -> Result<CallToolResult, McpError> {
-        let input =
-            ReflectionInput::try_from(params).map_err(|error| app_error_to_mcp(error.into()))?;
+        let input = ReflectionInput::try_from(params).map_err(app_error_to_mcp)?;
         let result = run_reflection::execute(&self.runtime, input)
             .await
             .map_err(app_error_to_mcp)?;
@@ -200,6 +199,13 @@ impl EventStore for Runtime {
 
     async fn list_event_references(&self) -> Result<Vec<String>, AppError> {
         self.store.list_event_references().await
+    }
+
+    async fn query_evidence_event_ids(
+        &self,
+        query: EvidenceQuery,
+    ) -> Result<Vec<String>, AppError> {
+        self.store.query_evidence_event_ids(query).await
     }
 
     async fn has_event(&self, event_id: &str) -> Result<bool, AppError> {

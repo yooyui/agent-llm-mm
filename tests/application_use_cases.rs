@@ -18,10 +18,10 @@ use agent_llm_mm::{
     },
     error::AppError,
     ports::{
-        ClaimStatus, ClaimStore, Clock, CommitmentStore, EventStore, IdGenerator, IdentityStore,
-        IngestTransaction, IngestTransactionRunner, ModelDecision, ModelInput, ModelPort,
-        ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner, StoredClaim,
-        StoredEvent, StoredReflection,
+        ClaimStatus, ClaimStore, Clock, CommitmentStore, EventStore, EvidenceQuery, IdGenerator,
+        IdentityStore, IngestTransaction, IngestTransactionRunner, ModelDecision, ModelInput,
+        ModelPort, ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner,
+        StoredClaim, StoredEvent, StoredReflection,
     },
 };
 use async_trait::async_trait;
@@ -123,6 +123,120 @@ async fn reflection_supersedes_old_claim_and_persists_audit_record() {
 }
 
 #[tokio::test]
+async fn reflection_can_update_identity_and_commitments_with_audited_supporting_evidence() {
+    let deps = test_support::reflection_query_deps();
+
+    let result = execute_reflection(
+        &deps,
+        test_support::reflection_input_with_identity_and_commitment_updates(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.reflection_id, "id-1");
+    assert_eq!(
+        result.replacement_claim_id.as_deref(),
+        Some("id-1:replacement")
+    );
+
+    let old_claim = deps.claim("claim-old").expect("old claim should remain");
+    assert_eq!(old_claim.status, ClaimStatus::Superseded);
+
+    let replacement_claim = deps
+        .claim("id-1:replacement")
+        .expect("replacement claim should be committed");
+    assert_eq!(replacement_claim.claim.object(), "staff_architect");
+    assert_eq!(replacement_claim.status, ClaimStatus::Active);
+
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &[
+            "identity:self=staff_architect".to_string(),
+            "identity:self=mentor".to_string(),
+        ]
+    );
+    assert_eq!(
+        deps.commitments(),
+        vec![
+            Commitment::new(Owner::Self_, "prefer:evidence_backed_identity_updates"),
+            Commitment::new(Owner::Self_, "forbid:write_identity_core_directly"),
+        ]
+    );
+
+    let reflection = deps
+        .reflection("id-1")
+        .expect("reflection audit record should be committed");
+    assert_eq!(
+        reflection.supporting_evidence_event_ids,
+        vec![
+            "evt-reflection-1".to_string(),
+            "evt-reflection-3".to_string(),
+        ]
+    );
+    assert_eq!(
+        reflection
+            .requested_identity_update
+            .as_ref()
+            .map(|update| update.canonical_claims.clone()),
+        Some(vec![
+            "identity:self=staff_architect".to_string(),
+            "identity:self=mentor".to_string(),
+        ])
+    );
+    assert_eq!(
+        reflection.requested_commitment_updates.as_ref(),
+        Some(&vec![
+            Commitment::new(Owner::Self_, "prefer:evidence_backed_identity_updates"),
+            Commitment::new(Owner::Self_, "forbid:write_identity_core_directly"),
+        ])
+    );
+}
+
+#[tokio::test]
+async fn reflection_preserves_baseline_commitment_when_updates_replace_commitments() {
+    let deps = test_support::reflection_query_deps();
+
+    execute_reflection(
+        &deps,
+        test_support::reflection_input_without_baseline_commitment(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        deps.commitments(),
+        vec![
+            Commitment::new(Owner::Self_, "prefer:evidence_backed_identity_updates"),
+            Commitment::new(Owner::Self_, "forbid:write_identity_core_directly"),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn reflection_without_replacement_claim_disputes_old_claim_and_updates_identity() {
+    let deps = test_support::reflection_query_deps();
+
+    let result = execute_reflection(
+        &deps,
+        test_support::reflection_input_with_identity_update_only(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.replacement_claim_id, None);
+    assert_eq!(
+        deps.claim("claim-old")
+            .expect("original claim should remain")
+            .status,
+        ClaimStatus::Disputed
+    );
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &["identity:self=staff_architect".to_string()]
+    );
+}
+
+#[tokio::test]
 async fn reflection_rejects_inferred_replacement_without_external_evidence() {
     let deps = test_support::in_memory_deps();
 
@@ -172,6 +286,101 @@ async fn reflection_accepts_inferred_replacement_with_explicit_evidence() {
             )
         ]
     );
+}
+
+#[tokio::test]
+async fn reflection_supersedes_old_claim_with_query_resolved_evidence() {
+    let deps = test_support::reflection_query_deps();
+
+    let result = execute_reflection(&deps, test_support::reflection_input_with_query())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        result.replacement_claim_id.as_deref(),
+        Some("id-1:replacement")
+    );
+
+    let replacement_claim = deps
+        .claim("id-1:replacement")
+        .expect("query-resolved replacement claim should be committed");
+    assert_eq!(replacement_claim.claim.object(), "principal_architect");
+    assert_eq!(replacement_claim.status, ClaimStatus::Active);
+    assert_eq!(
+        deps.evidence_links(),
+        vec![
+            (
+                "id-1:replacement".to_string(),
+                "evt-reflection-3".to_string()
+            ),
+            (
+                "id-1:replacement".to_string(),
+                "evt-reflection-1".to_string()
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn reflection_replaces_with_query_and_explicit_evidence_ids_without_duplication() {
+    let deps = test_support::reflection_query_deps();
+
+    let result = execute_reflection(
+        &deps,
+        test_support::reflection_input_with_query_and_explicit_overlap(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result.replacement_claim_id.as_deref(),
+        Some("id-1:replacement")
+    );
+    assert_eq!(
+        deps.evidence_links(),
+        vec![
+            (
+                "id-1:replacement".to_string(),
+                "evt-reflection-1".to_string()
+            ),
+            (
+                "id-1:replacement".to_string(),
+                "evt-reflection-3".to_string()
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn reflection_rejects_replacement_claim_when_query_returns_no_events() {
+    let deps = test_support::reflection_query_deps();
+
+    let result = execute_reflection(
+        &deps,
+        ReflectionInput::new(
+            Reflection::new(
+                "No matching events should be a hard error for query-based replacement.",
+            ),
+            "claim-old",
+            Some(ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "principal_architect",
+                Mode::Inferred,
+            )),
+            Vec::new(),
+        )
+        .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
+            owner: Some(Owner::Self_),
+            kind: Some(EventKind::Conversation),
+            limit: Some(2),
+        }),
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+    assert!(deps.claim("id-1:replacement").is_none());
 }
 
 #[tokio::test]
@@ -399,10 +608,21 @@ mod test_support {
                 chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
                     .unwrap()
                     .with_timezone(&Utc),
-                Event::new(Owner::World, EventKind::Observation, "evt-reflection-2"),
+                Event::new(Owner::World, EventKind::Conversation, "evt-reflection-2"),
+            ),
+            StoredEvent::new(
+                "evt-reflection-3".to_string(),
+                chrono::DateTime::parse_from_rfc3339("2026-03-23T10:03:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+                Event::new(Owner::World, EventKind::Observation, "evt-reflection-3"),
             ),
         ];
         InMemoryDeps::new(state)
+    }
+
+    pub fn reflection_query_deps() -> InMemoryDeps {
+        reflection_deps()
     }
 
     pub fn deps_with_fail_point(fail_point: FailPoint) -> InMemoryDeps {
@@ -443,6 +663,115 @@ mod test_support {
             )),
             vec!["evt-reflection-1".to_string()],
         )
+    }
+
+    pub fn reflection_input_with_query() -> ReflectionInput {
+        ReflectionInput::new(
+            Reflection::new("Two recent observations support this inferred replacement."),
+            "claim-old",
+            Some(ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "principal_architect",
+                Mode::Inferred,
+            )),
+            Vec::new(),
+        )
+        .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
+            owner: Some(Owner::World),
+            kind: Some(EventKind::Observation),
+            limit: Some(2),
+        })
+    }
+
+    pub fn reflection_input_with_query_and_explicit_overlap() -> ReflectionInput {
+        ReflectionInput::new(
+            Reflection::new("Explicit evidence plus query should dedupe overlapping events."),
+            "claim-old",
+            Some(ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "principal_architect",
+                Mode::Inferred,
+            )),
+            vec!["evt-reflection-1".to_string()],
+        )
+        .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
+            owner: Some(Owner::World),
+            kind: Some(EventKind::Observation),
+            limit: Some(2),
+        })
+    }
+
+    pub fn reflection_input_with_identity_and_commitment_updates() -> ReflectionInput {
+        ReflectionInput::new(
+            Reflection::new("Evidence-backed reflection should revise the claim, identity, and commitments together."),
+            "claim-old",
+            Some(ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "staff_architect",
+                Mode::Observed,
+            )),
+            vec!["evt-reflection-1".to_string()],
+        )
+        .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
+                owner: Some(Owner::World),
+                kind: Some(EventKind::Observation),
+                limit: Some(2),
+            })
+        .with_identity_update(vec![
+            "identity:self=staff_architect".to_string(),
+            "identity:self=mentor".to_string(),
+        ])
+        .with_commitment_updates(vec![
+            Commitment::new(Owner::Self_, "prefer:evidence_backed_identity_updates"),
+            Commitment::new(Owner::Self_, "forbid:write_identity_core_directly"),
+        ])
+    }
+
+    pub fn reflection_input_without_baseline_commitment() -> ReflectionInput {
+        ReflectionInput::new(
+            Reflection::new(
+                "Reflection should not be able to drop the baseline identity write guard.",
+            ),
+            "claim-old",
+            Some(ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "staff_architect",
+                Mode::Observed,
+            )),
+            vec!["evt-reflection-1".to_string()],
+        )
+        .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
+            owner: Some(Owner::World),
+            kind: Some(EventKind::Observation),
+            limit: Some(2),
+        })
+        .with_commitment_updates(vec![Commitment::new(
+            Owner::Self_,
+            "prefer:evidence_backed_identity_updates",
+        )])
+    }
+
+    pub fn reflection_input_with_identity_update_only() -> ReflectionInput {
+        ReflectionInput::new(
+            Reflection::new("Conflict-only reflection can still revise identity with evidence."),
+            "claim-old",
+            None,
+            vec!["evt-reflection-1".to_string()],
+        )
+        .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
+            owner: Some(Owner::World),
+            kind: Some(EventKind::Observation),
+            limit: Some(2),
+        })
+        .with_identity_update(vec!["identity:self=staff_architect".to_string()])
     }
 
     pub fn project_ingest_input() -> IngestInput {
@@ -575,6 +904,8 @@ struct PendingReflection {
     evidence_links: Vec<(String, String)>,
     reflections: Vec<StoredReflection>,
     status_updates: Vec<(String, ClaimStatus)>,
+    identity: Option<IdentityCore>,
+    commitments: Option<Vec<Commitment>>,
 }
 
 impl Default for State {
@@ -656,6 +987,20 @@ impl InMemoryDeps {
             .cloned()
     }
 
+    fn identity(&self) -> IdentityCore {
+        self.state
+            .lock()
+            .unwrap()
+            .committed
+            .identity
+            .clone()
+            .expect("identity should be present")
+    }
+
+    fn commitments(&self) -> Vec<Commitment> {
+        self.state.lock().unwrap().committed.commitments.clone()
+    }
+
     fn model_call_count(&self) -> usize {
         self.state.lock().unwrap().model_calls.len()
     }
@@ -706,6 +1051,38 @@ impl EventStore for InMemoryDeps {
             .events
             .iter()
             .any(|event| event.event_id == event_id))
+    }
+
+    async fn query_evidence_event_ids(
+        &self,
+        query: EvidenceQuery,
+    ) -> Result<Vec<String>, AppError> {
+        let mut events = self.state.lock().unwrap().committed.events.clone();
+
+        if let Some(owner) = query.owner {
+            events.retain(|event| event.event.owner() == owner);
+        }
+
+        if let Some(kind) = query.kind {
+            events.retain(|event| event.event.kind() == kind);
+        }
+
+        events.sort_by(|lhs, rhs| {
+            rhs.recorded_at
+                .cmp(&lhs.recorded_at)
+                .then_with(|| rhs.event_id.cmp(&lhs.event_id))
+        });
+
+        let limit = query.limit.unwrap_or(10);
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        Ok(events
+            .into_iter()
+            .take(limit)
+            .map(|event| event.event_id)
+            .collect())
     }
 }
 
@@ -956,6 +1333,46 @@ impl ReflectionTransaction for InMemoryReflectionTransaction {
         Ok(())
     }
 
+    async fn load_identity(&mut self) -> Result<IdentityCore, AppError> {
+        if let Some(identity) = &self.pending.identity {
+            return Ok(identity.clone());
+        }
+
+        self.deps
+            .state
+            .lock()
+            .unwrap()
+            .committed
+            .identity
+            .clone()
+            .ok_or_else(|| AppError::Message("missing identity".to_string()))
+    }
+
+    async fn replace_identity(&mut self, identity: IdentityCore) -> Result<(), AppError> {
+        self.pending.identity = Some(identity);
+        Ok(())
+    }
+
+    async fn load_commitments(&mut self) -> Result<Vec<Commitment>, AppError> {
+        if let Some(commitments) = &self.pending.commitments {
+            return Ok(commitments.clone());
+        }
+
+        Ok(self
+            .deps
+            .state
+            .lock()
+            .unwrap()
+            .committed
+            .commitments
+            .clone())
+    }
+
+    async fn replace_commitments(&mut self, commitments: Vec<Commitment>) -> Result<(), AppError> {
+        self.pending.commitments = Some(commitments);
+        Ok(())
+    }
+
     async fn update_claim_status(
         &mut self,
         claim_id: &str,
@@ -977,6 +1394,12 @@ impl ReflectionTransaction for InMemoryReflectionTransaction {
             .evidence_links
             .extend(self.pending.evidence_links);
         state.committed.reflections.extend(self.pending.reflections);
+        if let Some(identity) = self.pending.identity {
+            state.committed.identity = Some(identity);
+        }
+        if let Some(commitments) = self.pending.commitments {
+            state.committed.commitments = commitments;
+        }
         for (claim_id, status) in self.pending.status_updates {
             if let Some(claim) = state
                 .committed

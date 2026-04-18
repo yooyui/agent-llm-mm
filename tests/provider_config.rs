@@ -1,13 +1,14 @@
 use agent_llm_mm::{
     run_doctor,
     support::config::{
-        AppConfig, ModelConfig, ModelProviderKind, OpenAiCompatibleConfig, TransportKind,
+        AppConfig, DATABASE_URL_ENV_VAR, ModelConfig, ModelProviderKind, OpenAiCompatibleConfig,
+        TransportKind,
     },
 };
 use std::{
     collections::HashMap,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
 };
 use tempfile::tempdir;
@@ -76,13 +77,43 @@ provider = "mock"
 
     let _guard = EnvGuard::set([(
         "AGENT_LLM_MM_CONFIG",
-        config_path.to_string_lossy().as_ref(),
+        Some(config_path.to_string_lossy().as_ref()),
     )]);
 
     let config = AppConfig::load().expect("config");
 
     assert_eq!(config.model_provider, ModelProviderKind::Mock);
     assert_eq!(config.model_config, ModelConfig::Mock);
+}
+
+#[test]
+fn load_prefers_database_url_env_over_default_config_file() {
+    let temp_dir = tempdir().expect("temp dir");
+    let config_path = temp_dir.path().join("agent-llm-mm.local.toml");
+    fs::write(
+        &config_path,
+        r#"
+transport = "stdio"
+database_url = "sqlite:///tmp/from-config-file.sqlite"
+
+[model]
+provider = "mock"
+"#,
+    )
+    .expect("write config");
+
+    let _guard = ProcessContextGuard::apply(
+        temp_dir.path(),
+        [
+            ("AGENT_LLM_MM_CONFIG", None),
+            (DATABASE_URL_ENV_VAR, Some("sqlite:///tmp/from-env.sqlite")),
+        ],
+    );
+
+    let config = AppConfig::load().expect("config");
+
+    assert_eq!(config.database_url, "sqlite:///tmp/from-env.sqlite");
+    assert_eq!(config.model_provider, ModelProviderKind::Mock);
 }
 
 #[tokio::test]
@@ -116,7 +147,7 @@ struct EnvGuard {
 }
 
 impl EnvGuard {
-    fn set<const N: usize>(pairs: [(&'static str, &str); N]) -> Self {
+    fn set<const N: usize>(pairs: [(&'static str, Option<&str>); N]) -> Self {
         static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
         let lock = ENV_LOCK
@@ -127,8 +158,13 @@ impl EnvGuard {
         let mut previous = HashMap::new();
         for (key, value) in pairs {
             previous.insert(key, std::env::var(key).ok());
-            unsafe {
-                std::env::set_var(key, value);
+            match value {
+                Some(value) => unsafe {
+                    std::env::set_var(key, value);
+                },
+                None => unsafe {
+                    std::env::remove_var(key);
+                },
             }
         }
 
@@ -151,5 +187,29 @@ impl Drop for EnvGuard {
                 },
             }
         }
+    }
+}
+
+struct ProcessContextGuard {
+    _env: EnvGuard,
+    previous_dir: PathBuf,
+}
+
+impl ProcessContextGuard {
+    fn apply<const N: usize>(dir: &Path, pairs: [(&'static str, Option<&str>); N]) -> Self {
+        let env_guard = EnvGuard::set(pairs);
+        let previous_dir = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(dir).expect("set current dir");
+
+        Self {
+            _env: env_guard,
+            previous_dir,
+        }
+    }
+}
+
+impl Drop for ProcessContextGuard {
+    fn drop(&mut self) {
+        std::env::set_current_dir(&self.previous_dir).expect("restore current dir");
     }
 }

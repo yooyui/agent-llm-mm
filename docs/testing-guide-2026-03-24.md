@@ -10,34 +10,34 @@
 - `doctor` 预检
 - 手工 smoke test 的推荐方式
 
-当前工作目录：
+当前工作目录（按实际环境替换）：
 
-`D:\Code\agent_llm_mm`
+`~/code/agent-llm-mm`
 
 命令执行环境要求：
 
-- 使用 `pwsh.exe`
-- 默认 UTF-8
-- Windows 11
+- 安装 Rust toolchain
+- `cargo` 可用
+- `bash` 或 `zsh`（用于 `scripts/agent-llm-mm.sh`）
 
 ---
 
 ## 2. 当前测试基线
 
-截至 `2026-03-31`，`cargo test` 全量通过，摘要如下：
+截至 `2026-04-18`，`cargo test` 全量通过，摘要如下：
 
-- `application_use_cases`: 11 passed
-- `bootstrap`: 9 passed
+- `application_use_cases`: 17 passed
+- `bootstrap`: 12 passed
 - `decision_flow`: 2 passed
 - `domain_invariants`: 4 passed
 - `domain_snapshot`: 6 passed
-- `failure_modes`: 3 passed
-- `mcp_stdio`: 8 passed
+- `failure_modes`: 6 passed
+- `mcp_stdio`: 13 passed
 - `openai_compatible_model`: 3 passed
-- `provider_config`: 4 passed
-- `sqlite_store`: 8 passed
+- `provider_config`: 5 passed
+- `sqlite_store`: 12 passed
 
-合计：58 个测试通过。
+合计：80 个测试通过。
 
 ---
 
@@ -47,20 +47,20 @@
 
 - 安装 Rust toolchain
 - 可用的 `cargo`
-- 使用 PowerShell 7
+- `bash` 或 `zsh`：用于 `scripts/agent-llm-mm.sh`
 
 ### 3.2 建议进入工作目录
 
-```powershell
-Set-Location 'D:\Code\agent_llm_mm'
+```zsh
+cd ~/code/agent-llm-mm
 ```
 
 ### 3.3 数据库隔离建议
 
-服务默认会把 SQLite 文件放到系统临时目录下的 `agent-llm-mm.sqlite`。为了避免和已有运行实例互相污染，手工测试时建议显式设置：
+未显式设置 `database_url` 时，服务会把默认 SQLite 文件放到当前平台的用户数据目录，并按“本机用户共享默认库”语义复用。为了避免和已有运行实例互相污染，手工测试时建议显式设置：
 
-```powershell
-Copy-Item .\examples\agent-llm-mm.example.toml .\agent-llm-mm.local.toml
+```zsh
+cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 ```
 
 然后修改 `agent-llm-mm.local.toml` 里的：
@@ -69,7 +69,7 @@ Copy-Item .\examples\agent-llm-mm.example.toml .\agent-llm-mm.local.toml
 - `provider`
 - provider-specific 配置
 
-如果只是跑现有自动化测试，不需要手工设置；测试本身已经为大多数场景隔离了数据库。
+如果只是跑现有自动化测试，不需要手工设置；测试本身已经为大多数场景隔离了数据库。正式接入、手工测试和实验验证仍建议各自使用不同数据库文件。
 
 ---
 
@@ -80,7 +80,8 @@ Copy-Item .\examples\agent-llm-mm.example.toml .\agent-llm-mm.local.toml
 1. `cargo fmt --check`
 2. `cargo clippy --all-targets --all-features -- -D warnings`
 3. `cargo test`
-4. `pwsh -File .\scripts\agent-llm-mm.ps1 doctor`
+4. `./scripts/agent-llm-mm.sh doctor`
+5. `cargo run --quiet -- doctor`
 
 如果只想快速回归某个变更，再执行对应的定向测试。
 
@@ -90,7 +91,7 @@ Copy-Item .\examples\agent-llm-mm.example.toml .\agent-llm-mm.local.toml
 
 ### 5.1 格式检查
 
-```powershell
+```zsh
 cargo fmt --check
 ```
 
@@ -101,7 +102,7 @@ cargo fmt --check
 
 ### 5.2 静态检查
 
-```powershell
+```zsh
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
@@ -112,7 +113,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 ### 5.3 全量测试
 
-```powershell
+```zsh
 cargo test
 ```
 
@@ -132,8 +133,12 @@ cargo test
 
 ### 5.4 本机预检
 
-```powershell
-pwsh -File .\scripts\agent-llm-mm.ps1 doctor
+```zsh
+./scripts/agent-llm-mm.sh doctor
+```
+
+```zsh
+cargo run --quiet -- doctor
 ```
 
 预期输出为 JSON，至少包含：
@@ -154,7 +159,7 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 
 ### 6.1 `namespace` / SQLite 约束
 
-```powershell
+```zsh
 cargo test --test sqlite_store
 ```
 
@@ -182,7 +187,7 @@ cargo test --test sqlite_store
 
 ### 6.2 MCP `stdio` 端到端
 
-```powershell
+```zsh
 cargo test --test mcp_stdio
 ```
 
@@ -193,6 +198,8 @@ cargo test --test mcp_stdio
 - `run_reflection` 是否影响 active snapshot
 - 配置文件指定 provider 后是否真的走到对应 provider
 - `run_reflection` 的显式 evidence 输入是否允许 inferred replacement
+- `run_reflection` 的 query-based evidence 输入是否被正确校验
+- `run_reflection` 的 `identity_update` / `commitment_updates` 是否真正落盘并反映到后续 snapshot
 - baseline commitment 是否阻断 forbidden action
 - 非法 namespace 是否返回 `-32602 invalid_params`
 
@@ -203,6 +210,10 @@ cargo test --test mcp_stdio
 - `decide_with_snapshot_over_stdio_uses_openai_compatible_provider_from_config_file`
 - `conflicting_reflection_over_stdio_removes_claim_from_active_snapshot`
 - `inferred_replacement_reflection_with_evidence_is_accepted_over_stdio`
+- `reflected_claim_replacement_query_is_accepted_over_stdio`
+- `reflection_identity_and_commitment_updates_are_applied_and_audited_over_stdio`
+- `reflection_identity_or_commitment_updates_require_evidence_over_stdio`
+- `replacement_evidence_query_limit_overflow_is_invalid_params_over_stdio`
 - `fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment`
 - `invalid_namespace_is_reported_as_invalid_params_over_stdio`
 
@@ -214,7 +225,7 @@ cargo test --test mcp_stdio
 
 ### 6.3 领域不变量
 
-```powershell
+```zsh
 cargo test --test domain_invariants --test domain_snapshot
 ```
 
@@ -227,7 +238,7 @@ cargo test --test domain_invariants --test domain_snapshot
 
 ### 6.4 应用层编排
 
-```powershell
+```zsh
 cargo test --test application_use_cases --test failure_modes
 ```
 
@@ -236,7 +247,9 @@ cargo test --test application_use_cases --test failure_modes
 - ingest 事务顺序
 - reflection 状态流转
 - inferred replacement 在有显式 evidence 时可通过
+- query-based evidence 会被去重、限流并做上限校验
 - replacement claim 的 evidence link 会写入
+- deep reflection 会更新 `identity_core` / `commitments` 并写入审计字段
 - snapshot 组装
 - failure mode 回归
 
@@ -244,7 +257,11 @@ cargo test --test application_use_cases --test failure_modes
 
 - `reflection_rejects_inferred_replacement_without_external_evidence`
 - `reflection_accepts_inferred_replacement_with_explicit_evidence`
+- `reflection_can_update_identity_and_commitments_with_audited_supporting_evidence`
+- `reflection_preserves_baseline_commitment_when_updates_replace_commitments`
+- `reflection_without_replacement_claim_disputes_old_claim_and_updates_identity`
 - `reflection_rejects_missing_replacement_evidence_event_ids`
+- `reflection_rejects_empty_identity_update_even_with_supporting_evidence`
 
 ---
 
@@ -256,10 +273,10 @@ cargo test --test application_use_cases --test failure_modes
 
 ### 7.1 使用独立数据库启动服务
 
-```powershell
-Set-Location 'D:\Code\agent_llm_mm'
-Copy-Item .\examples\agent-llm-mm.example.toml .\agent-llm-mm.local.toml
-pwsh -File .\scripts\agent-llm-mm.ps1 serve
+```zsh
+cd ~/code/agent-llm-mm
+cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
+./scripts/agent-llm-mm.sh serve
 ```
 
 这会启动 MCP `stdio` 服务。由于它等待 JSON-RPC 消息，终端表面上会“挂住”，这是正常现象。
@@ -268,8 +285,8 @@ pwsh -File .\scripts\agent-llm-mm.ps1 serve
 
 另开一个终端，直接跑现有 E2E：
 
-```powershell
-Set-Location 'D:\Code\agent_llm_mm'
+```zsh
+cd ~/code/agent-llm-mm
 cargo test --test mcp_stdio -- --nocapture
 ```
 
@@ -326,6 +343,34 @@ cargo test --test mcp_stdio inferred_replacement_reflection_with_evidence_is_acc
 - 返回 `replacement_claim_id`
 - 不是 `invalid_params`
 - 后续 snapshot 中 active claim 应变为 replacement 对应的新命题
+
+如果你要验证最小 deep reflection 更新，可在上述基础上再加：
+
+```json
+{
+  "identity_update": {
+    "canonical_claims": [
+      "identity:self=staff_architect",
+      "identity:style=evidence_first"
+    ]
+  },
+  "commitment_updates": [
+    {
+      "owner": "Self_",
+      "description": "prefer:evidence_backed_identity_updates"
+    },
+    {
+      "owner": "Self_",
+      "description": "forbid:write_identity_core_directly"
+    }
+  ]
+}
+```
+
+额外预期：
+
+- 后续 `build_self_snapshot` 返回的新 `identity` 与 `commitments` 已更新
+- `reflections` 表会保留 supporting evidence 与请求更新内容的 JSON 审计字段
 
 ---
 
@@ -444,11 +489,11 @@ cargo test --test mcp_stdio
 
 ### 准备提交前
 
-```powershell
+```zsh
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-pwsh -File .\scripts\agent-llm-mm.ps1 doctor
+./scripts/agent-llm-mm.sh doctor
 ```
 
 ---
@@ -457,11 +502,11 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 
 截至 `2026-03-27`，推荐把下面四条当作提交前基线：
 
-```powershell
+```zsh
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-pwsh -File .\scripts\agent-llm-mm.ps1 doctor
+./scripts/agent-llm-mm.sh doctor
 ```
 
 如果这四条都通过，说明当前工作树至少满足：

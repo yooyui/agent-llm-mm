@@ -8,6 +8,7 @@ use std::{
 use agent_llm_mm::support::config::{CONFIG_PATH_ENV_VAR, DATABASE_URL_ENV_VAR};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use sqlx::{Row, sqlite::SqlitePool};
 use tempfile::TempDir;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -300,7 +301,9 @@ timeout_ms = 30000
 "#,
         stub.base_url()
     );
-    let mut client = test_support::spawn_stdio_client_with_config(config).await.unwrap();
+    let mut client = test_support::spawn_stdio_client_with_config(config)
+        .await
+        .unwrap();
     let _ = client.list_all_tools().await.unwrap();
 
     let response = client
@@ -536,6 +539,535 @@ async fn missing_replacement_evidence_event_ids_are_invalid_params_over_stdio() 
     assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
 }
 
+#[tokio::test]
+async fn reflected_claim_replacement_query_is_accepted_over_stdio() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    for summary in ["World observed update A.", "World observed update B."] {
+        client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "World",
+                        "kind": "Observation",
+                        "summary": summary
+                    },
+                    "claim_drafts": [],
+                    "episode_reference": "episode:reflection-query-source"
+                }),
+            )
+            .await
+            .unwrap();
+    }
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "The role may still evolve."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:reflection-query-target"
+            }),
+        )
+        .await
+        .unwrap();
+    let superseded_claim_id = ingest
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str)
+        .map(|event_id| format!("{event_id}:claim:0"))
+        .unwrap();
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {
+                    "summary": "Query-based evidence lookup should still allow replacement."
+                },
+                "supersede_claim_id": superseded_claim_id,
+                "replacement_claim": {
+                    "owner": "Self_",
+                    "subject": "self.role",
+                    "predicate": "is",
+                    "object": "principal_architect",
+                    "mode": "Inferred"
+                },
+                "replacement_evidence_query": {
+                    "owner": "World",
+                    "kind": "Observation",
+                    "limit": 2
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+    let replacement_claim_id = reflection
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("replacement_claim_id"))
+        .and_then(Value::as_str);
+
+    assert!(
+        replacement_claim_id.is_some_and(|claim_id| claim_id.ends_with(":replacement")),
+        "query-based replacement should resolve a replacement claim id: {reflection:?}"
+    );
+}
+
+#[tokio::test]
+async fn reflected_claim_replacement_query_without_matches_is_invalid_params_over_stdio() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "No world observations are stored for this test."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:reflection-query-missing"
+            }),
+        )
+        .await
+        .unwrap();
+    let superseded_claim_id = ingest
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str)
+        .map(|event_id| format!("{event_id}:claim:0"))
+        .unwrap();
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {
+                    "summary": "Query returns nothing, so this should be rejected."
+                },
+                "supersede_claim_id": superseded_claim_id,
+                "replacement_claim": {
+                    "owner": "Self_",
+                    "subject": "self.role",
+                    "predicate": "is",
+                    "object": "principal_architect",
+                    "mode": "Inferred"
+                },
+                "replacement_evidence_query": {
+                    "owner": "World",
+                    "kind": "Conversation",
+                    "limit": 3
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+    let error = reflection
+        .get("error")
+        .expect("query without matching evidence should return invalid params");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
+}
+
+#[tokio::test]
+async fn reflection_identity_and_commitment_updates_are_applied_and_audited_over_stdio() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    for summary in [
+        "World observed stronger evidence for the updated role.",
+        "World observed the preference for evidence-backed identity changes.",
+    ] {
+        client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "World",
+                        "kind": "Observation",
+                        "summary": summary
+                    },
+                    "claim_drafts": [],
+                    "episode_reference": "episode:reflection-deeper-updates-source"
+                }),
+            )
+            .await
+            .unwrap();
+    }
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "The user clarified that the role has shifted."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:reflection-deeper-updates-target"
+            }),
+        )
+        .await
+        .unwrap();
+    let superseded_claim_id = ingest
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str)
+        .map(|event_id| format!("{event_id}:claim:0"))
+        .unwrap();
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {
+                    "summary": "Shared evidence should update the replacement claim, identity, and commitments."
+                },
+                "supersede_claim_id": superseded_claim_id,
+                "replacement_claim": {
+                    "owner": "Self_",
+                    "subject": "self.role",
+                    "predicate": "is",
+                    "object": "staff_architect",
+                    "mode": "Observed"
+                },
+                "replacement_evidence_query": {
+                    "owner": "World",
+                    "kind": "Observation",
+                    "limit": 2
+                },
+                "identity_update": {
+                    "canonical_claims": [
+                        "identity:self=staff_architect",
+                        "identity:style=evidence_first"
+                    ]
+                },
+                "commitment_updates": [
+                    {
+                        "owner": "Self_",
+                        "description": "prefer:evidence_backed_identity_updates"
+                    },
+                    {
+                        "owner": "Self_",
+                        "description": "forbid:write_identity_core_directly"
+                    }
+                ]
+            }),
+        )
+        .await
+        .unwrap();
+
+    let reflection_id = reflection
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("reflection_id"))
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_string();
+    let replacement_claim_id = reflection
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("replacement_claim_id"))
+        .and_then(Value::as_str);
+    assert!(
+        replacement_claim_id.is_some_and(|claim_id| claim_id.ends_with(":replacement")),
+        "deeper reflection should still create a replacement claim: {reflection:?}"
+    );
+
+    let snapshot = client
+        .call_tool("build_self_snapshot", json!({ "budget": 8 }))
+        .await
+        .unwrap();
+    let snapshot = snapshot
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("snapshot"))
+        .cloned()
+        .unwrap();
+
+    let identity = snapshot
+        .get("identity")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    let commitments = snapshot
+        .get("commitments")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    let claims = snapshot
+        .get("claims")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        identity,
+        vec![
+            "identity:self=staff_architect",
+            "identity:style=evidence_first",
+        ]
+    );
+    assert_eq!(
+        commitments,
+        vec![
+            "prefer:evidence_backed_identity_updates",
+            "forbid:write_identity_core_directly",
+        ]
+    );
+    assert!(
+        claims.contains(&"self:self.role is staff_architect"),
+        "replacement claim should be visible in the snapshot: {claims:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let audit_row = sqlx::query(
+        r#"
+        SELECT
+            supporting_evidence_event_ids,
+            requested_identity_update,
+            requested_commitment_updates
+        FROM reflections
+        WHERE reflection_id = ?
+        "#,
+    )
+    .bind(&reflection_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let supporting_evidence_event_ids = serde_json::from_str::<Vec<String>>(
+        &audit_row.get::<String, _>("supporting_evidence_event_ids"),
+    )
+    .unwrap();
+    let requested_identity_update = serde_json::from_str::<serde_json::Value>(
+        &audit_row.get::<String, _>("requested_identity_update"),
+    )
+    .unwrap();
+    let requested_commitment_updates = serde_json::from_str::<Vec<serde_json::Value>>(
+        &audit_row.get::<String, _>("requested_commitment_updates"),
+    )
+    .unwrap();
+
+    assert_eq!(supporting_evidence_event_ids.len(), 2);
+    assert_eq!(
+        requested_identity_update,
+        json!({
+            "canonical_claims": [
+                "identity:self=staff_architect",
+                "identity:style=evidence_first"
+            ]
+        })
+    );
+    assert_eq!(
+        requested_commitment_updates,
+        vec![
+            json!({
+                "owner": "Self_",
+                "description": "prefer:evidence_backed_identity_updates"
+            }),
+            json!({
+                "owner": "Self_",
+                "description": "forbid:write_identity_core_directly"
+            }),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn reflection_identity_or_commitment_updates_require_evidence_over_stdio() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "A claim exists, but no supporting evidence event is provided."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:reflection-deeper-updates-missing-evidence"
+            }),
+        )
+        .await
+        .unwrap();
+    let superseded_claim_id = ingest
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str)
+        .map(|event_id| format!("{event_id}:claim:0"))
+        .unwrap();
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {
+                    "summary": "Identity-only updates still need resolved evidence."
+                },
+                "supersede_claim_id": superseded_claim_id,
+                "replacement_claim": null,
+                "identity_update": {
+                    "canonical_claims": ["identity:self=principal_architect"]
+                },
+                "commitment_updates": [
+                    {
+                        "owner": "Self_",
+                        "description": "prefer:reflect_before_identity_changes"
+                    }
+                ]
+            }),
+        )
+        .await
+        .unwrap();
+
+    let error = reflection
+        .get("error")
+        .expect("missing evidence for deeper reflection updates should return invalid params");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
+}
+
+#[tokio::test]
+async fn replacement_evidence_query_limit_overflow_is_invalid_params_over_stdio() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "kind": "Observation",
+                    "summary": "A matching observation exists, so overflow must not be masked as an empty-query error."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:reflection-limit-overflow-source"
+            }),
+        )
+        .await
+        .unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "Overflowing query limits should be rejected."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:reflection-limit-overflow"
+            }),
+        )
+        .await
+        .unwrap();
+    let superseded_claim_id = ingest
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str)
+        .map(|event_id| format!("{event_id}:claim:0"))
+        .unwrap();
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {
+                    "summary": "Oversized evidence query limits should fail before SQLite treats them as unbounded."
+                },
+                "supersede_claim_id": superseded_claim_id,
+                "replacement_claim": {
+                    "owner": "Self_",
+                    "subject": "self.role",
+                    "predicate": "is",
+                    "object": "principal_architect",
+                    "mode": "Observed"
+                },
+                "replacement_evidence_query": {
+                    "owner": "World",
+                    "kind": "Observation",
+                    "limit": 9223372036854775808u64
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+    let error = reflection
+        .get("error")
+        .expect("overflowing query limit should be reported as invalid params");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
+}
+
 mod test_support {
     use super::*;
 
@@ -544,7 +1076,9 @@ mod test_support {
         StdioClient::spawn(&database.url, Some(database.temp_dir))
     }
 
-    pub async fn spawn_stdio_client_with_config(config_template: String) -> io::Result<StdioClient> {
+    pub async fn spawn_stdio_client_with_config(
+        config_template: String,
+    ) -> io::Result<StdioClient> {
         let database = database_override()?;
         let config_path = database.temp_dir.path().join("agent-llm-mm.local.toml");
         let config = config_template.replace("__DATABASE_URL__", &database.url);
@@ -552,8 +1086,19 @@ mod test_support {
 
         StdioClient::spawn_with_env(
             Some(database.temp_dir),
-            &[(CONFIG_PATH_ENV_VAR, config_path.to_string_lossy().into_owned())],
+            &[(
+                CONFIG_PATH_ENV_VAR,
+                config_path.to_string_lossy().into_owned(),
+            )],
         )
+    }
+
+    pub async fn spawn_stdio_client_with_database() -> io::Result<(StdioClient, String, TempDir)> {
+        let database = database_override()?;
+        let url = database.url.clone();
+        let temp_dir = database.temp_dir;
+        let client = StdioClient::spawn(&url, None)?;
+        Ok((client, url, temp_dir))
     }
 
     struct DatabaseOverride {

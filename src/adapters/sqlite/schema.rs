@@ -39,7 +39,10 @@ CREATE TABLE IF NOT EXISTS reflections (
     recorded_at TEXT NOT NULL,
     summary TEXT NOT NULL,
     superseded_claim_id TEXT,
-    replacement_claim_id TEXT
+    replacement_claim_id TEXT,
+    supporting_evidence_event_ids TEXT NOT NULL DEFAULT '[]',
+    requested_identity_update TEXT,
+    requested_commitment_updates TEXT
 )"#;
 
 const IDENTITY_CLAIMS_TABLE_SQL: &str = r#"

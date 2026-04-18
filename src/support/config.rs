@@ -8,6 +8,8 @@ pub const DATABASE_URL_ENV_VAR: &str = "AGENT_LLM_MM_DATABASE_URL";
 pub const CONFIG_PATH_ENV_VAR: &str = "AGENT_LLM_MM_CONFIG";
 pub const DEFAULT_CONFIG_FILE_NAME: &str = "agent-llm-mm.local.toml";
 const DEFAULT_OPENAI_TIMEOUT_MS: u64 = 30_000;
+const DEFAULT_DATABASE_DIR_NAME: &str = "agent-llm-mm";
+const DEFAULT_DATABASE_FILE_NAME: &str = "agent-llm-mm.sqlite";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -103,6 +105,10 @@ impl AppConfig {
             };
         }
 
+        if let Ok(database_url) = std::env::var(DATABASE_URL_ENV_VAR) {
+            config.database_url = database_url;
+        }
+
         Ok(config)
     }
 
@@ -147,12 +153,48 @@ impl AppConfig {
 }
 
 fn default_database_url() -> String {
-    std::env::var(DATABASE_URL_ENV_VAR)
-        .unwrap_or_else(|_| sqlite_url(&std::env::temp_dir().join("agent-llm-mm.sqlite")))
+    std::env::var(DATABASE_URL_ENV_VAR).unwrap_or_else(|_| sqlite_url(&default_database_path()))
 }
 
 fn sqlite_url(path: &Path) -> String {
     format!("sqlite://{}", path.to_string_lossy().replace('\\', "/"))
+}
+
+fn default_database_path() -> PathBuf {
+    default_database_base_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join(DEFAULT_DATABASE_DIR_NAME)
+        .join(DEFAULT_DATABASE_FILE_NAME)
+}
+
+#[cfg(target_os = "macos")]
+fn default_database_base_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|home| home.join("Library").join("Application Support"))
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn default_database_base_dir() -> Option<PathBuf> {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|home| home.join(".local").join("share"))
+        })
+}
+
+#[cfg(windows)]
+fn default_database_base_dir() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA")
+        .or_else(|| std::env::var_os("APPDATA"))
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .map(PathBuf::from)
+                .map(|home| home.join("AppData").join("Local"))
+        })
 }
 
 #[derive(Debug, Deserialize, Default)]

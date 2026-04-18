@@ -1,3 +1,4 @@
 .worktrees/
 target/
 agent-llm-mm.local.toml
+.codex/

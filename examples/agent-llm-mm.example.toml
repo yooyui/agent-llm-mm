@@ -1,5 +1,6 @@
 transport = "stdio"
-database_url = "sqlite:///D:/back/agent-llm-mm-codex.sqlite"
+# macOS 示例:
+database_url = "sqlite:///Users/<you>/Library/Application%20Support/agent-llm-mm-codex.sqlite"
 
 [model]
 provider = "openai-compatible"

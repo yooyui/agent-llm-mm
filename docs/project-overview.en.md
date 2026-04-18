@@ -30,6 +30,11 @@
 - Self-agent memory demos and technical validation
 - A minimal Rust + MCP + SQLite reference implementation
 
+## Documentation Discipline
+
+- After finishing each task, update the corresponding documentation whenever that task changes behavior, capability boundaries, integration flow, configuration, verification commands, or collaboration rules.
+- Do not defer documentation updates until the end of a larger batch of work; code and docs should be closed out together whenever possible.
+
 ## Verification Status
 
 As of `2026-03-31`:

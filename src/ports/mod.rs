@@ -1,6 +1,9 @@
 use async_trait::async_trait;
 
-use crate::error::AppError;
+use crate::{
+    domain::{commitment::Commitment, identity_core::IdentityCore},
+    error::AppError,
+};
 
 pub mod claim_store;
 pub mod clock;
@@ -16,7 +19,7 @@ pub use claim_store::{ClaimStatus, ClaimStore, StoredClaim};
 pub use clock::Clock;
 pub use commitment_store::CommitmentStore;
 pub use episode_store::EpisodeStore;
-pub use event_store::{EventStore, StoredEvent};
+pub use event_store::{EventStore, EvidenceQuery, StoredEvent};
 pub use id_generator::IdGenerator;
 pub use identity_store::IdentityStore;
 pub use model_port::{ModelDecision, ModelDecisionRequest, ModelInput, ModelPort};
@@ -47,6 +50,26 @@ pub trait ReflectionTransaction {
     async fn upsert_claim(&mut self, claim: StoredClaim) -> Result<(), AppError>;
     async fn link_evidence(&mut self, claim_id: String, event_id: String) -> Result<(), AppError>;
     async fn append_reflection(&mut self, reflection: StoredReflection) -> Result<(), AppError>;
+    async fn load_identity(&mut self) -> Result<IdentityCore, AppError> {
+        Err(AppError::Message(
+            "reflection transaction does not support identity updates".to_string(),
+        ))
+    }
+    async fn replace_identity(&mut self, _identity: IdentityCore) -> Result<(), AppError> {
+        Err(AppError::Message(
+            "reflection transaction does not support identity updates".to_string(),
+        ))
+    }
+    async fn load_commitments(&mut self) -> Result<Vec<Commitment>, AppError> {
+        Err(AppError::Message(
+            "reflection transaction does not support commitment updates".to_string(),
+        ))
+    }
+    async fn replace_commitments(&mut self, _commitments: Vec<Commitment>) -> Result<(), AppError> {
+        Err(AppError::Message(
+            "reflection transaction does not support commitment updates".to_string(),
+        ))
+    }
     async fn update_claim_status(
         &mut self,
         claim_id: &str,

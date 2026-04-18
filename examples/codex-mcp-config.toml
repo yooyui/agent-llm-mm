@@ -1,12 +1,15 @@
-# Example snippet for C:\Users\<you>\.codex\config.toml
+# Example snippet for .codex/config.toml
 
+# macOS native shell entrypoint:
 [mcp_servers.agent-llm-mm]
-command = "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
-args = [
-  "-NoLogo",
-  "-NoProfile",
-  "-File",
-  "D:\\Code\\agent_llm_mm\\scripts\\agent-llm-mm.ps1",
-  "serve",
-]
-env = { AGENT_LLM_MM_CONFIG = "D:/Code/agent_llm_mm/agent-llm-mm.local.toml" }
+command = "/absolute/path/agent-llm-mm/scripts/agent-llm-mm.sh"
+args = ["serve"]
+env = { AGENT_LLM_MM_CONFIG = "/absolute/path/agent-llm-mm/agent-llm-mm.local.toml" }
+transport = "stdio"
+
+# If you prefer no wrapper script, use:
+# [mcp_servers.agent-llm-mm-cargo]
+# command = "cargo"
+# args = ["run", "--quiet", "--", "serve"]
+# transport = "stdio"
+# env = { AGENT_LLM_MM_CONFIG = "/absolute/path/agent-llm-mm/agent-llm-mm.local.toml" }
