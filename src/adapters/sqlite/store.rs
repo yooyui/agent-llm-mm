@@ -13,6 +13,7 @@ use crate::{
         commitment::Commitment,
         event::Event,
         identity_core::IdentityCore,
+        self_revision::TriggerType,
         types::{EventKind, Mode, Namespace, Owner},
     },
     error::AppError,
@@ -20,7 +21,7 @@ use crate::{
         ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
         IdentityStore, IngestTransaction, IngestTransactionRunner, ReflectionStore,
         ReflectionTransaction, ReflectionTransactionRunner, StoredClaim, StoredEvent,
-        StoredReflection,
+        StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
 };
 
@@ -266,6 +267,52 @@ impl ReflectionStore for SqliteStore {
 }
 
 #[async_trait]
+impl TriggerLedgerStore for SqliteStore {
+    async fn record_trigger_attempt(
+        &self,
+        entry: StoredTriggerLedgerEntry,
+    ) -> Result<(), AppError> {
+        insert_trigger_ledger_entry(&self.pool, &entry).await
+    }
+
+    async fn latest_trigger_entry(
+        &self,
+        trigger_key: &str,
+    ) -> Result<Option<StoredTriggerLedgerEntry>, AppError> {
+        // Task 2 defines "latest" as the last recorded attempt for the
+        // canonical trigger key, so append order wins over business timestamps.
+        let row = map_sqlite(
+            sqlx::query(
+                r#"
+                SELECT
+                    ledger_id,
+                    trigger_type,
+                    namespace,
+                    trigger_key,
+                    status,
+                    evidence_window,
+                    handled_at,
+                    cooldown_until,
+                    episode_watermark,
+                    reflection_id
+                FROM reflection_trigger_ledger
+                WHERE trigger_key = ?
+                ORDER BY rowid DESC
+                LIMIT 1
+                "#,
+            )
+            .bind(trigger_key)
+            .fetch_optional(&self.pool)
+            .await,
+        )?;
+
+        row.as_ref()
+            .map(stored_trigger_ledger_entry_from_row)
+            .transpose()
+    }
+}
+
+#[async_trait]
 impl IdentityStore for SqliteStore {
     async fn load_identity(&self) -> Result<IdentityCore, AppError> {
         load_identity_rows(&self.pool).await
@@ -455,6 +502,22 @@ impl ReflectionTransaction for SqliteReflectionTransaction<'_> {
                 .as_mut()
                 .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
             insert_reflection(transaction.as_mut(), &reflection).await
+        };
+        self.note_result(result)
+    }
+
+    async fn append_trigger_ledger(
+        &mut self,
+        entry: StoredTriggerLedgerEntry,
+    ) -> Result<(), AppError> {
+        self.ensure_writable()?;
+
+        let result = {
+            let transaction = self
+                .transaction
+                .as_mut()
+                .ok_or_else(|| AppError::Message("transaction already closed".to_string()))?;
+            insert_trigger_ledger_entry(transaction.as_mut(), &entry).await
         };
         self.note_result(result)
     }
@@ -709,6 +772,39 @@ where
         .bind(supporting_evidence_event_ids)
         .bind(requested_identity_update)
         .bind(requested_commitment_updates)
+        .execute(executor)
+        .await,
+    )?;
+
+    Ok(())
+}
+
+async fn insert_trigger_ledger_entry<'e, E>(
+    executor: E,
+    entry: &StoredTriggerLedgerEntry,
+) -> Result<(), AppError>
+where
+    E: sqlx::Executor<'e, Database = Sqlite>,
+{
+    map_sqlite(
+        sqlx::query(
+            r#"
+            INSERT INTO reflection_trigger_ledger (
+                ledger_id, trigger_type, namespace, trigger_key, status,
+                evidence_window, handled_at, cooldown_until, episode_watermark, reflection_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&entry.ledger_id)
+        .bind(trigger_type_as_str(entry.trigger_type))
+        .bind(entry.namespace.as_str())
+        .bind(&entry.trigger_key)
+        .bind(entry.status.as_str())
+        .bind(serialize_json(&entry.evidence_window)?)
+        .bind(entry.handled_at.map(|value| value.to_rfc3339()))
+        .bind(entry.cooldown_until.map(|value| value.to_rfc3339()))
+        .bind(serialize_episode_watermark(entry.episode_watermark)?)
+        .bind(&entry.reflection_id)
         .execute(executor)
         .await,
     )?;
@@ -1009,6 +1105,25 @@ where
     value.as_ref().map(serialize_json).transpose()
 }
 
+fn deserialize_json<T>(value: &str) -> Result<T, AppError>
+where
+    T: serde::de::DeserializeOwned,
+{
+    serde_json::from_str(value).map_err(|error| AppError::Message(error.to_string()))
+}
+
+fn serialize_episode_watermark(value: Option<u64>) -> Result<Option<i64>, AppError> {
+    value
+        .map(|value| {
+            i64::try_from(value).map_err(|_| {
+                AppError::InvalidParams(format!(
+                    "episode watermark {value} exceeds sqlite INTEGER range"
+                ))
+            })
+        })
+        .transpose()
+}
+
 fn map_sqlite<T>(result: Result<T, sqlx::Error>) -> Result<T, AppError> {
     result.map_err(|error| AppError::Message(error.to_string()))
 }
@@ -1046,10 +1161,43 @@ fn stored_event_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<StoredEvent, A
     ))
 }
 
+fn stored_trigger_ledger_entry_from_row(
+    row: &sqlx::sqlite::SqliteRow,
+) -> Result<StoredTriggerLedgerEntry, AppError> {
+    let evidence_window = deserialize_json(&row.get::<String, _>("evidence_window"))?;
+    let handled_at = parse_optional_timestamp(row.get::<Option<String>, _>("handled_at"))?;
+    let cooldown_until = parse_optional_timestamp(row.get::<Option<String>, _>("cooldown_until"))?;
+    let episode_watermark = row
+        .get::<Option<i64>, _>("episode_watermark")
+        .map(|value| {
+            u64::try_from(value).map_err(|_| {
+                AppError::Message(format!("invalid negative episode watermark: {value}"))
+            })
+        })
+        .transpose()?;
+
+    Ok(StoredTriggerLedgerEntry {
+        ledger_id: row.get("ledger_id"),
+        trigger_type: parse_trigger_type(&row.get::<String, _>("trigger_type"))?,
+        namespace: parse_namespace(&row.get::<String, _>("namespace"))?,
+        trigger_key: row.get("trigger_key"),
+        status: parse_trigger_ledger_status(&row.get::<String, _>("status"))?,
+        evidence_window,
+        handled_at,
+        cooldown_until,
+        episode_watermark,
+        reflection_id: row.get("reflection_id"),
+    })
+}
+
 fn parse_timestamp(value: &str) -> Result<DateTime<Utc>, AppError> {
     chrono::DateTime::parse_from_rfc3339(value)
         .map(|value| value.with_timezone(&Utc))
         .map_err(|error| AppError::Message(error.to_string()))
+}
+
+fn parse_optional_timestamp(value: Option<String>) -> Result<Option<DateTime<Utc>>, AppError> {
+    value.as_deref().map(parse_timestamp).transpose()
 }
 
 fn owner_as_str(owner: Owner) -> &'static str {
@@ -1098,6 +1246,23 @@ fn parse_namespace(value: &str) -> Result<Namespace, AppError> {
     })
 }
 
+fn trigger_type_as_str(trigger_type: TriggerType) -> &'static str {
+    match trigger_type {
+        TriggerType::Conflict => "conflict",
+        TriggerType::Failure => "failure",
+        TriggerType::Periodic => "periodic",
+    }
+}
+
+fn parse_trigger_type(value: &str) -> Result<TriggerType, AppError> {
+    match value {
+        "conflict" => Ok(TriggerType::Conflict),
+        "failure" => Ok(TriggerType::Failure),
+        "periodic" => Ok(TriggerType::Periodic),
+        _ => Err(AppError::Message(format!("unknown trigger type: {value}"))),
+    }
+}
+
 fn event_kind_as_str(kind: EventKind) -> &'static str {
     match kind {
         EventKind::Observation => "observation",
@@ -1123,5 +1288,17 @@ fn parse_claim_status(value: &str) -> Result<ClaimStatus, AppError> {
         "disputed" => Ok(ClaimStatus::Disputed),
         "superseded" => Ok(ClaimStatus::Superseded),
         _ => Err(AppError::Message(format!("unknown claim status: {value}"))),
+    }
+}
+
+fn parse_trigger_ledger_status(value: &str) -> Result<TriggerLedgerStatus, AppError> {
+    match value {
+        "pending" => Ok(TriggerLedgerStatus::Pending),
+        "handled" => Ok(TriggerLedgerStatus::Handled),
+        "rejected" => Ok(TriggerLedgerStatus::Rejected),
+        "suppressed" => Ok(TriggerLedgerStatus::Suppressed),
+        _ => Err(AppError::Message(format!(
+            "unknown trigger ledger status: {value}"
+        ))),
     }
 }

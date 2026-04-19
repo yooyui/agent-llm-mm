@@ -7,7 +7,7 @@
 
 ## 1. 一句话说明
 
-`agent_llm_mm` 是一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载，以及 `openai-compatible` 模型接入。
+`agent_llm_mm` 是一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载、`openai-compatible` 模型接入，以及 trigger-ledger-backed automatic self-revision MVP。
 
 ## 2. 多语言项目说明
 
@@ -20,17 +20,17 @@
 ## 3. 项目介绍与状态入口
 
 - [README.md](../README.md)
-  - 仓库首页入口、项目介绍、快速开始、文档导航
+  - 仓库首页入口、项目介绍、快速开始、文档导航，以及当前 self-revision MVP 的保守边界
 - [development-macos.md](development-macos.md)
   - macOS 环境准备、配置、预检、启动和验证
 - [development-windows.md](development-windows.md)
   - Windows 环境准备、配置、预检、启动和验证
 - [project-status.md](project-status.md)
-  - 当前实现边界、已实现 / 部分实现 / 未实现
+  - 当前实现边界、已实现 / 部分实现 / 未实现，重点包含唯一 MCP-wired automatic path 与未接线 trigger 的真实范围
 - [release-readiness.md](release-readiness.md)
   - 当前 demo 是否适合发布到 GitHub
 - [roadmap.md](roadmap.md)
-  - 近期 / 中期 / 后期规划
+  - 近期 / 中期 / 后期规划，明确哪些是 MVP 延伸，哪些不在近期承诺内
 
 ## 4. 建议先读
 
@@ -55,9 +55,9 @@
 ## 6. 接入与验证文档
 
 - [local-mcp-integration-2026-03-26.md](local-mcp-integration-2026-03-26.md)
-  - 如何把本项目接入本机 AI 客户端
+  - 如何把本项目接入本机 AI 客户端，以及 ingest-side auto-reflection 的运行边界
 - [testing-guide-2026-03-24.md](testing-guide-2026-03-24.md)
-  - 当前测试基线、推荐验证顺序和常见问题排查
+  - 当前测试基线、推荐验证顺序、self-revision MVP 定向回归和常见问题排查
 - [examples/codex-mcp-config.toml](../examples/codex-mcp-config.toml)
   - Codex 本机 MCP 配置样例
 
@@ -95,5 +95,6 @@
 ## 8. 阅读建议
 
 - 如果你是第一次看这个仓库：先读 README，再读 `project-status.md` 与 `release-readiness.md`
+- 如果你想确认 automatic self-revision 到底实现到哪里：直接读 `project-status.md`，再读 `roadmap.md`
 - 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md` 或 `testing-guide-2026-03-24.md`
 - 如果你想追溯设计来源：最后读原始讨论资料和历史快照

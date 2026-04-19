@@ -12,6 +12,14 @@ pub struct BuildSelfSnapshotInput {
     pub budget: SnapshotBudget,
 }
 
+impl BuildSelfSnapshotInput {
+    pub fn for_revision_window(evidence_window_len: usize) -> Self {
+        Self {
+            budget: SnapshotBudget::new(evidence_window_len.max(1)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BuildSelfSnapshotResult {
     pub snapshot: SelfSnapshot,

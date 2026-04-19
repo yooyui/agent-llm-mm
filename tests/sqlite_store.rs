@@ -4,13 +4,14 @@ use agent_llm_mm::{
         event::Event,
         identity_core::IdentityCore,
         reflection::Reflection,
+        self_revision::TriggerType,
         types::{EventKind, Mode, Namespace, Owner},
     },
     error::AppError,
     ports::{
         ClaimStatus, ClaimStore, CommitmentStore, EventStore, EvidenceQuery, IdentityStore,
         IngestTransactionRunner, ReflectionTransactionRunner, StoredClaim, StoredEvent,
-        StoredReflection,
+        StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
 };
 use chrono::{DateTime, Utc};
@@ -35,6 +36,7 @@ async fn sqlite_store_bootstraps_all_tables() {
     assert!(tables.contains(&"evidence_links".to_string()));
     assert!(tables.contains(&"episode_events".to_string()));
     assert!(tables.contains(&"reflections".to_string()));
+    assert!(tables.contains(&"reflection_trigger_ledger".to_string()));
     assert!(tables.contains(&"identity_claims".to_string()));
     assert!(tables.contains(&"commitments".to_string()));
 
@@ -670,6 +672,12 @@ async fn sqlite_bootstrap_migrates_legacy_reflections_table_with_audit_columns()
         .into_iter()
         .map(|row| row.get::<String, _>("name"))
         .collect::<Vec<_>>();
+    let trigger_ledger_table_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'reflection_trigger_ledger'",
+    )
+    .fetch_one(&migrated_pool)
+    .await
+    .unwrap();
     let legacy_summary = sqlx::query_scalar::<_, String>(
         "SELECT summary FROM reflections WHERE reflection_id = 'legacy-refl'",
     )
@@ -680,7 +688,145 @@ async fn sqlite_bootstrap_migrates_legacy_reflections_table_with_audit_columns()
     assert!(columns.contains(&"supporting_evidence_event_ids".to_string()));
     assert!(columns.contains(&"requested_identity_update".to_string()));
     assert!(columns.contains(&"requested_commitment_updates".to_string()));
+    assert_eq!(trigger_ledger_table_count, 1);
     assert_eq!(legacy_summary, "legacy reflection row");
+}
+
+#[tokio::test]
+async fn sqlite_trigger_ledger_records_namespace_periodic_watermark_and_cooldown() {
+    let context = test_support::new_sqlite_store().await;
+    let trigger_key = "periodic:project/agent-llm-mm";
+    let first_handled_at = test_support::fixed_now();
+    let second_handled_at = first_handled_at + chrono::Duration::minutes(15);
+    let second_cooldown_until = second_handled_at + chrono::Duration::hours(6);
+
+    context
+        .store
+        .record_trigger_attempt(StoredTriggerLedgerEntry {
+            ledger_id: "ledger-1".to_string(),
+            trigger_type: TriggerType::Periodic,
+            namespace: Namespace::for_project("agent-llm-mm"),
+            trigger_key: trigger_key.to_string(),
+            status: TriggerLedgerStatus::Handled,
+            evidence_window: vec!["event:1".to_string()],
+            handled_at: Some(first_handled_at),
+            cooldown_until: Some(first_handled_at + chrono::Duration::hours(1)),
+            episode_watermark: Some(20),
+            reflection_id: Some("refl-1".to_string()),
+        })
+        .await
+        .unwrap();
+
+    context
+        .store
+        .record_trigger_attempt(StoredTriggerLedgerEntry {
+            ledger_id: "ledger-2".to_string(),
+            trigger_type: TriggerType::Periodic,
+            namespace: Namespace::for_project("agent-llm-mm"),
+            trigger_key: trigger_key.to_string(),
+            status: TriggerLedgerStatus::Suppressed,
+            evidence_window: vec!["event:2".to_string(), "event:3".to_string()],
+            handled_at: Some(second_handled_at),
+            cooldown_until: Some(second_cooldown_until),
+            episode_watermark: Some(42),
+            reflection_id: None,
+        })
+        .await
+        .unwrap();
+
+    let entry = context
+        .store
+        .latest_trigger_entry(trigger_key)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(entry.namespace.as_str(), "project/agent-llm-mm");
+    assert_eq!(entry.status, TriggerLedgerStatus::Suppressed);
+    assert_eq!(entry.episode_watermark, Some(42));
+    assert_eq!(entry.cooldown_until, Some(second_cooldown_until));
+    assert_eq!(entry.handled_at, Some(second_handled_at));
+    assert_eq!(
+        entry.evidence_window,
+        vec!["event:2".to_string(), "event:3".to_string()]
+    );
+}
+
+#[cfg(target_pointer_width = "64")]
+#[tokio::test]
+async fn sqlite_trigger_ledger_rejects_episode_watermark_above_i64_max() {
+    let context = test_support::new_sqlite_store().await;
+
+    let result = context
+        .store
+        .record_trigger_attempt(StoredTriggerLedgerEntry {
+            ledger_id: "ledger-overflow".to_string(),
+            trigger_type: TriggerType::Periodic,
+            namespace: Namespace::for_project("agent-llm-mm"),
+            trigger_key: "periodic:project/agent-llm-mm".to_string(),
+            status: TriggerLedgerStatus::Handled,
+            evidence_window: Vec::new(),
+            handled_at: Some(test_support::fixed_now()),
+            cooldown_until: None,
+            episode_watermark: Some(i64::MAX as u64 + 1),
+            reflection_id: None,
+        })
+        .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+}
+
+#[tokio::test]
+async fn sqlite_trigger_ledger_latest_entry_uses_append_order_not_handled_at() {
+    let context = test_support::new_sqlite_store().await;
+    let trigger_key = "periodic:project/agent-llm-mm";
+    let later_business_time = test_support::fixed_now() + chrono::Duration::hours(4);
+    let earlier_business_time = test_support::fixed_now() - chrono::Duration::hours(2);
+
+    context
+        .store
+        .record_trigger_attempt(StoredTriggerLedgerEntry {
+            ledger_id: "ledger-business-late".to_string(),
+            trigger_type: TriggerType::Periodic,
+            namespace: Namespace::for_project("agent-llm-mm"),
+            trigger_key: trigger_key.to_string(),
+            status: TriggerLedgerStatus::Handled,
+            evidence_window: vec!["event:late".to_string()],
+            handled_at: Some(later_business_time),
+            cooldown_until: Some(later_business_time + chrono::Duration::hours(1)),
+            episode_watermark: Some(100),
+            reflection_id: Some("refl-late".to_string()),
+        })
+        .await
+        .unwrap();
+
+    context
+        .store
+        .record_trigger_attempt(StoredTriggerLedgerEntry {
+            ledger_id: "ledger-appended-last".to_string(),
+            trigger_type: TriggerType::Periodic,
+            namespace: Namespace::for_project("agent-llm-mm"),
+            trigger_key: trigger_key.to_string(),
+            status: TriggerLedgerStatus::Suppressed,
+            evidence_window: vec!["event:appended-last".to_string()],
+            handled_at: Some(earlier_business_time),
+            cooldown_until: None,
+            episode_watermark: Some(101),
+            reflection_id: None,
+        })
+        .await
+        .unwrap();
+
+    let entry = context
+        .store
+        .latest_trigger_entry(trigger_key)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(entry.ledger_id, "ledger-appended-last");
+    assert_eq!(entry.handled_at, Some(earlier_business_time));
+    assert_eq!(entry.status, TriggerLedgerStatus::Suppressed);
 }
 
 mod test_support {

@@ -60,7 +60,7 @@ impl Default for AppConfig {
 
 impl AppConfig {
     pub fn load() -> Result<Self, String> {
-        match std::env::var(CONFIG_PATH_ENV_VAR) {
+        let mut config = match std::env::var(CONFIG_PATH_ENV_VAR) {
             Ok(path) => Self::load_from_path(path),
             Err(_) => {
                 let default_path = PathBuf::from(DEFAULT_CONFIG_FILE_NAME);
@@ -70,7 +70,13 @@ impl AppConfig {
                     Ok(Self::default())
                 }
             }
+        }?;
+
+        if let Ok(database_url) = std::env::var(DATABASE_URL_ENV_VAR) {
+            config.database_url = database_url;
         }
+
+        Ok(config)
     }
 
     pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, String> {
@@ -103,10 +109,6 @@ impl AppConfig {
                     })
                 }
             };
-        }
-
-        if let Ok(database_url) = std::env::var(DATABASE_URL_ENV_VAR) {
-            config.database_url = database_url;
         }
 
         Ok(config)

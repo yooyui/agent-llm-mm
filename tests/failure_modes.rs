@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use agent_llm_mm::{
     application::{
+        auto_reflect_if_needed::{self, AutoReflectInput},
         build_self_snapshot::{BuildSelfSnapshotInput, execute as execute_build_snapshot},
         ingest_interaction::{IngestInput, execute as execute_ingest},
         run_reflection::{ReflectionInput, execute as execute_reflection},
@@ -12,15 +13,17 @@ use agent_llm_mm::{
         event::Event,
         identity_core::IdentityCore,
         reflection::Reflection,
+        self_revision::TriggerType,
         snapshot::SnapshotBudget,
-        types::{EventKind, Mode, Owner},
+        types::{EventKind, Mode, Namespace, Owner},
     },
     error::AppError,
     ports::{
         ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
-        IdGenerator, IdentityStore, IngestTransaction, IngestTransactionRunner,
-        ReflectionTransaction, ReflectionTransactionRunner, StoredClaim, StoredEvent,
-        StoredReflection,
+        IdGenerator, IdentityStore, IngestTransaction, IngestTransactionRunner, ModelDecision,
+        ModelInput, ModelPort, ReflectionTransaction, ReflectionTransactionRunner, StoredClaim,
+        StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        TriggerLedgerStore,
     },
 };
 use async_trait::async_trait;
@@ -151,6 +154,274 @@ async fn snapshot_budget_deduplicates_recent_duplicate_evidence_before_truncatin
     );
 }
 
+#[tokio::test]
+async fn auto_reflection_rejects_identity_patch_without_minimum_support_and_records_ledger() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.set_self_revision_proposal(test_support::identity_only_auto_reflection_proposal());
+    deps.seed_identity_support_context(
+        vec!["episode-001".to_string()],
+        vec![
+            StoredClaim::new(
+                "claim-supporting-1".to_string(),
+                ClaimDraft::new(
+                    Owner::Self_,
+                    "self.role",
+                    "is",
+                    "principal_architect",
+                    Mode::Observed,
+                ),
+                ClaimStatus::Active,
+            ),
+            StoredClaim::new(
+                "claim-conflicting-1".to_string(),
+                ClaimDraft::new(Owner::Self_, "self.role", "is", "architect", Mode::Observed),
+                ClaimStatus::Active,
+            ),
+        ],
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::self_(),
+            vec!["conflict".to_string(), "identity".to_string()],
+        ),
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
+    );
+    assert!(deps.reflection("id-2").is_none());
+}
+
+#[tokio::test]
+async fn auto_reflection_rejected_identity_attempt_does_not_start_cooldown_for_later_valid_retry() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.set_self_revision_proposal(test_support::identity_only_auto_reflection_proposal());
+    deps.seed_identity_support_context(
+        vec!["episode-001".to_string()],
+        vec![StoredClaim::new(
+            "claim-supporting-1".to_string(),
+            ClaimDraft::new(
+                Owner::Self_,
+                "self.role",
+                "is",
+                "principal_architect",
+                Mode::Observed,
+            ),
+            ClaimStatus::Active,
+        )],
+    );
+
+    let first = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::self_(),
+            vec!["conflict".to_string(), "identity".to_string()],
+        ),
+    )
+    .await;
+
+    assert!(matches!(first, Err(AppError::InvalidParams(_))));
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
+    );
+    let rejected_entry = deps
+        .latest_trigger_entry()
+        .expect("rejected attempt should remain auditable");
+    assert_eq!(rejected_entry.handled_at, None);
+    assert_eq!(rejected_entry.cooldown_until, None);
+
+    deps.seed_identity_support_context(
+        vec![
+            "episode-101".to_string(),
+            "episode-202".to_string(),
+            "episode-303".to_string(),
+        ],
+        vec![
+            StoredClaim::new(
+                "claim-supporting-1".to_string(),
+                ClaimDraft::new(
+                    Owner::Self_,
+                    "self.role",
+                    "is",
+                    "principal_architect",
+                    Mode::Observed,
+                ),
+                ClaimStatus::Active,
+            ),
+            StoredClaim::new(
+                "claim-supporting-2".to_string(),
+                ClaimDraft::new(
+                    Owner::Self_,
+                    "self.role",
+                    "is",
+                    "principal_architect",
+                    Mode::Observed,
+                ),
+                ClaimStatus::Active,
+            ),
+            StoredClaim::new(
+                "claim-supporting-3".to_string(),
+                ClaimDraft::new(
+                    Owner::Self_,
+                    "self.role",
+                    "is",
+                    "principal_architect",
+                    Mode::Observed,
+                ),
+                ClaimStatus::Active,
+            ),
+        ],
+    );
+
+    let second = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::self_(),
+            vec!["conflict".to_string(), "identity".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(second.triggered);
+    assert_eq!(second.trigger_type, Some(TriggerType::Conflict));
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Handled)
+    );
+    let reflection = deps
+        .latest_reflection()
+        .expect("later valid retry should persist a reflection");
+    assert_eq!(reflection.superseded_claim_id, None);
+    assert_eq!(reflection.replacement_claim_id, None);
+}
+
+#[tokio::test]
+async fn auto_reflection_handled_ledger_failure_rolls_back_reflection_updates() {
+    let deps = test_support::deps_with_fail_point(FailPoint::AppendHandledTriggerLedger);
+    deps.set_self_revision_proposal(test_support::commitment_only_auto_reflection_proposal());
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::self_(),
+            vec!["conflict".to_string(), "commitment".to_string()],
+        ),
+    )
+    .await;
+
+    assert!(
+        matches!(result, Err(AppError::Message(message)) if message == "injected handled trigger ledger failure")
+    );
+    assert!(deps.reflections().is_empty());
+    assert_eq!(
+        deps.commitments(),
+        vec![Commitment::new(
+            Owner::Self_,
+            "forbid:write_identity_core_directly",
+        )]
+    );
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
+    );
+
+    deps.clear_fail_point();
+
+    let retry = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::self_(),
+            vec!["conflict".to_string(), "commitment".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(retry.triggered);
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Handled)
+    );
+    assert_eq!(deps.reflections().len(), 1);
+}
+
+#[tokio::test]
+async fn auto_reflection_suppresses_periodic_trigger_during_cooldown() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_periodic_cooldown("project/agent-llm-mm:periodic");
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_periodic(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["periodic".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(!result.triggered);
+    assert_eq!(result.trigger_type, Some(TriggerType::Periodic));
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Suppressed)
+    );
+    assert!(deps.reflection("id-2").is_none());
+}
+
+#[tokio::test]
+async fn auto_reflection_repeated_suppression_does_not_extend_existing_cooldown() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_periodic_cooldown("project/agent-llm-mm:periodic");
+
+    let first = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_periodic(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["periodic".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+    let first_entry = deps
+        .latest_trigger_entry()
+        .expect("suppressed trigger should be recorded");
+
+    let second = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_periodic(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["periodic".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+    let second_entry = deps
+        .latest_trigger_entry()
+        .expect("repeated suppressed trigger should be recorded");
+
+    assert!(!first.triggered);
+    assert!(!second.triggered);
+    assert_eq!(first.ledger_status, Some(TriggerLedgerStatus::Suppressed));
+    assert_eq!(second.ledger_status, Some(TriggerLedgerStatus::Suppressed));
+    assert_eq!(first_entry.cooldown_until, second_entry.cooldown_until);
+    assert_eq!(
+        second_entry.cooldown_until,
+        Some(
+            chrono::DateTime::parse_from_rfc3339("2026-03-24T09:50:00Z")
+                .unwrap()
+                .with_timezone(&Utc)
+        )
+    );
+}
+
 mod test_support {
     use super::*;
 
@@ -241,6 +512,38 @@ mod test_support {
             budget: SnapshotBudget::new(3),
         }
     }
+
+    pub fn identity_only_auto_reflection_proposal()
+    -> agent_llm_mm::domain::self_revision::SelfRevisionProposal {
+        agent_llm_mm::domain::self_revision::SelfRevisionProposal {
+            should_reflect: true,
+            rationale: "conflict-backed identity rewrite".to_string(),
+            machine_patch: agent_llm_mm::domain::self_revision::SelfRevisionPatch {
+                identity_patch: Some(
+                    agent_llm_mm::domain::self_revision::SelfRevisionIdentityPatch::new(vec![
+                        "identity:self=principal_architect".to_string(),
+                    ]),
+                ),
+                commitment_patch: None,
+            },
+        }
+    }
+
+    pub fn commitment_only_auto_reflection_proposal()
+    -> agent_llm_mm::domain::self_revision::SelfRevisionProposal {
+        agent_llm_mm::domain::self_revision::SelfRevisionProposal {
+            should_reflect: true,
+            rationale: "repeated rollback should tighten future commitments".to_string(),
+            machine_patch: agent_llm_mm::domain::self_revision::SelfRevisionPatch {
+                identity_patch: None,
+                commitment_patch: Some(
+                    agent_llm_mm::domain::self_revision::SelfRevisionCommitmentPatch::new(vec![
+                        "prefer:reflect_after_repeated_rollback".to_string(),
+                    ]),
+                ),
+            },
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -251,6 +554,7 @@ struct FailureModeDeps {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FailPoint {
     CommitReflection,
+    AppendHandledTriggerLedger,
 }
 
 #[derive(Clone)]
@@ -259,6 +563,8 @@ struct State {
     now: DateTime<Utc>,
     next_id: usize,
     fail_point: Option<FailPoint>,
+    model_calls: Vec<ModelInput>,
+    self_revision_proposal: agent_llm_mm::domain::self_revision::SelfRevisionProposal,
 }
 
 #[derive(Clone)]
@@ -269,6 +575,7 @@ struct CommittedState {
     event_references: Vec<String>,
     episode_references: Vec<String>,
     reflections: Vec<StoredReflection>,
+    trigger_ledger: Vec<StoredTriggerLedgerEntry>,
     evidence_links: Vec<(String, String)>,
     events: Vec<StoredEvent>,
 }
@@ -285,6 +592,7 @@ struct PendingReflection {
     claims: Vec<StoredClaim>,
     evidence_links: Vec<(String, String)>,
     reflections: Vec<StoredReflection>,
+    trigger_ledger: Vec<StoredTriggerLedgerEntry>,
     status_updates: Vec<(String, ClaimStatus)>,
     identity: Option<IdentityCore>,
     commitments: Option<Vec<Commitment>>,
@@ -313,6 +621,7 @@ impl Default for State {
                 ],
                 episode_references: vec!["episode:failure-modes".to_string()],
                 reflections: Vec::new(),
+                trigger_ledger: Vec::new(),
                 evidence_links: Vec::new(),
                 events: vec![StoredEvent::new(
                     "evt-reflection-1".to_string(),
@@ -327,6 +636,11 @@ impl Default for State {
                 .with_timezone(&Utc),
             next_id: 1,
             fail_point: None,
+            model_calls: Vec::new(),
+            self_revision_proposal:
+                agent_llm_mm::domain::self_revision::SelfRevisionProposal::no_revision(
+                    "mock model did not detect a valid Failure revision".to_string(),
+                ),
         }
     }
 }
@@ -372,8 +686,91 @@ impl FailureModeDeps {
             .cloned()
     }
 
+    fn reflections(&self) -> Vec<StoredReflection> {
+        self.state.lock().unwrap().committed.reflections.clone()
+    }
+
+    fn latest_reflection(&self) -> Option<StoredReflection> {
+        self.state
+            .lock()
+            .unwrap()
+            .committed
+            .reflections
+            .last()
+            .cloned()
+    }
+
     fn evidence_links(&self) -> Vec<(String, String)> {
         self.state.lock().unwrap().committed.evidence_links.clone()
+    }
+
+    fn latest_trigger_status(&self) -> Option<TriggerLedgerStatus> {
+        self.state
+            .lock()
+            .unwrap()
+            .committed
+            .trigger_ledger
+            .last()
+            .map(|entry| entry.status)
+    }
+
+    fn latest_trigger_entry(&self) -> Option<StoredTriggerLedgerEntry> {
+        self.state
+            .lock()
+            .unwrap()
+            .committed
+            .trigger_ledger
+            .last()
+            .cloned()
+    }
+
+    fn clear_fail_point(&self) {
+        self.state.lock().unwrap().fail_point = None;
+    }
+
+    fn set_self_revision_proposal(
+        &self,
+        proposal: agent_llm_mm::domain::self_revision::SelfRevisionProposal,
+    ) {
+        self.state.lock().unwrap().self_revision_proposal = proposal;
+    }
+
+    fn seed_identity_support_context(
+        &self,
+        episode_references: Vec<String>,
+        claims: Vec<StoredClaim>,
+    ) {
+        let mut state = self.state.lock().unwrap();
+        state.committed.episode_references = episode_references;
+        state.committed.claims = claims;
+    }
+
+    fn seed_periodic_cooldown(&self, trigger_key: &str) {
+        self.state
+            .lock()
+            .unwrap()
+            .committed
+            .trigger_ledger
+            .push(StoredTriggerLedgerEntry {
+                ledger_id: "ledger-seeded-periodic".to_string(),
+                trigger_type: TriggerType::Periodic,
+                namespace: Namespace::for_project("agent-llm-mm"),
+                trigger_key: trigger_key.to_string(),
+                status: TriggerLedgerStatus::Handled,
+                evidence_window: vec!["evt-reflection-1".to_string()],
+                handled_at: Some(
+                    chrono::DateTime::parse_from_rfc3339("2026-03-23T09:50:00Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+                cooldown_until: Some(
+                    chrono::DateTime::parse_from_rfc3339("2026-03-24T09:50:00Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+                episode_watermark: Some(1),
+                reflection_id: Some("seeded-reflection".to_string()),
+            });
     }
 }
 
@@ -402,6 +799,31 @@ impl IdGenerator for FailureModeDeps {
         let next_id = format!("id-{}", state.next_id);
         state.next_id += 1;
         Ok(next_id)
+    }
+}
+
+#[async_trait]
+impl ModelPort for FailureModeDeps {
+    async fn decide(&self, input: ModelInput) -> Result<ModelDecision, AppError> {
+        self.state.lock().unwrap().model_calls.push(input);
+        Ok(ModelDecision::new("Proceed".to_string()))
+    }
+
+    async fn propose_self_revision(
+        &self,
+        request: agent_llm_mm::domain::self_revision::SelfRevisionRequest,
+    ) -> Result<agent_llm_mm::domain::self_revision::SelfRevisionProposal, AppError> {
+        let state = self.state.lock().unwrap();
+        if state.self_revision_proposal.should_reflect {
+            return Ok(state.self_revision_proposal.clone());
+        }
+
+        Ok(
+            agent_llm_mm::domain::self_revision::SelfRevisionProposal::no_revision(format!(
+                "mock model did not detect a valid {:?} revision",
+                request.trigger_type
+            )),
+        )
     }
 }
 
@@ -583,6 +1005,38 @@ impl ReflectionTransactionRunner for FailureModeDeps {
     }
 }
 
+#[async_trait]
+impl TriggerLedgerStore for FailureModeDeps {
+    async fn record_trigger_attempt(
+        &self,
+        entry: StoredTriggerLedgerEntry,
+    ) -> Result<(), AppError> {
+        self.state
+            .lock()
+            .unwrap()
+            .committed
+            .trigger_ledger
+            .push(entry);
+        Ok(())
+    }
+
+    async fn latest_trigger_entry(
+        &self,
+        trigger_key: &str,
+    ) -> Result<Option<StoredTriggerLedgerEntry>, AppError> {
+        Ok(self
+            .state
+            .lock()
+            .unwrap()
+            .committed
+            .trigger_ledger
+            .iter()
+            .rev()
+            .find(|entry| entry.trigger_key == trigger_key)
+            .cloned())
+    }
+}
+
 struct FailureModeIngestTransaction {
     deps: FailureModeDeps,
     pending: PendingIngest,
@@ -649,6 +1103,22 @@ impl ReflectionTransaction for FailureModeReflectionTransaction {
         Ok(())
     }
 
+    async fn append_trigger_ledger(
+        &mut self,
+        entry: StoredTriggerLedgerEntry,
+    ) -> Result<(), AppError> {
+        if self.deps.state.lock().unwrap().fail_point == Some(FailPoint::AppendHandledTriggerLedger)
+            && entry.status == TriggerLedgerStatus::Handled
+        {
+            return Err(AppError::Message(
+                "injected handled trigger ledger failure".to_string(),
+            ));
+        }
+
+        self.pending.trigger_ledger.push(entry);
+        Ok(())
+    }
+
     async fn load_identity(&mut self) -> Result<IdentityCore, AppError> {
         if let Some(identity) = &self.pending.identity {
             return Ok(identity.clone());
@@ -708,6 +1178,10 @@ impl ReflectionTransaction for FailureModeReflectionTransaction {
             .evidence_links
             .extend(self.pending.evidence_links);
         state.committed.reflections.extend(self.pending.reflections);
+        state
+            .committed
+            .trigger_ledger
+            .extend(self.pending.trigger_ledger);
         if let Some(identity) = self.pending.identity {
             state.committed.identity = identity;
         }

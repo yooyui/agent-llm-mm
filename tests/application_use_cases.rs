@@ -1,7 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use agent_llm_mm::{
+    adapters::model::mock::MockModel,
     application::{
+        auto_reflect_if_needed::{self, AutoReflectInput},
         build_self_snapshot::{BuildSelfSnapshotInput, execute as execute_build_snapshot},
         decide_with_snapshot::{DecideWithSnapshotInput, execute as execute_decide},
         ingest_interaction::{IngestInput, execute as execute_ingest},
@@ -13,6 +15,7 @@ use agent_llm_mm::{
         event::Event,
         identity_core::IdentityCore,
         reflection::Reflection,
+        self_revision::{SelfRevisionProposal, SelfRevisionRequest, TriggerType},
         snapshot::{SelfSnapshot, SnapshotBudget},
         types::{EventKind, Mode, Namespace, Owner},
     },
@@ -21,7 +24,8 @@ use agent_llm_mm::{
         ClaimStatus, ClaimStore, Clock, CommitmentStore, EventStore, EvidenceQuery, IdGenerator,
         IdentityStore, IngestTransaction, IngestTransactionRunner, ModelDecision, ModelInput,
         ModelPort, ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner,
-        StoredClaim, StoredEvent, StoredReflection,
+        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        TriggerLedgerStore,
     },
 };
 use async_trait::async_trait;
@@ -213,6 +217,98 @@ async fn reflection_preserves_baseline_commitment_when_updates_replace_commitmen
 }
 
 #[tokio::test]
+async fn auto_reflection_runs_once_for_repeated_failure_and_records_handled_ledger() {
+    let deps = test_support::auto_reflection_deps();
+    deps.seed_failure_window(vec![
+        "rollback after violating a hard commitment",
+        "second rollback after violating the same hard commitment",
+    ]);
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+    let second = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(result.triggered);
+    assert_eq!(result.trigger_type, Some(TriggerType::Failure));
+    assert!(!second.triggered);
+    assert_eq!(second.trigger_type, Some(TriggerType::Failure));
+    assert_eq!(second.ledger_status, Some(TriggerLedgerStatus::Suppressed));
+    assert_eq!(deps.reflections().len(), 1);
+    assert_eq!(deps.reflections()[0].superseded_claim_id, None);
+    assert_eq!(deps.reflections()[0].replacement_claim_id, None);
+    assert_eq!(
+        deps.claim("claim-old")
+            .expect("unrelated self claim should remain untouched")
+            .status,
+        ClaimStatus::Active
+    );
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Suppressed)
+    );
+}
+
+#[tokio::test]
+async fn reflection_can_record_identity_and_commitment_updates_without_claim_transition() {
+    let deps = test_support::reflection_query_deps();
+
+    let result = execute_reflection(
+        &deps,
+        ReflectionInput::record_only(
+            Reflection::new("Governed patch-only updates should stay record-only."),
+            vec!["evt-reflection-1".to_string()],
+        )
+        .with_identity_update(vec!["identity:self=staff_architect".to_string()])
+        .with_commitment_updates(vec![Commitment::new(
+            Owner::Self_,
+            "prefer:evidence_backed_identity_updates",
+        )]),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.replacement_claim_id, None);
+    assert_eq!(
+        deps.claim("claim-old")
+            .expect("existing claim should remain active")
+            .status,
+        ClaimStatus::Active
+    );
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &["identity:self=staff_architect".to_string()]
+    );
+    assert_eq!(
+        deps.commitments(),
+        vec![
+            Commitment::new(Owner::Self_, "prefer:evidence_backed_identity_updates"),
+            Commitment::new(Owner::Self_, "forbid:write_identity_core_directly"),
+        ]
+    );
+
+    let reflection = deps
+        .reflection(&result.reflection_id)
+        .expect("record-only reflection should be audited");
+    assert_eq!(reflection.superseded_claim_id, None);
+    assert_eq!(reflection.replacement_claim_id, None);
+}
+
+#[tokio::test]
 async fn reflection_without_replacement_claim_disputes_old_claim_and_updates_identity() {
     let deps = test_support::reflection_query_deps();
 
@@ -286,6 +382,37 @@ async fn reflection_accepts_inferred_replacement_with_explicit_evidence() {
             )
         ]
     );
+}
+
+#[tokio::test]
+async fn mock_model_returns_default_no_revision_proposal() {
+    let model = MockModel;
+    let proposal = model
+        .propose_self_revision(SelfRevisionRequest::new(
+            TriggerType::Failure,
+            Namespace::self_(),
+            SelfSnapshot {
+                identity: vec![],
+                commitments: vec![],
+                claims: vec![],
+                evidence: vec![],
+                episodes: vec![],
+            },
+            vec![],
+            vec![],
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        proposal,
+        SelfRevisionProposal::no_revision(
+            "mock model did not detect a valid Failure revision".to_string()
+        )
+    );
+    assert!(!proposal.should_reflect);
+    assert!(proposal.machine_patch.identity_patch.is_none());
+    assert!(proposal.machine_patch.commitment_patch.is_none());
 }
 
 #[tokio::test]
@@ -625,6 +752,57 @@ mod test_support {
         reflection_deps()
     }
 
+    pub fn auto_reflection_deps() -> InMemoryDeps {
+        let mut state = State::default();
+        state.committed.events = vec![
+            StoredEvent::new(
+                "evt-failure-1".to_string(),
+                chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+                Event::new(
+                    Owner::Self_,
+                    EventKind::Action,
+                    "rollback after violating a hard commitment",
+                ),
+            ),
+            StoredEvent::new(
+                "evt-failure-2".to_string(),
+                chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+                Event::new(
+                    Owner::Self_,
+                    EventKind::Action,
+                    "second rollback after violating the same hard commitment",
+                ),
+            ),
+        ];
+        state.committed.episodes = vec![
+            (
+                "episode:auto-reflect-1".to_string(),
+                "evt-failure-1".to_string(),
+            ),
+            (
+                "episode:auto-reflect-2".to_string(),
+                "evt-failure-2".to_string(),
+            ),
+        ];
+        state.self_revision_proposal = SelfRevisionProposal {
+            should_reflect: true,
+            rationale: "repeated rollback should tighten future commitments".to_string(),
+            machine_patch: agent_llm_mm::domain::self_revision::SelfRevisionPatch {
+                identity_patch: None,
+                commitment_patch: Some(
+                    agent_llm_mm::domain::self_revision::SelfRevisionCommitmentPatch::new(vec![
+                        "prefer:reflect_after_repeated_rollback".to_string(),
+                    ]),
+                ),
+            },
+        };
+        InMemoryDeps::new(state)
+    }
+
     pub fn deps_with_fail_point(fail_point: FailPoint) -> InMemoryDeps {
         InMemoryDeps::new(State {
             fail_point: Some(fail_point),
@@ -875,6 +1053,7 @@ struct State {
     now: DateTime<Utc>,
     fail_point: Option<FailPoint>,
     model_calls: Vec<ModelInput>,
+    self_revision_proposal: SelfRevisionProposal,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -885,6 +1064,7 @@ struct CommittedState {
     evidence_links: Vec<(String, String)>,
     episodes: Vec<(String, String)>,
     reflections: Vec<StoredReflection>,
+    trigger_ledger: Vec<StoredTriggerLedgerEntry>,
     commitments: Vec<Commitment>,
     identity: Option<IdentityCore>,
 }
@@ -903,6 +1083,7 @@ struct PendingReflection {
     claims: Vec<StoredClaim>,
     evidence_links: Vec<(String, String)>,
     reflections: Vec<StoredReflection>,
+    trigger_ledger: Vec<StoredTriggerLedgerEntry>,
     status_updates: Vec<(String, ClaimStatus)>,
     identity: Option<IdentityCore>,
     commitments: Option<Vec<Commitment>>,
@@ -932,6 +1113,9 @@ impl Default for State {
                 .with_timezone(&Utc),
             fail_point: None,
             model_calls: Vec::new(),
+            self_revision_proposal: SelfRevisionProposal::no_revision(
+                "mock model did not detect a valid Failure revision".to_string(),
+            ),
         }
     }
 }
@@ -987,6 +1171,10 @@ impl InMemoryDeps {
             .cloned()
     }
 
+    fn reflections(&self) -> Vec<StoredReflection> {
+        self.state.lock().unwrap().committed.reflections.clone()
+    }
+
     fn identity(&self) -> IdentityCore {
         self.state
             .lock()
@@ -1007,6 +1195,36 @@ impl InMemoryDeps {
 
     fn last_model_input(&self) -> Option<ModelInput> {
         self.state.lock().unwrap().model_calls.last().cloned()
+    }
+
+    fn seed_failure_window(&self, summaries: Vec<&str>) {
+        let mut state = self.state.lock().unwrap();
+        state.committed.events = summaries
+            .into_iter()
+            .enumerate()
+            .map(|(index, summary)| {
+                StoredEvent::new(
+                    format!("evt-failure-{}", index + 1),
+                    chrono::DateTime::parse_from_rfc3339(&format!(
+                        "2026-03-23T10:0{}:00Z",
+                        index + 1
+                    ))
+                    .unwrap()
+                    .with_timezone(&Utc),
+                    Event::new(Owner::Self_, EventKind::Action, summary),
+                )
+            })
+            .collect();
+    }
+
+    fn latest_trigger_status(&self) -> Option<TriggerLedgerStatus> {
+        self.state
+            .lock()
+            .unwrap()
+            .committed
+            .trigger_ledger
+            .last()
+            .map(|entry| entry.status)
     }
 }
 
@@ -1206,6 +1424,53 @@ impl ModelPort for InMemoryDeps {
         self.state.lock().unwrap().model_calls.push(input);
         Ok(ModelDecision::new("Proceed".to_string()))
     }
+
+    async fn propose_self_revision(
+        &self,
+        request: SelfRevisionRequest,
+    ) -> Result<SelfRevisionProposal, AppError> {
+        let state = self.state.lock().unwrap();
+        if state.self_revision_proposal.should_reflect {
+            return Ok(state.self_revision_proposal.clone());
+        }
+
+        Ok(SelfRevisionProposal::no_revision(format!(
+            "mock model did not detect a valid {:?} revision",
+            request.trigger_type
+        )))
+    }
+}
+
+#[async_trait]
+impl TriggerLedgerStore for InMemoryDeps {
+    async fn record_trigger_attempt(
+        &self,
+        entry: StoredTriggerLedgerEntry,
+    ) -> Result<(), AppError> {
+        self.state
+            .lock()
+            .unwrap()
+            .committed
+            .trigger_ledger
+            .push(entry);
+        Ok(())
+    }
+
+    async fn latest_trigger_entry(
+        &self,
+        trigger_key: &str,
+    ) -> Result<Option<StoredTriggerLedgerEntry>, AppError> {
+        Ok(self
+            .state
+            .lock()
+            .unwrap()
+            .committed
+            .trigger_ledger
+            .iter()
+            .rev()
+            .find(|entry| entry.trigger_key == trigger_key)
+            .cloned())
+    }
 }
 
 #[async_trait]
@@ -1333,6 +1598,14 @@ impl ReflectionTransaction for InMemoryReflectionTransaction {
         Ok(())
     }
 
+    async fn append_trigger_ledger(
+        &mut self,
+        entry: StoredTriggerLedgerEntry,
+    ) -> Result<(), AppError> {
+        self.pending.trigger_ledger.push(entry);
+        Ok(())
+    }
+
     async fn load_identity(&mut self) -> Result<IdentityCore, AppError> {
         if let Some(identity) = &self.pending.identity {
             return Ok(identity.clone());
@@ -1394,6 +1667,10 @@ impl ReflectionTransaction for InMemoryReflectionTransaction {
             .evidence_links
             .extend(self.pending.evidence_links);
         state.committed.reflections.extend(self.pending.reflections);
+        state
+            .committed
+            .trigger_ledger
+            .extend(self.pending.trigger_ledger);
         if let Some(identity) = self.pending.identity {
             state.committed.identity = Some(identity);
         }

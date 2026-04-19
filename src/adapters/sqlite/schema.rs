@@ -45,6 +45,20 @@ CREATE TABLE IF NOT EXISTS reflections (
     requested_commitment_updates TEXT
 )"#;
 
+const REFLECTION_TRIGGER_LEDGER_TABLE_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS reflection_trigger_ledger (
+    ledger_id TEXT PRIMARY KEY,
+    trigger_type TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    trigger_key TEXT NOT NULL,
+    status TEXT NOT NULL,
+    evidence_window TEXT NOT NULL DEFAULT '[]',
+    handled_at TEXT,
+    cooldown_until TEXT,
+    episode_watermark INTEGER,
+    reflection_id TEXT
+)"#;
+
 const IDENTITY_CLAIMS_TABLE_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS identity_claims (
     position INTEGER NOT NULL PRIMARY KEY,
@@ -74,6 +88,8 @@ pub(super) fn init_sql() -> String {
 
 {reflections_table};
 
+{reflection_trigger_ledger_table};
+
 {identity_claims_table};
 
 {commitments_table};
@@ -83,6 +99,7 @@ pub(super) fn init_sql() -> String {
         evidence_links_table = EVIDENCE_LINKS_TABLE_SQL,
         episode_events_table = EPISODE_EVENTS_TABLE_SQL,
         reflections_table = REFLECTIONS_TABLE_SQL,
+        reflection_trigger_ledger_table = REFLECTION_TRIGGER_LEDGER_TABLE_SQL,
         identity_claims_table = IDENTITY_CLAIMS_TABLE_SQL,
         commitments_table = COMMITMENTS_TABLE_SQL,
     )

@@ -1,6 +1,12 @@
 use async_trait::async_trait;
 
-use crate::{domain::snapshot::SelfSnapshot, error::AppError};
+use crate::{
+    domain::{
+        self_revision::{SelfRevisionProposal, SelfRevisionRequest},
+        snapshot::SelfSnapshot,
+    },
+    error::AppError,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ModelDecisionRequest {
@@ -35,4 +41,8 @@ impl ModelDecision {
 #[async_trait]
 pub trait ModelPort {
     async fn decide(&self, request: ModelDecisionRequest) -> Result<ModelDecision, AppError>;
+    async fn propose_self_revision(
+        &self,
+        request: SelfRevisionRequest,
+    ) -> Result<SelfRevisionProposal, AppError>;
 }

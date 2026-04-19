@@ -4,6 +4,8 @@
 
 当前已收口的一项基础语义是：默认 SQLite 路径表示“本机用户共享的持久化默认库”；如果需要正式数据、测试数据或实验数据隔离，应显式设置不同的 `database_url`。
 
+另一项当前已落地但必须谨慎表述的能力是：仓库已经具备 trigger-ledger-backed automatic self-revision MVP。不过，这个能力当前仍是本地 `stdio` demo 里的受限自动修订链路，不是完整自治系统。
+
 ## 近期
 
 ### 1. 收口 release gate 文档
@@ -18,19 +20,36 @@
 - 当前已有测试基础
 - 但公开协作时，还需要更稳定的“提交前 / 发布前”规则
 
-### 2. 明确能力承诺边界
+### 2. 扩大 automatic self-revision 的 MCP runtime coverage
 
 目标：
 
-- 哪些能力可以对外说“已经可用”
-- 哪些能力只能说“实验 / demo / internal validation”
+- 在不新增旁路持久化接口的前提下，把 automatic self-revision 从当前唯一的 `ingest_interaction -> failure trigger` MCP 接线，谨慎扩展到更广的 MCP 入口
+- 评估是否要把 `conflict` / `periodic` trigger 接入明确的 MCP runtime 路径，而不是只停留在 domain / coordinator / ledger 契约层
 
 重点边界：
 
 - `decide_with_snapshot` 已可走 `openai-compatible` provider，但仍不是完整决策引擎
+- 当前 automatic self-revision 的唯一 MCP-wired automatic path 是 `ingest_interaction -> failure trigger`
+- `conflict` 与 `periodic` 目前只存在于 domain / coordinator / ledger 契约里，还没有接到 MCP entry point
+- `run_reflection` 仍是唯一 durable write path；没有新增旁路持久化接口
+- direct `run_reflection` 不递归 auto-reflection；没有后台 daemon 或“所有入口自动反思”
 - richer memory semantics 尚未落地
 
-### 3. 收口 reflection 的 deeper-update 契约
+### 3. 提高 self-revision 的可观测性与治理精度
+
+目标：
+
+- 保持 `run_reflection` 为长期写入路径，同时继续收紧 trigger 候选、cooldown 与 slow-update 规则
+- 明确 best-effort auto-reflection 的失败可观测性、日志排查方式和运行时边界
+- 让 ledger / trigger / rejection / suppression 的诊断信息更容易在验证和接入文档里被复用
+
+原因：
+
+- 当前 MVP 已证明“ledger + governed proposal + `run_reflection` durable write path”这条路径可行
+- 下一步的价值不在于新建更多接口，而在于减少误触发、补强排查路径，并为后续扩大触发面提供更稳的观测基础
+
+### 4. 收口 reflection 的 deeper-update 契约
 
 目标：
 
@@ -63,7 +82,7 @@
 
 - 保留显式 `replacement_evidence_event_ids`
 - 保留现有最小 `identity_core` / `commitments` 更新能力
-- 在现有窄化查询基础上扩展 richer query 语义、更广泛 evidence 能力与更稳定的 deep-update policy
+- 在现有窄化查询基础上扩展 richer query 语义、更广泛 evidence 能力、更清晰的权重/关联关系与更稳定的 deep-update policy
 
 ### 3. 丰富 evidence 语义
 
@@ -89,6 +108,7 @@
 - episodic memory
 - semantic memory
 - procedural memory
+- 以及更完整的 slow variable / policy / self-model layering
 
 ### 2. 评估更完整的产品化封装
 
@@ -103,4 +123,5 @@
 - 远程 HTTP 服务
 - 多租户或多 Agent 编排
 - 可视化管理后台
+- 持续后台自治运行或完整 daemon 化自我治理
 - 把仓库包装成“生产级完整自我机制产品”

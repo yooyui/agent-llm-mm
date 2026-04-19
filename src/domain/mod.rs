@@ -13,5 +13,6 @@ pub mod evidence_link;
 pub mod identity_core;
 pub mod reflection;
 pub mod rules;
+pub mod self_revision;
 pub mod snapshot;
 pub mod types;

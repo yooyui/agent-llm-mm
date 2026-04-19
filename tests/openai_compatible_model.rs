@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use agent_llm_mm::{
     adapters::model::openai_compatible::OpenAiCompatibleModel,
-    domain::snapshot::SelfSnapshot,
+    domain::{
+        self_revision::{SelfRevisionRequest, TriggerType},
+        snapshot::SelfSnapshot,
+        types::Namespace,
+    },
     ports::{ModelDecisionRequest, ModelPort},
     support::config::OpenAiCompatibleConfig,
 };
@@ -110,6 +114,127 @@ async fn openai_compatible_model_surfaces_non_success_status() {
     );
 }
 
+#[tokio::test]
+async fn openai_compatible_model_parses_self_revision_proposal_from_assistant_message() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "{\"should_reflect\":true,\"rationale\":\"conflict-backed identity patch\",\"machine_patch\":{\"identity_patch\":{\"canonical_claims\":[\"identity:self=mentor\"]},\"commitment_patch\":null}}"
+                }
+            }]
+        }),
+    )
+    .await;
+    let model = OpenAiCompatibleModel::new(OpenAiCompatibleConfig {
+        base_url: stub.base_url(),
+        api_key: "example-test-key".to_string(),
+        model: "gpt-4o-mini".to_string(),
+        timeout_ms: 30_000,
+    })
+    .expect("model");
+
+    let proposal = model
+        .propose_self_revision(test_support::sample_self_revision_request())
+        .await
+        .expect("proposal");
+
+    let request_json = stub.last_request_json().await.expect("request json");
+    let user_prompt = request_json["messages"][1]["content"]
+        .as_str()
+        .expect("user prompt");
+
+    assert!(proposal.should_reflect);
+    assert_eq!(proposal.rationale, "conflict-backed identity patch");
+    assert_eq!(
+        proposal
+            .machine_patch
+            .identity_patch
+            .expect("identity patch")
+            .canonical_claims,
+        vec!["identity:self=mentor".to_string()]
+    );
+    assert!(proposal.machine_patch.commitment_patch.is_none());
+    assert_eq!(
+        stub.last_request_path().await.as_deref(),
+        Some("/chat/completions")
+    );
+    assert_eq!(request_json["model"], json!("gpt-4o-mini"));
+    assert!(user_prompt.contains("\"trigger_type\": \"Conflict\""));
+    assert!(user_prompt.contains("\"evidence_event_ids\": ["));
+    assert!(user_prompt.contains("\"evt-1\""));
+    assert!(user_prompt.contains("\"trigger_hints\": ["));
+    assert!(user_prompt.contains("\"claim conflict\""));
+}
+
+#[tokio::test]
+async fn openai_compatible_model_defaults_missing_machine_patch_in_self_revision_proposal() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "{\"should_reflect\":false,\"rationale\":\"not enough evidence yet\"}"
+                }
+            }]
+        }),
+    )
+    .await;
+    let model = OpenAiCompatibleModel::new(OpenAiCompatibleConfig {
+        base_url: stub.base_url(),
+        api_key: "example-test-key".to_string(),
+        model: "gpt-4o-mini".to_string(),
+        timeout_ms: 30_000,
+    })
+    .expect("model");
+
+    let proposal = model
+        .propose_self_revision(test_support::sample_self_revision_request())
+        .await
+        .expect("proposal");
+
+    assert!(!proposal.should_reflect);
+    assert_eq!(proposal.rationale, "not enough evidence yet");
+    assert!(proposal.machine_patch.identity_patch.is_none());
+    assert!(proposal.machine_patch.commitment_patch.is_none());
+}
+
+#[tokio::test]
+async fn openai_compatible_model_accepts_fenced_json_self_revision_proposal() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "Here is the proposal:\n```json\n{\"should_reflect\":true,\"rationale\":\"periodic review found stable evidence\",\"machine_patch\":{\"identity_patch\":null,\"commitment_patch\":null}}\n```"
+                }
+            }]
+        }),
+    )
+    .await;
+    let model = OpenAiCompatibleModel::new(OpenAiCompatibleConfig {
+        base_url: stub.base_url(),
+        api_key: "example-test-key".to_string(),
+        model: "gpt-4o-mini".to_string(),
+        timeout_ms: 30_000,
+    })
+    .expect("model");
+
+    let proposal = model
+        .propose_self_revision(test_support::sample_self_revision_request())
+        .await
+        .expect("proposal");
+
+    assert!(proposal.should_reflect);
+    assert_eq!(proposal.rationale, "periodic review found stable evidence");
+    assert!(proposal.machine_patch.identity_patch.is_none());
+    assert!(proposal.machine_patch.commitment_patch.is_none());
+}
+
 mod test_support {
     use super::*;
 
@@ -127,9 +252,26 @@ mod test_support {
         )
     }
 
+    pub fn sample_self_revision_request() -> SelfRevisionRequest {
+        SelfRevisionRequest::new(
+            TriggerType::Conflict,
+            Namespace::self_(),
+            SelfSnapshot {
+                identity: vec!["identity:self=architect".to_string()],
+                commitments: vec!["forbid:write_identity_core_directly".to_string()],
+                claims: vec!["self.role is architect".to_string()],
+                evidence: vec!["event:evt-1".to_string()],
+                episodes: vec!["episode:task-6".to_string()],
+            },
+            vec!["evt-1".to_string()],
+            vec!["claim conflict".to_string()],
+        )
+    }
+
     pub struct StubServer {
         base_url: String,
         last_request_path: Arc<tokio::sync::Mutex<Option<String>>>,
+        last_request_body: Arc<tokio::sync::Mutex<Option<String>>>,
         shutdown: Option<oneshot::Sender<()>>,
     }
 
@@ -139,7 +281,9 @@ mod test_support {
             let address = listener.local_addr().expect("local addr");
             let base_url = format!("http://{address}");
             let last_request_path = Arc::new(tokio::sync::Mutex::new(None));
+            let last_request_body = Arc::new(tokio::sync::Mutex::new(None));
             let request_path = Arc::clone(&last_request_path);
+            let request_body = Arc::clone(&last_request_body);
             let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
             let response_body = body.to_string();
 
@@ -156,7 +300,11 @@ mod test_support {
                                 .next()
                                 .and_then(|line| line.split_whitespace().nth(1))
                                 .map(str::to_string);
+                            let body = request
+                                .split_once("\r\n\r\n")
+                                .map(|(_, body)| body.to_string());
                             *request_path.lock().await = path;
+                            *request_body.lock().await = body;
 
                             let status_text = match status {
                                 200 => "OK",
@@ -180,6 +328,7 @@ mod test_support {
             Self {
                 base_url,
                 last_request_path,
+                last_request_body,
                 shutdown: Some(shutdown_tx),
             }
         }
@@ -190,6 +339,15 @@ mod test_support {
 
         pub async fn last_request_path(&self) -> Option<String> {
             self.last_request_path.lock().await.clone()
+        }
+
+        pub async fn last_request_body(&self) -> Option<String> {
+            self.last_request_body.lock().await.clone()
+        }
+
+        pub async fn last_request_json(&self) -> Option<Value> {
+            let body = self.last_request_body().await?;
+            serde_json::from_str(&body).ok()
         }
     }
 

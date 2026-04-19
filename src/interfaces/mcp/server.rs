@@ -9,6 +9,7 @@ use rmcp::{
     transport::stdio,
 };
 use serde::Serialize;
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
@@ -17,16 +18,21 @@ use crate::{
         sqlite::SqliteStore,
     },
     application::{
+        auto_reflect_if_needed::{self, AutoReflectInput, RecursionGuard},
         build_self_snapshot, decide_with_snapshot, ingest_interaction,
-        ingest_interaction::IngestInput, run_reflection, run_reflection::ReflectionInput,
+        ingest_interaction::IngestInput,
+        run_reflection,
+        run_reflection::ReflectionInput,
     },
     domain::identity_core::IdentityCore,
+    domain::self_revision::{SelfRevisionProposal, SelfRevisionRequest},
     error::AppError,
     ports::{
         ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
         IdGenerator, IdentityStore, IngestTransaction, IngestTransactionRunner, ModelDecision,
         ModelDecisionRequest, ModelPort, ReflectionStore, ReflectionTransaction,
         ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
+        StoredTriggerLedgerEntry, TriggerLedgerStore,
     },
     support::config::{AppConfig, ModelConfig},
 };
@@ -74,11 +80,25 @@ impl Server {
         &self,
         Parameters(params): Parameters<IngestInteractionParams>,
     ) -> Result<CallToolResult, McpError> {
+        let auto_reflect_input =
+            AutoReflectInput::from_ingest(&params).map_err(app_error_to_mcp)?;
         let input =
             IngestInput::try_from(params).map_err(|error| app_error_to_mcp(error.into()))?;
         let result = ingest_interaction::execute(&self.runtime, input)
             .await
             .map_err(app_error_to_mcp)?;
+        if let Err(error) = auto_reflect_if_needed::execute(
+            &self.runtime,
+            auto_reflect_input.with_recursion_guard(RecursionGuard::Allow),
+        )
+        .await
+        {
+            warn!(
+                event_id = %result.event_id,
+                error = %error,
+                "best-effort auto-reflection failed after successful ingest"
+            );
+        }
         structured(result)
     }
 
@@ -261,6 +281,23 @@ impl ReflectionStore for Runtime {
 }
 
 #[async_trait]
+impl TriggerLedgerStore for Runtime {
+    async fn record_trigger_attempt(
+        &self,
+        entry: StoredTriggerLedgerEntry,
+    ) -> Result<(), AppError> {
+        self.store.record_trigger_attempt(entry).await
+    }
+
+    async fn latest_trigger_entry(
+        &self,
+        trigger_key: &str,
+    ) -> Result<Option<StoredTriggerLedgerEntry>, AppError> {
+        self.store.latest_trigger_entry(trigger_key).await
+    }
+}
+
+#[async_trait]
 impl IdentityStore for Runtime {
     async fn load_identity(&self) -> Result<IdentityCore, AppError> {
         self.store.load_identity().await
@@ -286,6 +323,16 @@ impl ModelPort for Runtime {
         match &self.model {
             RuntimeModel::Mock(model) => model.decide(request).await,
             RuntimeModel::OpenAiCompatible(model) => model.decide(request).await,
+        }
+    }
+
+    async fn propose_self_revision(
+        &self,
+        request: SelfRevisionRequest,
+    ) -> Result<SelfRevisionProposal, AppError> {
+        match &self.model {
+            RuntimeModel::Mock(model) => model.propose_self_revision(request).await,
+            RuntimeModel::OpenAiCompatible(model) => model.propose_self_revision(request).await,
         }
     }
 }

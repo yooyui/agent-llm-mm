@@ -9,19 +9,20 @@ use crate::{
     error::AppError,
     ports::{
         ClaimStatus, Clock, EventStore, EvidenceQuery, IdGenerator, ReflectionTransactionRunner,
-        StoredClaim, StoredReflection,
+        StoredClaim, StoredReflection, StoredTriggerLedgerEntry,
     },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ReflectionInput {
     reflection: Reflection,
-    supersede_claim_id: String,
+    target_claim_id: Option<String>,
     replacement_claim: Option<ClaimDraft>,
     replacement_evidence_event_ids: Vec<String>,
     replacement_evidence_query: Option<EvidenceQuery>,
     identity_update: Option<ReflectionIdentityUpdate>,
     commitment_updates: Option<Vec<Commitment>>,
+    handled_trigger_ledger_entry: Option<StoredTriggerLedgerEntry>,
 }
 
 impl ReflectionInput {
@@ -33,12 +34,29 @@ impl ReflectionInput {
     ) -> Self {
         Self {
             reflection,
-            supersede_claim_id: supersede_claim_id.into(),
+            target_claim_id: Some(supersede_claim_id.into()),
             replacement_claim,
             replacement_evidence_event_ids,
             replacement_evidence_query: None,
             identity_update: None,
             commitment_updates: None,
+            handled_trigger_ledger_entry: None,
+        }
+    }
+
+    pub fn record_only(
+        reflection: Reflection,
+        replacement_evidence_event_ids: Vec<String>,
+    ) -> Self {
+        Self {
+            reflection,
+            target_claim_id: None,
+            replacement_claim: None,
+            replacement_evidence_event_ids,
+            replacement_evidence_query: None,
+            identity_update: None,
+            commitment_updates: None,
+            handled_trigger_ledger_entry: None,
         }
     }
 
@@ -50,6 +68,14 @@ impl ReflectionInput {
         self
     }
 
+    pub fn with_optional_replacement_evidence_query(
+        mut self,
+        replacement_evidence_query: Option<EvidenceQuery>,
+    ) -> Self {
+        self.replacement_evidence_query = replacement_evidence_query;
+        self
+    }
+
     pub fn with_identity_update(mut self, canonical_claims: Vec<String>) -> Self {
         self.identity_update = Some(ReflectionIdentityUpdate::new(canonical_claims));
         self
@@ -57,6 +83,14 @@ impl ReflectionInput {
 
     pub fn with_commitment_updates(mut self, commitments: Vec<Commitment>) -> Self {
         self.commitment_updates = Some(commitments);
+        self
+    }
+
+    pub fn with_handled_trigger_ledger_entry(
+        mut self,
+        handled_trigger_ledger_entry: StoredTriggerLedgerEntry,
+    ) -> Self {
+        self.handled_trigger_ledger_entry = Some(handled_trigger_ledger_entry);
         self
     }
 }
@@ -73,20 +107,26 @@ where
 {
     let ReflectionInput {
         reflection,
-        supersede_claim_id,
+        target_claim_id,
         replacement_claim,
         replacement_evidence_event_ids,
         replacement_evidence_query,
         identity_update,
         commitment_updates,
+        handled_trigger_ledger_entry,
     } = input;
 
     let reflection_id = deps.next_id().await?;
     let recorded_at = deps.now().await?;
-    let decision = classify_reflection(if replacement_claim.is_some() {
-        ReflectionTrigger::Failure
-    } else {
-        ReflectionTrigger::Conflict
+    let decision = classify_reflection(match (&target_claim_id, replacement_claim.as_ref()) {
+        (Some(_), Some(_)) => ReflectionTrigger::Failure,
+        (Some(_), None) => ReflectionTrigger::Conflict,
+        (None, None) => ReflectionTrigger::Manual,
+        (None, Some(_)) => {
+            return Err(AppError::InvalidParams(
+                "replacement claim reflections require a target claim id".to_string(),
+            ));
+        }
     });
     let requires_supporting_evidence =
         replacement_claim.is_some() || identity_update.is_some() || commitment_updates.is_some();
@@ -182,7 +222,7 @@ where
                 reflection_id.clone(),
                 recorded_at,
                 reflection,
-                Some(supersede_claim_id.clone()),
+                target_claim_id.clone(),
                 replacement_claim_id.clone(),
             )
             .with_supporting_evidence_event_ids(supporting_evidence_event_ids)
@@ -191,15 +231,28 @@ where
         )
         .await?;
 
+    if let Some(mut handled_trigger_ledger_entry) = handled_trigger_ledger_entry {
+        handled_trigger_ledger_entry.reflection_id = Some(reflection_id.clone());
+        transaction
+            .append_trigger_ledger(handled_trigger_ledger_entry)
+            .await?;
+    }
+
     match decision {
         ReflectionDecision::MarkDisputed => {
+            let target_claim_id = target_claim_id.ok_or_else(|| {
+                AppError::Message("disputing reflections require a target claim id".to_string())
+            })?;
             transaction
-                .update_claim_status(&supersede_claim_id, ClaimStatus::Disputed)
+                .update_claim_status(&target_claim_id, ClaimStatus::Disputed)
                 .await?;
         }
         ReflectionDecision::SupersedeWithReplacement => {
+            let target_claim_id = target_claim_id.ok_or_else(|| {
+                AppError::Message("superseding reflections require a target claim id".to_string())
+            })?;
             transaction
-                .update_claim_status(&supersede_claim_id, ClaimStatus::Superseded)
+                .update_claim_status(&target_claim_id, ClaimStatus::Superseded)
                 .await?;
         }
         ReflectionDecision::RecordOnly => {}

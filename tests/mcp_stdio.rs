@@ -20,15 +20,321 @@ use tokio::{
 async fn server_exposes_expected_tools_over_stdio() {
     let mut client = test_support::spawn_stdio_client().await.unwrap();
     let tools = client.list_all_tools().await.unwrap();
-    let names = tools
+    let mut names = tools
         .into_iter()
         .map(|tool| tool.name.to_string())
         .collect::<Vec<_>>();
+    names.sort();
 
-    assert!(names.contains(&"ingest_interaction".to_string()));
-    assert!(names.contains(&"build_self_snapshot".to_string()));
-    assert!(names.contains(&"decide_with_snapshot".to_string()));
-    assert!(names.contains(&"run_reflection".to_string()));
+    assert_eq!(
+        names,
+        vec![
+            "build_self_snapshot".to_string(),
+            "decide_with_snapshot".to_string(),
+            "ingest_interaction".to_string(),
+            "run_reflection".to_string(),
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ingest_interaction_returns_success_even_when_best_effort_auto_reflection_fails() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "not valid self revision json"
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    for (episode_reference, summary, trigger_hints) in [
+        (
+            "episode:auto-reflect-nonfatal-0",
+            "first rollback after violating a hard commitment",
+            json!([]),
+        ),
+        (
+            "episode:auto-reflect-nonfatal-1",
+            "rollback after violating a hard commitment",
+            json!(["failure", "rollback"]),
+        ),
+    ] {
+        let response = client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "Self_",
+                        "kind": "Action",
+                        "summary": summary
+                    },
+                    "claim_drafts": [],
+                    "episode_reference": episode_reference,
+                    "trigger_hints": trigger_hints
+                }),
+            )
+            .await
+            .unwrap();
+
+        let event_id = response
+            .get("result")
+            .and_then(|value| value.get("structuredContent"))
+            .and_then(|value| value.get("event_id"))
+            .and_then(Value::as_str);
+        assert!(
+            event_id.is_some(),
+            "ingest should still succeed when best-effort auto-reflection fails: {response:?}"
+        );
+        assert!(
+            response.get("error").is_none(),
+            "post-ingest auto-reflection failure must not surface as MCP error: {response:?}"
+        );
+    }
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let event_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(event_count, 2);
+    assert_eq!(reflection_count, 0);
+    assert_eq!(stub.request_count().await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ingest_interaction_auto_reflects_once_and_does_not_recurse_inside_run_reflection() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": r#"{"should_reflect":true,"rationale":"Repeated rollback should tighten commitments.","machine_patch":{"commitment_patch":{"commitments":["prefer:reflect_before_repeating_rollback"]}}}"#
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "Self_",
+                    "kind": "Action",
+                    "summary": "first rollback after violating a hard commitment"
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:auto-reflect-0"
+            }),
+        )
+        .await
+        .unwrap();
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "Self_",
+                    "kind": "Action",
+                    "summary": "rollback after violating a hard commitment"
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:auto-reflect-1",
+                "trigger_hints": ["failure", "rollback"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let trigger_namespaces = sqlx::query_scalar::<_, String>(
+        "SELECT namespace FROM reflection_trigger_ledger ORDER BY rowid ASC",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(reflection_count, 1);
+    assert_eq!(trigger_namespaces, vec!["self".to_string()]);
+    assert_eq!(stub.request_count().await, 1);
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "A direct reflection target exists for recursion checking."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:auto-reflect-direct-reflection-target"
+            }),
+        )
+        .await
+        .unwrap();
+    let superseded_claim_id = ingest
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str)
+        .map(|event_id| format!("{event_id}:claim:0"))
+        .unwrap();
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {
+                    "summary": "Explicit MCP reflection should not recurse into auto-reflection."
+                },
+                "supersede_claim_id": superseded_claim_id,
+                "replacement_claim": null
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        reflection.get("error").is_none(),
+        "explicit run_reflection should still succeed: {reflection:?}"
+    );
+
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_ledger_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflection_trigger_ledger")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(reflection_count, 2);
+    assert_eq!(trigger_ledger_count, 1);
+    assert_eq!(stub.request_count().await, 1);
+}
+
+#[tokio::test]
+async fn ingest_interaction_rejects_ambiguous_auto_reflect_scope_before_writing() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "Self_",
+                    "kind": "Action",
+                    "summary": "Mixed claim scopes should not depend on draft ordering."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "World",
+                        "namespace": "project/agent-llm-mm",
+                        "subject": "project.memory",
+                        "predicate": "needs",
+                        "object": "structure",
+                        "mode": "Observed"
+                    },
+                    {
+                        "owner": "World",
+                        "namespace": "world",
+                        "subject": "weather",
+                        "predicate": "is",
+                        "object": "rainy",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:auto-reflect-ambiguous-scope",
+                "trigger_hints": ["failure", "rollback"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    let error = response
+        .get("error")
+        .expect("ambiguous mixed-scope ingest should be rejected before any write");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let event_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(event_count, 0);
 }
 
 #[tokio::test]
@@ -1093,6 +1399,26 @@ mod test_support {
         )
     }
 
+    pub async fn spawn_stdio_client_with_config_and_database(
+        config_template: String,
+    ) -> io::Result<(StdioClient, String, TempDir)> {
+        let database = database_override()?;
+        let url = database.url.clone();
+        let config_path = database.temp_dir.path().join("agent-llm-mm.local.toml");
+        let config = config_template.replace("__DATABASE_URL__", &url);
+        std::fs::write(&config_path, config)?;
+        let temp_dir = database.temp_dir;
+        let client = StdioClient::spawn_with_env(
+            None,
+            &[(
+                CONFIG_PATH_ENV_VAR,
+                config_path.to_string_lossy().into_owned(),
+            )],
+        )?;
+
+        Ok((client, url, temp_dir))
+    }
+
     pub async fn spawn_stdio_client_with_database() -> io::Result<(StdioClient, String, TempDir)> {
         let database = database_override()?;
         let url = database.url.clone();
@@ -1117,6 +1443,7 @@ mod test_support {
     pub struct StubServer {
         base_url: String,
         last_request_path: Arc<tokio::sync::Mutex<Option<String>>>,
+        request_count: Arc<tokio::sync::Mutex<usize>>,
         shutdown: Option<oneshot::Sender<()>>,
     }
 
@@ -1275,38 +1602,43 @@ mod test_support {
             let base_url = format!("http://{address}");
             let last_request_path = Arc::new(tokio::sync::Mutex::new(None));
             let request_path = Arc::clone(&last_request_path);
+            let request_count = Arc::new(tokio::sync::Mutex::new(0));
+            let request_counter = Arc::clone(&request_count);
             let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
             let response_body = body.to_string();
 
             tokio::spawn(async move {
-                tokio::select! {
-                    _ = &mut shutdown_rx => {}
-                    accept = listener.accept() => {
-                        if let Ok((mut stream, _)) = accept {
-                            let mut buffer = vec![0_u8; 16 * 1024];
-                            let bytes_read = stream.read(&mut buffer).await.expect("read");
-                            let request = String::from_utf8_lossy(&buffer[..bytes_read]);
-                            let path = request
-                                .lines()
-                                .next()
-                                .and_then(|line| line.split_whitespace().nth(1))
-                                .map(str::to_string);
-                            *request_path.lock().await = path;
+                loop {
+                    tokio::select! {
+                        _ = &mut shutdown_rx => break,
+                        accept = listener.accept() => {
+                            if let Ok((mut stream, _)) = accept {
+                                let mut buffer = vec![0_u8; 16 * 1024];
+                                let bytes_read = stream.read(&mut buffer).await.expect("read");
+                                let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+                                let path = request
+                                    .lines()
+                                    .next()
+                                    .and_then(|line| line.split_whitespace().nth(1))
+                                    .map(str::to_string);
+                                *request_path.lock().await = path;
+                                *request_counter.lock().await += 1;
 
-                            let status_text = match status {
-                                200 => "OK",
-                                503 => "Service Unavailable",
-                                _ => "Test Status",
-                            };
-                            let response = format!(
-                                "HTTP/1.1 {status} {status_text}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                                response_body.len(),
-                                response_body
-                            );
-                            stream
-                                .write_all(response.as_bytes())
-                                .await
-                                .expect("write");
+                                let status_text = match status {
+                                    200 => "OK",
+                                    503 => "Service Unavailable",
+                                    _ => "Test Status",
+                                };
+                                let response = format!(
+                                    "HTTP/1.1 {status} {status_text}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                                    response_body.len(),
+                                    response_body
+                                );
+                                stream
+                                    .write_all(response.as_bytes())
+                                    .await
+                                    .expect("write");
+                            }
                         }
                     }
                 }
@@ -1315,6 +1647,7 @@ mod test_support {
             Self {
                 base_url,
                 last_request_path,
+                request_count,
                 shutdown: Some(shutdown_tx),
             }
         }
@@ -1325,6 +1658,10 @@ mod test_support {
 
         pub async fn last_request_path(&self) -> Option<String> {
             self.last_request_path.lock().await.clone()
+        }
+
+        pub async fn request_count(&self) -> usize {
+            *self.request_count.lock().await
         }
     }
 

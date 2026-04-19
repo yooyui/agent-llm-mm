@@ -14,7 +14,12 @@ pub mod id_generator;
 pub mod identity_store;
 pub mod model_port;
 pub mod reflection_store;
+pub mod trigger_ledger_store;
 
+pub use crate::domain::self_revision::{
+    SelfRevisionCommitmentPatch, SelfRevisionIdentityPatch, SelfRevisionPatch,
+    SelfRevisionProposal, SelfRevisionRequest, TriggerType,
+};
 pub use claim_store::{ClaimStatus, ClaimStore, StoredClaim};
 pub use clock::Clock;
 pub use commitment_store::CommitmentStore;
@@ -24,6 +29,7 @@ pub use id_generator::IdGenerator;
 pub use identity_store::IdentityStore;
 pub use model_port::{ModelDecision, ModelDecisionRequest, ModelInput, ModelPort};
 pub use reflection_store::{ReflectionStore, StoredReflection};
+pub use trigger_ledger_store::{StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore};
 
 #[async_trait]
 pub trait IngestTransaction {
@@ -50,6 +56,14 @@ pub trait ReflectionTransaction {
     async fn upsert_claim(&mut self, claim: StoredClaim) -> Result<(), AppError>;
     async fn link_evidence(&mut self, claim_id: String, event_id: String) -> Result<(), AppError>;
     async fn append_reflection(&mut self, reflection: StoredReflection) -> Result<(), AppError>;
+    async fn append_trigger_ledger(
+        &mut self,
+        _entry: StoredTriggerLedgerEntry,
+    ) -> Result<(), AppError> {
+        Err(AppError::Message(
+            "reflection transaction does not support trigger ledger writes".to_string(),
+        ))
+    }
     async fn load_identity(&mut self) -> Result<IdentityCore, AppError> {
         Err(AppError::Message(
             "reflection transaction does not support identity updates".to_string(),

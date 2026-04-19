@@ -5,7 +5,10 @@ use std::sync::{
 
 use agent_llm_mm::{
     application::decide_with_snapshot::{DecideWithSnapshotInput, execute},
-    domain::snapshot::SelfSnapshot,
+    domain::{
+        self_revision::{SelfRevisionProposal, SelfRevisionRequest},
+        snapshot::SelfSnapshot,
+    },
     error::AppError,
     ports::{ModelDecision, ModelDecisionRequest, ModelPort},
 };
@@ -118,6 +121,13 @@ mod test_support {
             self.model_calls.fetch_add(1, Ordering::SeqCst);
             *self.last_request.lock().unwrap() = Some(request.clone());
             self.model.decide(request).await
+        }
+
+        async fn propose_self_revision(
+            &self,
+            request: SelfRevisionRequest,
+        ) -> Result<SelfRevisionProposal, AppError> {
+            self.model.propose_self_revision(request).await
         }
     }
 }

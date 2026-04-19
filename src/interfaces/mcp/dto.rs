@@ -1,8 +1,11 @@
+use std::collections::BTreeSet;
+
 use crate::ports::EvidenceQuery;
 use crate::{
     application::{
-        build_self_snapshot::BuildSelfSnapshotInput, decide_with_snapshot::DecideWithSnapshotInput,
-        ingest_interaction::IngestInput, run_reflection::ReflectionInput,
+        auto_reflect_if_needed::AutoReflectInput, build_self_snapshot::BuildSelfSnapshotInput,
+        decide_with_snapshot::DecideWithSnapshotInput, ingest_interaction::IngestInput,
+        run_reflection::ReflectionInput,
     },
     domain::{
         claim::ClaimDraft,
@@ -138,6 +141,8 @@ pub struct IngestInteractionParams {
     pub event: EventDto,
     pub claim_drafts: Vec<ClaimDraftDto>,
     pub episode_reference: Option<String>,
+    #[serde(default)]
+    pub trigger_hints: Vec<String>,
 }
 
 impl TryFrom<IngestInteractionParams> for IngestInput {
@@ -152,6 +157,48 @@ impl TryFrom<IngestInteractionParams> for IngestInput {
                 .map(ClaimDraft::try_from)
                 .collect::<Result<Vec<_>, _>>()?,
             value.episode_reference,
+        ))
+    }
+}
+
+impl IngestInteractionParams {
+    fn auto_reflect_namespace(&self) -> Result<Namespace, AppError> {
+        if self.claim_drafts.is_empty() {
+            return Ok(Namespace::for_owner(self.event.owner.into()));
+        }
+
+        let mut namespaces = BTreeSet::new();
+        for draft in &self.claim_drafts {
+            let namespace = match draft.namespace.as_deref() {
+                Some(namespace) => {
+                    Namespace::parse(namespace.to_string()).map_err(AppError::from)?
+                }
+                None => Namespace::for_owner(Owner::from(draft.owner)),
+            };
+            namespaces.insert(namespace.as_str().to_string());
+        }
+
+        match namespaces.len() {
+            1 => Namespace::parse(
+                namespaces
+                    .into_iter()
+                    .next()
+                    .expect("single namespace must exist"),
+            )
+            .map_err(AppError::from),
+            _ => Err(AppError::InvalidParams(format!(
+                "ambiguous auto-reflection namespace derived from claim drafts: {}",
+                namespaces.into_iter().collect::<Vec<_>>().join(", ")
+            ))),
+        }
+    }
+}
+
+impl AutoReflectInput {
+    pub fn from_ingest(params: &IngestInteractionParams) -> Result<Self, AppError> {
+        Ok(Self::for_failure(
+            params.auto_reflect_namespace()?,
+            params.trigger_hints.clone(),
         ))
     }
 }

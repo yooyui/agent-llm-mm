@@ -42,6 +42,7 @@ timeout_ms = 45000
 "#,
     )
     .expect("write config");
+    let _guard = EnvGuard::set([(DATABASE_URL_ENV_VAR, Some("sqlite:///tmp/from-env.sqlite"))]);
 
     let config = AppConfig::load_from_path(&config_path).expect("config");
 

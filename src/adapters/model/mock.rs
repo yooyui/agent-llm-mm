@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 
 use crate::{
+    domain::self_revision::{SelfRevisionProposal, SelfRevisionRequest},
     error::AppError,
     ports::{ModelDecision, ModelDecisionRequest, ModelPort},
 };
@@ -18,5 +19,15 @@ impl ModelPort for MockModel {
         };
 
         Ok(ModelDecision::new(action.to_string()))
+    }
+
+    async fn propose_self_revision(
+        &self,
+        request: SelfRevisionRequest,
+    ) -> Result<SelfRevisionProposal, AppError> {
+        Ok(SelfRevisionProposal::no_revision(format!(
+            "mock model did not detect a valid {:?} revision",
+            request.trigger_type
+        )))
     }
 }

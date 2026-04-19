@@ -2,7 +2,7 @@
 
 ## 一句话说明
 
-一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载，以及 `openai-compatible` 模型接入。
+一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载、`openai-compatible` 模型接入，以及 trigger-ledger-backed automatic self-revision MVP。
 
 ## 主多语言文档
 
@@ -16,8 +16,8 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：适合以“公开技术 demo / MVP”身份发布到 GitHub，不应包装成完整产品
-- 最新 fresh 验证：`2026-04-18`
-  - `cargo test` 全量通过，共 80 个测试
+- 最新 fresh 验证：`2026-04-19`
+  - `cargo test -q` 全量通过，共 97 个测试
   - `doctor` 预检返回 `status = ok`
 
 ## 先看这些
@@ -56,6 +56,12 @@
   - 支持显式 `replacement_evidence_event_ids`
   - 已具备窄化的 `replacement_evidence_query` 基础能力（结构化首版），用于在反思时提供可选的证据检索起点
   - 已支持带审计记录的最小 `identity_core` / `commitments` 深层修订
+- trigger-ledger-backed automatic self-revision MVP
+  - 已有 `self_revision` 领域契约、`ModelPort::propose_self_revision` 端口，以及 `mock` / `openai-compatible` proposal adapter
+  - 已有 trigger ledger 持久化、cooldown 去重和 handled/rejected/suppressed 记录
+  - 当前唯一 MCP-wired automatic path 是 `ingest_interaction` 成功写入后，基于 ingest 侧 failure 候选与 `trigger_hints` 做 best-effort auto-reflection
+  - 通过治理后的 proposal 会被转译回现有 `run_reflection` 持久化路径；没有新增独立 MCP tool
+  - 直接调用 `run_reflection` 不会递归触发 auto-reflection
 - `namespace` 最小闭环
   - `self`
   - `world`
@@ -78,6 +84,11 @@
   - commitment gate 已真实生效
   - 已可切到 `openai-compatible` provider
   - 当前只支持返回“动作字符串”的最小协议
+- self-revision 触发面与治理深度
+  - 当前 trigger type 已有 `failure / conflict / periodic` 契约，协调器也支持这些类型
+  - 但当前真正接到 MCP entry point 的 automatic path 只有 `ingest_interaction -> failure trigger`
+  - `conflict` 与 `periodic` 目前只存在于 domain / coordinator / ledger 契约里，还没有接到 MCP entry point
+  - 当前 evidence 选择、trigger 判定和 deep-update 校验仍是保守的 MVP 规则，不是完整自治治理系统
 - provider 扩展性
   - 已保留 provider 枚举与 provider-specific config 结构
   - 但目前只内建 `mock` 与 `openai-compatible`
@@ -93,14 +104,20 @@
   - 已是文件型 SQLite
   - 默认语义已收口为“本机用户共享的持久化默认库”
   - 如需项目隔离、实验隔离或测试隔离，应显式设置 `database_url`
+- 配置覆盖语义
+  - `AppConfig::load_from_path()` 会保留显式文件里的 `database_url`
+  - 若显式文件省略 `database_url`，`load_from_path()` 仍可能通过 `AppConfig::default()` 继承环境变量派生出的默认路径
+  - `AppConfig::load()` / 默认启动路径仍允许用 `AGENT_LLM_MM_DATABASE_URL` 覆盖数据库位置
 
 ### 未实现
 
 - richer 自动 evidence lookup（当前仍只支持 `owner / kind / limit` 的结构化首版）
+- richer evidence weighting / relation / ranking
 - evidence weight / relation
 - `identity_core` / `commitments` 的 richer schema、版本化修订与更细策略
 - 更多 provider 类型（如 Azure/OpenRouter/本地模型）
 - 更完整的多层 memory 体系
+- 持续后台自治运行、独立 daemon 调度或完整 self-governing agent 行为
 
 ## 快速开始
 
@@ -145,6 +162,7 @@
 - 如果多个本机客户端共用同一 SQLite 文件，需要预期 SQLite 单写者模型带来的竞争与锁等待。
 - 本地配置文件不应提交到仓库，尤其不要把真实 API key 写进 `examples/`、`docs/` 或测试文件。
 - `decide_with_snapshot` 已可走真实 provider，但当前仍是最小动作协议，不建议把它表述成完整决策引擎。
+- 当前 automatic self-revision 是带 ledger、证据门槛和慢更新约束的 MVP；它仍然是本地 `stdio` memory demo，不是完整自治代理系统。
 
 ## Acknowledgements
 

@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-03-27 实现复核更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-04-19 fresh 验证更新）
 
 ## 1. 目标
 
@@ -24,20 +24,20 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-04-18`，`cargo test` 全量通过，摘要如下：
+截至 `2026-04-19`，`cargo test -q` 全量通过，摘要如下：
 
-- `application_use_cases`: 17 passed
+- `application_use_cases`: 20 passed
 - `bootstrap`: 12 passed
 - `decision_flow`: 2 passed
 - `domain_invariants`: 4 passed
 - `domain_snapshot`: 6 passed
-- `failure_modes`: 6 passed
-- `mcp_stdio`: 13 passed
-- `openai_compatible_model`: 3 passed
+- `failure_modes`: 11 passed
+- `mcp_stdio`: 16 passed
+- `openai_compatible_model`: 6 passed
 - `provider_config`: 5 passed
-- `sqlite_store`: 12 passed
+- `sqlite_store`: 15 passed
 
-合计：80 个测试通过。
+合计：97 个测试通过。
 
 ---
 
@@ -82,6 +82,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 3. `cargo test`
 4. `./scripts/agent-llm-mm.sh doctor`
 5. `cargo run --quiet -- doctor`
+6. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 3 条定向自修订验证
 
 如果只想快速回归某个变更，再执行对应的定向测试。
 
@@ -263,6 +264,43 @@ cargo test --test application_use_cases --test failure_modes
 - `reflection_rejects_missing_replacement_evidence_event_ids`
 - `reflection_rejects_empty_identity_update_even_with_supporting_evidence`
 
+### 6.5 automatic self-revision MVP 定向验证
+
+这是当前 self-revision MVP 的最低定向回归集。只要你改了下面任一部分，就至少补跑这 3 条：
+
+- `src/application/auto_reflect_if_needed.rs`
+- `src/interfaces/mcp/server.rs`
+- `src/interfaces/mcp/dto.rs`
+- `src/adapters/sqlite/store.rs`
+- `src/ports/trigger_ledger_store.rs`
+- `src/support/config.rs` 里与启动/数据库加载语义相关的代码
+
+命令：
+
+```zsh
+cargo test --test application_use_cases auto_reflection_runs_once_for_repeated_failure_and_records_handled_ledger -v
+cargo test --test sqlite_store sqlite_trigger_ledger_records_namespace_periodic_watermark_and_cooldown -v
+cargo test --test mcp_stdio ingest_interaction_auto_reflects_once_and_does_not_recurse_inside_run_reflection -v
+```
+
+如果改动包含 `src/support/config.rs`，再追加：
+
+```zsh
+cargo test --test provider_config -v
+```
+
+覆盖点：
+
+- 应用层会在重复 failure 窗口里只自动修订一次，并把 handled ledger 正确落盘
+- SQLite adapter 会持久化 trigger ledger 的 `namespace`、`episode_watermark` 和 `cooldown_until`
+- stdio runtime 当前唯一 MCP-wired automatic path 是 `ingest_interaction -> failure trigger`，且 direct `run_reflection` 不会递归回自动链路
+
+额外注意：
+
+- `conflict` 与 `periodic` 目前只存在于 domain / coordinator / ledger 契约里，还没有接到 MCP entry point
+- 不要把这组测试解读成“所有 MCP 入口都会自动反思”
+- 当前 auto-reflection 仍通过已有 `run_reflection` 写入 identity / commitments，不存在新的 durable write 通道
+
 ---
 
 ## 7. 手工 Smoke Test
@@ -372,6 +410,22 @@ cargo test --test mcp_stdio inferred_replacement_reflection_with_evidence_is_acc
 - 后续 `build_self_snapshot` 返回的新 `identity` 与 `commitments` 已更新
 - `reflections` 表会保留 supporting evidence 与请求更新内容的 JSON 审计字段
 
+### 7.5 手工验证 ingest-side auto-reflection MVP
+
+如果你要专门观察 automatic self-revision MVP，而不是只看最终 snapshot，优先跑自动化：
+
+```zsh
+cargo test --test application_use_cases auto_reflection_runs_once_for_repeated_failure_and_records_handled_ledger -v
+cargo test --test mcp_stdio ingest_interaction_auto_reflects_once_and_does_not_recurse_inside_run_reflection -v
+```
+
+当前你应期待的是：
+
+- 第二次重复 failure 触发会因为 ledger cooldown 被 suppress
+- 已成功的 `ingest_interaction` 不会因为 post-ingest auto-reflection 失败而变成 MCP error
+- direct `run_reflection` 只执行显式请求，不会再触发一轮自动修订
+- 这组验证只覆盖 `ingest_interaction -> failure trigger`；不代表 `conflict` / `periodic` 已接到 MCP entry point
+
 ---
 
 ## 8. 迁移验证
@@ -443,7 +497,20 @@ cargo fmt --check
 - `src/domain/claim.rs`
 - `src/support/config.rs`
 
-### 9.4 `invalid_params` 变成 `internal_error`
+### 9.4 数据库路径加载语义和预期不一致
+
+优先检查你是走哪条配置路径：
+
+- `AppConfig::load()`：默认启动路径，会在读取配置文件后继续接受 `AGENT_LLM_MM_DATABASE_URL` 覆盖
+- `AppConfig::load_from_path()`：显式文件加载路径，会保留文件里显式给出的 `database_url`
+
+这意味着：
+
+- 如果你通过脚本或默认启动路径运行服务，同时又设置了 `AGENT_LLM_MM_DATABASE_URL`，最终数据库位置可能不是 TOML 文件里写的那个
+- 如果你在测试里直接调用 `load_from_path()`，显式文件里的 `database_url` 不会再被环境变量覆盖
+- 但如果该文件省略 `database_url`，`load_from_path()` 仍可能通过 `AppConfig::default()` 继承环境变量派生出的默认路径
+
+### 9.5 `invalid_params` 变成 `internal_error`
 
 说明错误映射回退了。
 
@@ -481,6 +548,20 @@ cargo test --test sqlite_store
 cargo test --test application_use_cases --test failure_modes --test mcp_stdio
 ```
 
+### 改 automatic self-revision / trigger ledger / ingest-side runtime wiring
+
+```zsh
+cargo test --test application_use_cases auto_reflection_runs_once_for_repeated_failure_and_records_handled_ledger -v
+cargo test --test sqlite_store sqlite_trigger_ledger_records_namespace_periodic_watermark_and_cooldown -v
+cargo test --test mcp_stdio ingest_interaction_auto_reflects_once_and_does_not_recurse_inside_run_reflection -v
+```
+
+### 改 `src/support/config.rs`
+
+```zsh
+cargo test --test provider_config -v
+```
+
 ### 改 MCP DTO / server / 错误映射
 
 ```powershell
@@ -500,7 +581,7 @@ cargo test
 
 ## 11. 当前结论
 
-截至 `2026-03-27`，推荐把下面四条当作提交前基线：
+截至 `2026-04-19`，推荐把下面四条当作提交前基线：
 
 ```zsh
 cargo fmt --check
@@ -513,5 +594,5 @@ cargo test
 
 - 编码规范通过
 - 编译与静态检查通过
-- `namespace`、SQLite migration、MCP `stdio` 和 reflection 闭环都通过自动化验证
+- `namespace`、SQLite migration、MCP `stdio`、reflection 闭环和 automatic self-revision MVP 基线都可继续追加定向验证
 - 本机运行时 bootstrap 正常
