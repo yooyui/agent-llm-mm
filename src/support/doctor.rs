@@ -12,6 +12,8 @@ pub struct DoctorReport {
     pub provider: ModelProviderKind,
     pub base_url: Option<String>,
     pub model: Option<String>,
+    pub auto_reflection_runtime_hooks: Vec<String>,
+    pub self_revision_write_path: &'static str,
     pub status: &'static str,
 }
 
@@ -31,6 +33,11 @@ pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
         provider: config.model_provider,
         base_url,
         model,
+        auto_reflection_runtime_hooks: interfaces::mcp::server::AUTO_REFLECTION_RUNTIME_HOOKS
+            .iter()
+            .map(|hook| hook.to_string())
+            .collect(),
+        self_revision_write_path: interfaces::mcp::server::SELF_REVISION_WRITE_PATH,
         status: "ok",
     })
 }

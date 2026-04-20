@@ -135,6 +135,99 @@ async fn reflection_commit_failure_rolls_back_claim_identity_commitment_and_audi
 }
 
 #[tokio::test]
+async fn auto_reflection_returns_structured_diagnostics_for_recursion_guard_skip() {
+    let deps = test_support::deps_for_failure_modes();
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_periodic(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["periodic".to_string()],
+        )
+        .with_recursion_guard(
+            agent_llm_mm::application::auto_reflect_if_needed::RecursionGuard::SkipAutoReflection,
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(!result.triggered);
+    assert_eq!(result.trigger_type, Some(TriggerType::Periodic));
+    assert_eq!(result.reflection_id, None);
+    assert_eq!(result.ledger_status, None);
+    assert_eq!(result.reason.as_deref(), Some("recursion guard enabled"));
+    assert_eq!(
+        result.trigger_key.as_deref(),
+        Some("project/agent-llm-mm:periodic")
+    );
+    assert!(result.evidence_event_ids.is_empty());
+    assert_eq!(result.cooldown_until, None);
+    assert_eq!(result.suppression_reason, None);
+}
+
+#[tokio::test]
+async fn auto_reflection_returns_structured_diagnostics_for_not_triggered_case() {
+    let deps = test_support::deps_for_failure_modes();
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(!result.triggered);
+    assert_eq!(result.trigger_type, Some(TriggerType::Failure));
+    assert_eq!(result.reflection_id, None);
+    assert_eq!(result.ledger_status, None);
+    assert_eq!(result.reason, None);
+    assert_eq!(
+        result.trigger_key.as_deref(),
+        Some("project/agent-llm-mm:failure")
+    );
+    assert!(result.evidence_event_ids.is_empty());
+    assert_eq!(result.cooldown_until, None);
+    assert_eq!(result.suppression_reason, None);
+}
+
+#[tokio::test]
+async fn auto_reflection_returns_structured_diagnostics_for_rejected_proposal() {
+    let deps = test_support::deps_for_failure_modes();
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_periodic(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["periodic".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(!result.triggered);
+    assert_eq!(result.trigger_type, Some(TriggerType::Periodic));
+    assert_eq!(result.reflection_id, None);
+    assert_eq!(result.ledger_status, Some(TriggerLedgerStatus::Rejected));
+    assert_eq!(
+        result.reason.as_deref(),
+        Some("mock model did not detect a valid Periodic revision")
+    );
+    assert_eq!(
+        result.trigger_key.as_deref(),
+        Some("project/agent-llm-mm:periodic")
+    );
+    assert_eq!(
+        result.evidence_event_ids,
+        vec!["evt-reflection-1".to_string()]
+    );
+    assert_eq!(result.cooldown_until, None);
+    assert_eq!(result.suppression_reason, None);
+}
+
+#[tokio::test]
 async fn snapshot_budget_deduplicates_recent_duplicate_evidence_before_truncating() {
     let deps = test_support::deps_for_failure_modes();
 
@@ -195,6 +288,227 @@ async fn auto_reflection_rejects_identity_patch_without_minimum_support_and_reco
         Some(TriggerLedgerStatus::Rejected)
     );
     assert!(deps.reflection("id-2").is_none());
+}
+
+#[tokio::test]
+async fn auto_reflection_rejects_model_proposed_evidence_outside_trigger_window() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_failure_window(vec![
+        (
+            "evt-failure-1",
+            "rollback after violating a hard commitment",
+        ),
+        (
+            "evt-failure-2",
+            "second rollback after violating the same hard commitment",
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            vec!["evt-outside-1".to_string(), "evt-outside-2".to_string()],
+            None,
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
+    );
+}
+
+#[tokio::test]
+async fn auto_reflection_rejects_mixed_valid_and_invalid_model_proposed_evidence_ids() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_failure_window(vec![
+        (
+            "evt-failure-1",
+            "rollback after violating a hard commitment",
+        ),
+        (
+            "evt-failure-2",
+            "second rollback after violating the same hard commitment",
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            vec!["evt-failure-2".to_string(), "evt-outside-1".to_string()],
+            None,
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
+    );
+    assert!(deps.latest_reflection().is_none());
+}
+
+#[tokio::test]
+async fn auto_reflection_applies_model_proposed_evidence_subset_but_preserves_full_trigger_window_in_handled_ledger()
+ {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_failure_window(vec![
+        (
+            "evt-failure-1",
+            "rollback after violating a hard commitment",
+        ),
+        (
+            "evt-failure-2",
+            "second rollback after violating the same hard commitment",
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            vec!["evt-failure-2".to_string()],
+            None,
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(result.triggered);
+    assert_eq!(result.evidence_event_ids, vec!["evt-failure-2".to_string()]);
+    let reflection = deps
+        .latest_reflection()
+        .expect("handled auto-reflection should persist a reflection");
+    assert_eq!(
+        reflection.supporting_evidence_event_ids,
+        vec!["evt-failure-2".to_string()]
+    );
+    let handled_entry = deps
+        .latest_trigger_entry()
+        .expect("handled auto-reflection should persist a trigger ledger entry");
+    assert_eq!(
+        handled_entry.evidence_window,
+        vec!["evt-failure-2".to_string(), "evt-failure-1".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn auto_reflection_suppresses_unchanged_failure_window_after_cooldown_when_prior_reflection_used_subset()
+ {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_failure_window(vec![
+        (
+            "evt-failure-1",
+            "rollback after violating a hard commitment",
+        ),
+        (
+            "evt-failure-2",
+            "second rollback after violating the same hard commitment",
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            vec!["evt-failure-2".to_string()],
+            None,
+        ),
+    );
+
+    let first = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+    deps.advance_now_by_hours(25);
+    let second = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(first.triggered);
+    assert!(!second.triggered);
+    assert_eq!(second.ledger_status, Some(TriggerLedgerStatus::Suppressed));
+    assert_eq!(
+        second.suppression_reason.as_deref(),
+        Some("evidence_window_unchanged")
+    );
+    assert_eq!(deps.reflections().len(), 1);
+}
+
+#[tokio::test]
+async fn auto_reflection_ignores_proposed_evidence_query_for_widening_when_ids_are_empty() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_failure_window(vec![
+        (
+            "evt-failure-1",
+            "rollback after violating a hard commitment",
+        ),
+        (
+            "evt-failure-2",
+            "second rollback after violating the same hard commitment",
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            Vec::new(),
+            Some(EvidenceQuery {
+                owner: Some(Owner::World),
+                kind: Some(EventKind::Observation),
+                limit: Some(5),
+            }),
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(result.triggered);
+    assert_eq!(
+        result.evidence_event_ids,
+        vec!["evt-failure-2".to_string(), "evt-failure-1".to_string()]
+    );
+    let reflection = deps
+        .latest_reflection()
+        .expect("handled auto-reflection should persist a reflection");
+    assert_eq!(
+        reflection.supporting_evidence_event_ids,
+        vec!["evt-failure-2".to_string(), "evt-failure-1".to_string()]
+    );
 }
 
 #[tokio::test]
@@ -377,6 +691,34 @@ async fn auto_reflection_suppresses_periodic_trigger_during_cooldown() {
 }
 
 #[tokio::test]
+async fn auto_reflection_returns_structured_diagnostics_for_suppressed_trigger() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_periodic_cooldown("project/agent-llm-mm:periodic");
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_periodic(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["periodic".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.ledger_status, Some(TriggerLedgerStatus::Suppressed));
+    assert_eq!(result.reflection_id.as_deref(), Some("seeded-reflection"));
+    assert_eq!(
+        result.trigger_key.as_deref(),
+        Some("project/agent-llm-mm:periodic")
+    );
+    assert!(result.cooldown_until.is_some());
+    assert_eq!(
+        result.suppression_reason.as_deref(),
+        Some("cooldown_active")
+    );
+}
+
+#[tokio::test]
 async fn auto_reflection_repeated_suppression_does_not_extend_existing_cooldown() {
     let deps = test_support::deps_for_failure_modes();
     deps.seed_periodic_cooldown("project/agent-llm-mm:periodic");
@@ -419,6 +761,29 @@ async fn auto_reflection_repeated_suppression_does_not_extend_existing_cooldown(
                 .unwrap()
                 .with_timezone(&Utc)
         )
+    );
+}
+
+#[tokio::test]
+async fn auto_reflection_preserves_reflection_id_for_non_cooldown_suppression() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_periodic_watermark_suppression("project/agent-llm-mm:periodic");
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_periodic(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["periodic".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.ledger_status, Some(TriggerLedgerStatus::Suppressed));
+    assert_eq!(result.reflection_id.as_deref(), Some("seeded-reflection"));
+    assert_eq!(
+        result.suppression_reason.as_deref(),
+        Some("episode_watermark_unchanged")
     );
 }
 
@@ -513,22 +878,6 @@ mod test_support {
         }
     }
 
-    pub fn identity_only_auto_reflection_proposal()
-    -> agent_llm_mm::domain::self_revision::SelfRevisionProposal {
-        agent_llm_mm::domain::self_revision::SelfRevisionProposal {
-            should_reflect: true,
-            rationale: "conflict-backed identity rewrite".to_string(),
-            machine_patch: agent_llm_mm::domain::self_revision::SelfRevisionPatch {
-                identity_patch: Some(
-                    agent_llm_mm::domain::self_revision::SelfRevisionIdentityPatch::new(vec![
-                        "identity:self=principal_architect".to_string(),
-                    ]),
-                ),
-                commitment_patch: None,
-            },
-        }
-    }
-
     pub fn commitment_only_auto_reflection_proposal()
     -> agent_llm_mm::domain::self_revision::SelfRevisionProposal {
         agent_llm_mm::domain::self_revision::SelfRevisionProposal {
@@ -542,6 +891,49 @@ mod test_support {
                     ]),
                 ),
             },
+            proposed_evidence_event_ids: Vec::new(),
+            proposed_evidence_query: None,
+            confidence: None,
+        }
+    }
+
+    pub fn commitment_only_auto_reflection_proposal_with_policy(
+        proposed_evidence_event_ids: Vec<String>,
+        proposed_evidence_query: Option<EvidenceQuery>,
+    ) -> agent_llm_mm::domain::self_revision::SelfRevisionProposal {
+        agent_llm_mm::domain::self_revision::SelfRevisionProposal {
+            should_reflect: true,
+            rationale: "repeated rollback should tighten future commitments".to_string(),
+            machine_patch: agent_llm_mm::domain::self_revision::SelfRevisionPatch {
+                identity_patch: None,
+                commitment_patch: Some(
+                    agent_llm_mm::domain::self_revision::SelfRevisionCommitmentPatch::new(vec![
+                        "prefer:reflect_after_repeated_rollback".to_string(),
+                    ]),
+                ),
+            },
+            proposed_evidence_event_ids,
+            proposed_evidence_query,
+            confidence: Some("medium".to_string()),
+        }
+    }
+
+    pub fn identity_only_auto_reflection_proposal()
+    -> agent_llm_mm::domain::self_revision::SelfRevisionProposal {
+        agent_llm_mm::domain::self_revision::SelfRevisionProposal {
+            should_reflect: true,
+            rationale: "conflict-backed identity rewrite".to_string(),
+            machine_patch: agent_llm_mm::domain::self_revision::SelfRevisionPatch {
+                identity_patch: Some(
+                    agent_llm_mm::domain::self_revision::SelfRevisionIdentityPatch::new(vec![
+                        "identity:self=principal_architect".to_string(),
+                    ]),
+                ),
+                commitment_patch: None,
+            },
+            proposed_evidence_event_ids: Vec::new(),
+            proposed_evidence_query: None,
+            confidence: None,
         }
     }
 }
@@ -745,6 +1137,31 @@ impl FailureModeDeps {
         state.committed.claims = claims;
     }
 
+    fn seed_failure_window(&self, events: Vec<(&str, &str)>) {
+        let mut state = self.state.lock().unwrap();
+        state.committed.events = events
+            .into_iter()
+            .enumerate()
+            .map(|(index, (event_id, summary))| {
+                StoredEvent::new(
+                    event_id.to_string(),
+                    chrono::DateTime::parse_from_rfc3339(&format!(
+                        "2026-03-23T10:0{}:00Z",
+                        index + 1
+                    ))
+                    .unwrap()
+                    .with_timezone(&Utc),
+                    Event::new(Owner::Self_, EventKind::Action, summary),
+                )
+            })
+            .collect();
+    }
+
+    fn advance_now_by_hours(&self, hours: i64) {
+        let mut state = self.state.lock().unwrap();
+        state.now += chrono::Duration::hours(hours);
+    }
+
     fn seed_periodic_cooldown(&self, trigger_key: &str) {
         self.state
             .lock()
@@ -765,6 +1182,34 @@ impl FailureModeDeps {
                 ),
                 cooldown_until: Some(
                     chrono::DateTime::parse_from_rfc3339("2026-03-24T09:50:00Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+                episode_watermark: Some(1),
+                reflection_id: Some("seeded-reflection".to_string()),
+            });
+    }
+
+    fn seed_periodic_watermark_suppression(&self, trigger_key: &str) {
+        self.state
+            .lock()
+            .unwrap()
+            .committed
+            .trigger_ledger
+            .push(StoredTriggerLedgerEntry {
+                ledger_id: "ledger-seeded-periodic-watermark".to_string(),
+                trigger_type: TriggerType::Periodic,
+                namespace: Namespace::for_project("agent-llm-mm"),
+                trigger_key: trigger_key.to_string(),
+                status: TriggerLedgerStatus::Handled,
+                evidence_window: vec!["evt-unrelated".to_string()],
+                handled_at: Some(
+                    chrono::DateTime::parse_from_rfc3339("2026-03-22T09:50:00Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+                cooldown_until: Some(
+                    chrono::DateTime::parse_from_rfc3339("2026-03-23T09:30:00Z")
                         .unwrap()
                         .with_timezone(&Utc),
                 ),

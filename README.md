@@ -58,8 +58,13 @@
   - 已支持带审计记录的最小 `identity_core` / `commitments` 深层修订
 - trigger-ledger-backed automatic self-revision MVP
   - 已有 `self_revision` 领域契约、`ModelPort::propose_self_revision` 端口，以及 `mock` / `openai-compatible` proposal adapter
-  - 已有 trigger ledger 持久化、cooldown 去重和 handled/rejected/suppressed 记录
-  - 当前唯一 MCP-wired automatic path 是 `ingest_interaction` 成功写入后，基于 ingest 侧 failure 候选与 `trigger_hints` 做 best-effort auto-reflection
+  - proposal 首阶段已带 `proposed_evidence_event_ids`、`proposed_evidence_query`、`confidence` 契约，用于收口证据候选与置信度；其中 `proposed_evidence_query` 仍只是首阶段证据契约，不是 widening/ranking engine
+  - 已有 trigger ledger 持久化、cooldown 去重，以及带 structured trigger / rejection / suppression / cooldown 信息的 handled/rejected/suppressed 诊断
+  - 当前 MCP-wired automatic path 只有 3 条：
+    - `ingest_interaction -> failure`
+    - `decide_with_snapshot -> conflict`
+    - `build_self_snapshot -> periodic`
+  - 这些 automatic path 仍是 best-effort runtime hook，不代表“所有请求都会自动反思”
   - 通过治理后的 proposal 会被转译回现有 `run_reflection` 持久化路径；没有新增独立 MCP tool
   - 直接调用 `run_reflection` 不会递归触发 auto-reflection
 - `namespace` 最小闭环
@@ -85,9 +90,10 @@
   - 已可切到 `openai-compatible` provider
   - 当前只支持返回“动作字符串”的最小协议
 - self-revision 触发面与治理深度
-  - 当前 trigger type 已有 `failure / conflict / periodic` 契约，协调器也支持这些类型
-  - 但当前真正接到 MCP entry point 的 automatic path 只有 `ingest_interaction -> failure trigger`
-  - `conflict` 与 `periodic` 目前只存在于 domain / coordinator / ledger 契约里，还没有接到 MCP entry point
+  - 当前 trigger type 已有 `failure / conflict / periodic` 契约，协调器与 ledger 也支持这些类型
+  - 当前 MCP runtime coverage 已谨慎接到 3 条路径：`ingest_interaction -> failure`、`decide_with_snapshot -> conflict`、`build_self_snapshot -> periodic`
+  - 其中 `decide_with_snapshot` 与 `build_self_snapshot` 仍要求显式 `auto_reflect_namespace`，`decide_with_snapshot` 还需要显式 conflict-style `trigger_hints`，并且只在非 blocked 决策后做 best-effort conflict auto-reflection
+  - 当前没有“所有 MCP entry point 自动反思”的统一运行形态，也没有后台 daemon / 定时自治进程
   - 当前 evidence 选择、trigger 判定和 deep-update 校验仍是保守的 MVP 规则，不是完整自治治理系统
 - provider 扩展性
   - 已保留 provider 枚举与 provider-specific config 结构
@@ -111,7 +117,7 @@
 
 ### 未实现
 
-- richer 自动 evidence lookup（当前仍只支持 `owner / kind / limit` 的结构化首版）
+- richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只支持 `owner / kind / limit` 的结构化首版）
 - richer evidence weighting / relation / ranking
 - evidence weight / relation
 - `identity_core` / `commitments` 的 richer schema、版本化修订与更细策略

@@ -24,14 +24,17 @@
 
 目标：
 
-- 在不新增旁路持久化接口的前提下，把 automatic self-revision 从当前唯一的 `ingest_interaction -> failure trigger` MCP 接线，谨慎扩展到更广的 MCP 入口
-- 评估是否要把 `conflict` / `periodic` trigger 接入明确的 MCP runtime 路径，而不是只停留在 domain / coordinator / ledger 契约层
+- 先把当前已落地的 3 条 MCP runtime hook 文档、验证与诊断口径收口稳定：
+  - `ingest_interaction -> failure`
+  - `decide_with_snapshot -> conflict`
+  - `build_self_snapshot -> periodic`
+- 在不新增旁路持久化接口的前提下，优先验证这些 hook 的 opt-in 条件、best-effort 失败语义和排查路径，而不是继续扩大到“所有入口自动反思”
 
 重点边界：
 
 - `decide_with_snapshot` 已可走 `openai-compatible` provider，但仍不是完整决策引擎
-- 当前 automatic self-revision 的唯一 MCP-wired automatic path 是 `ingest_interaction -> failure trigger`
-- `conflict` 与 `periodic` 目前只存在于 domain / coordinator / ledger 契约里，还没有接到 MCP entry point
+- 当前 MCP-wired automatic path 只有上述 3 条，不代表所有 MCP entry point 都会自动反思
+- `decide_with_snapshot` 与 `build_self_snapshot` 当前仍要求显式 `auto_reflect_namespace`
 - `run_reflection` 仍是唯一 durable write path；没有新增旁路持久化接口
 - direct `run_reflection` 不递归 auto-reflection；没有后台 daemon 或“所有入口自动反思”
 - richer memory semantics 尚未落地
@@ -41,7 +44,7 @@
 目标：
 
 - 保持 `run_reflection` 为长期写入路径，同时继续收紧 trigger 候选、cooldown 与 slow-update 规则
-- 明确 best-effort auto-reflection 的失败可观测性、日志排查方式和运行时边界
+- 明确 best-effort auto-reflection 的 structured diagnostics、日志排查方式和运行时边界
 - 让 ledger / trigger / rejection / suppression 的诊断信息更容易在验证和接入文档里被复用
 
 原因：
@@ -54,11 +57,13 @@
 目标：
 
 - 在已支持显式 `replacement_evidence_event_ids`、结构化 `replacement_evidence_query` 和最小 `identity_core` / `commitments` 更新的基础上，继续明确输入约束、保底规则与审计边界
+- 在 self-revision proposal 已支持 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence` 首阶段契约的基础上，继续明确这些字段的治理边界
 - 为后续 richer schema、版本化策略和更广泛证据能力奠基
 
 原因：
 
 - 反思路径的最小 deep-update 闭环已经落地，下一步不应再引入新的接口漂移，而应优先把规则与边界收口清楚
+- `proposed_evidence_query` 当前仍只是首阶段 evidence contract，不应被扩写成自动 widening / ranking engine
 - 这将减少后续 evidence 语义与 schema 改造的反复成本
 
 ## 中期

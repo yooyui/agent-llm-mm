@@ -206,6 +206,8 @@ impl AutoReflectInput {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct BuildSelfSnapshotParams {
     pub budget: usize,
+    #[serde(default)]
+    pub auto_reflect_namespace: Option<String>,
 }
 
 impl From<BuildSelfSnapshotParams> for BuildSelfSnapshotInput {
@@ -213,6 +215,24 @@ impl From<BuildSelfSnapshotParams> for BuildSelfSnapshotInput {
         BuildSelfSnapshotInput {
             budget: SnapshotBudget::new(value.budget),
         }
+    }
+}
+
+impl BuildSelfSnapshotParams {
+    fn auto_reflect_namespace(&self) -> Result<Option<Namespace>, AppError> {
+        self.auto_reflect_namespace
+            .as_deref()
+            .map(|namespace| Namespace::parse(namespace.to_string()).map_err(AppError::from))
+            .transpose()
+    }
+}
+
+impl AutoReflectInput {
+    pub fn from_build_snapshot(params: &BuildSelfSnapshotParams) -> Result<Option<Self>, AppError> {
+        params
+            .auto_reflect_namespace()?
+            .map(|namespace| Ok(Self::for_periodic(namespace, vec!["periodic".to_string()])))
+            .transpose()
     }
 }
 
@@ -242,6 +262,10 @@ pub struct DecideWithSnapshotParams {
     pub task: String,
     pub action: String,
     pub snapshot: SelfSnapshotDto,
+    #[serde(default)]
+    pub trigger_hints: Vec<String>,
+    #[serde(default)]
+    pub auto_reflect_namespace: Option<String>,
 }
 
 impl From<DecideWithSnapshotParams> for DecideWithSnapshotInput {
@@ -251,6 +275,24 @@ impl From<DecideWithSnapshotParams> for DecideWithSnapshotInput {
             action: value.action,
             snapshot: value.snapshot.into(),
         }
+    }
+}
+
+impl DecideWithSnapshotParams {
+    fn auto_reflect_namespace(&self) -> Result<Option<Namespace>, AppError> {
+        self.auto_reflect_namespace
+            .as_deref()
+            .map(|namespace| Namespace::parse(namespace.to_string()).map_err(AppError::from))
+            .transpose()
+    }
+}
+
+impl AutoReflectInput {
+    pub fn from_decide(params: &DecideWithSnapshotParams) -> Result<Option<Self>, AppError> {
+        params
+            .auto_reflect_namespace()?
+            .map(|namespace| Ok(Self::for_conflict(namespace, params.trigger_hints.clone())))
+            .transpose()
     }
 }
 

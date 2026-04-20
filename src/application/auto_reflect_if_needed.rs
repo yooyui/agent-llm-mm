@@ -79,57 +79,115 @@ pub struct AutoReflectResult {
     pub reflection_id: Option<String>,
     pub ledger_status: Option<TriggerLedgerStatus>,
     pub reason: Option<String>,
+    pub trigger_key: Option<String>,
+    #[serde(default)]
+    pub evidence_event_ids: Vec<String>,
+    pub cooldown_until: Option<chrono::DateTime<Utc>>,
+    pub suppression_reason: Option<String>,
 }
 
 impl AutoReflectResult {
-    pub fn skipped(reason: impl Into<String>) -> Self {
+    fn new(
+        triggered: bool,
+        trigger_type: Option<TriggerType>,
+        reflection_id: Option<String>,
+        ledger_status: Option<TriggerLedgerStatus>,
+        reason: Option<String>,
+        trigger_key: Option<String>,
+        evidence_event_ids: Vec<String>,
+        cooldown_until: Option<chrono::DateTime<Utc>>,
+        suppression_reason: Option<String>,
+    ) -> Self {
         Self {
-            triggered: false,
-            trigger_type: None,
-            reflection_id: None,
-            ledger_status: None,
-            reason: Some(reason.into()),
+            triggered,
+            trigger_type,
+            reflection_id,
+            ledger_status,
+            reason,
+            trigger_key,
+            evidence_event_ids,
+            cooldown_until,
+            suppression_reason,
         }
     }
 
-    pub fn not_triggered() -> Self {
-        Self {
-            triggered: false,
-            trigger_type: None,
-            reflection_id: None,
-            ledger_status: None,
-            reason: None,
-        }
+    fn skipped(input: &AutoReflectInput, reason: impl Into<String>) -> Self {
+        Self::new(
+            false,
+            Some(input.trigger_type),
+            None,
+            None,
+            Some(reason.into()),
+            Some(input.trigger_key()),
+            Vec::new(),
+            None,
+            None,
+        )
     }
 
-    pub fn rejected(trigger_type: TriggerType, reason: impl Into<String>) -> Self {
-        Self {
-            triggered: false,
-            trigger_type: Some(trigger_type),
-            reflection_id: None,
-            ledger_status: Some(TriggerLedgerStatus::Rejected),
-            reason: Some(reason.into()),
-        }
+    fn not_triggered(candidate: &TriggerCandidate) -> Self {
+        Self::new(
+            false,
+            Some(candidate.trigger_type),
+            None,
+            None,
+            None,
+            Some(candidate.trigger_key.clone()),
+            candidate.evidence_event_ids.clone(),
+            None,
+            None,
+        )
     }
 
-    pub fn suppressed(trigger_type: TriggerType) -> Self {
-        Self {
-            triggered: false,
-            trigger_type: Some(trigger_type),
-            reflection_id: None,
-            ledger_status: Some(TriggerLedgerStatus::Suppressed),
-            reason: None,
-        }
+    fn rejected(candidate: &TriggerCandidate, reason: impl Into<String>) -> Self {
+        Self::new(
+            false,
+            Some(candidate.trigger_type),
+            None,
+            Some(TriggerLedgerStatus::Rejected),
+            Some(reason.into()),
+            Some(candidate.trigger_key.clone()),
+            candidate.evidence_event_ids.clone(),
+            None,
+            None,
+        )
     }
 
-    pub fn handled(trigger_type: TriggerType, reflection_id: String) -> Self {
-        Self {
-            triggered: true,
-            trigger_type: Some(trigger_type),
-            reflection_id: Some(reflection_id),
-            ledger_status: Some(TriggerLedgerStatus::Handled),
-            reason: None,
-        }
+    fn suppressed(
+        candidate: &TriggerCandidate,
+        entry: &StoredTriggerLedgerEntry,
+        suppression_reason: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            false,
+            Some(candidate.trigger_type),
+            entry.reflection_id.clone(),
+            Some(entry.status),
+            None,
+            Some(entry.trigger_key.clone()),
+            candidate.evidence_event_ids.clone(),
+            entry.cooldown_until,
+            Some(suppression_reason.into()),
+        )
+    }
+
+    fn handled(
+        candidate: &TriggerCandidate,
+        evidence_event_ids: Vec<String>,
+        reflection_id: String,
+        cooldown_until: Option<chrono::DateTime<Utc>>,
+    ) -> Self {
+        Self::new(
+            true,
+            Some(candidate.trigger_type),
+            Some(reflection_id),
+            Some(TriggerLedgerStatus::Handled),
+            None,
+            Some(candidate.trigger_key.clone()),
+            evidence_event_ids,
+            cooldown_until,
+            None,
+        )
     }
 }
 
@@ -162,6 +220,11 @@ struct IdentityRevisionContext {
     patch_size: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SuppressionDecision {
+    reason: &'static str,
+}
+
 pub async fn execute<D>(deps: &D, input: AutoReflectInput) -> Result<AutoReflectResult, AppError>
 where
     D: TriggerLedgerStore
@@ -177,17 +240,24 @@ where
         + Sync,
 {
     if input.recursion_guard == RecursionGuard::SkipAutoReflection {
-        return Ok(AutoReflectResult::skipped("recursion guard enabled"));
+        return Ok(AutoReflectResult::skipped(
+            &input,
+            "recursion guard enabled",
+        ));
     }
 
     let candidate = detect_trigger_candidate(deps, &input).await?;
     if !candidate.should_consider {
-        return Ok(AutoReflectResult::not_triggered());
+        return Ok(AutoReflectResult::not_triggered(&candidate));
     }
 
-    if trigger_is_suppressed(deps, &candidate).await? {
-        record_suppressed_trigger(deps, &candidate).await?;
-        return Ok(AutoReflectResult::suppressed(candidate.trigger_type));
+    if let Some(suppression) = evaluate_trigger_suppression(deps, &candidate).await? {
+        let entry = record_suppressed_trigger(deps, &candidate).await?;
+        return Ok(AutoReflectResult::suppressed(
+            &candidate,
+            &entry,
+            suppression.reason,
+        ));
     }
 
     let snapshot = build_revision_snapshot(deps, &candidate).await?;
@@ -203,21 +273,38 @@ where
 
     if !proposal.should_reflect {
         record_rejected_trigger(deps, &candidate, None).await?;
-        return Ok(AutoReflectResult::rejected(
-            candidate.trigger_type,
-            proposal.rationale,
-        ));
+        return Ok(AutoReflectResult::rejected(&candidate, proposal.rationale));
     }
 
-    let validated = match validate_self_revision(deps, &candidate, &proposal).await {
-        Ok(validated) => validated,
-        Err(error) => {
-            record_rejected_trigger(deps, &candidate, None).await?;
-            return Err(error);
-        }
-    };
+    let governed_evidence_event_ids =
+        match resolve_governed_evidence_window(&candidate.evidence_event_ids, &proposal) {
+            Ok(governed_evidence_event_ids) => governed_evidence_event_ids,
+            Err(error) => {
+                record_rejected_trigger(deps, &candidate, None).await?;
+                return Err(error);
+            }
+        };
 
-    match apply_validated_self_revision(deps, &candidate, &proposal, validated).await {
+    let validated =
+        match validate_self_revision(deps, &candidate, &proposal, &governed_evidence_event_ids)
+            .await
+        {
+            Ok(validated) => validated,
+            Err(error) => {
+                record_rejected_trigger(deps, &candidate, None).await?;
+                return Err(error);
+            }
+        };
+
+    match apply_validated_self_revision(
+        deps,
+        &candidate,
+        &proposal,
+        &governed_evidence_event_ids,
+        validated,
+    )
+    .await
+    {
         Ok(result) => Ok(result),
         Err(error) => {
             record_rejected_trigger(deps, &candidate, None).await?;
@@ -260,7 +347,6 @@ where
         }
         TriggerType::Conflict => {
             has_any_hint(&input.trigger_hints, &["conflict", "rollback", "identity"])
-                || !evidence_event_ids.is_empty()
         }
         TriggerType::Periodic => episode_watermark.unwrap_or(0) > 0,
     };
@@ -276,12 +362,15 @@ where
     })
 }
 
-async fn trigger_is_suppressed<D>(deps: &D, candidate: &TriggerCandidate) -> Result<bool, AppError>
+async fn evaluate_trigger_suppression<D>(
+    deps: &D,
+    candidate: &TriggerCandidate,
+) -> Result<Option<SuppressionDecision>, AppError>
 where
     D: TriggerLedgerStore + Clock + Sync,
 {
     let Some(latest) = deps.latest_trigger_entry(&candidate.trigger_key).await? else {
-        return Ok(false);
+        return Ok(None);
     };
 
     let now = deps.now().await?;
@@ -292,14 +381,18 @@ where
         .cooldown_until
         .is_some_and(|cooldown_until| cooldown_until > now)
     {
-        return Ok(true);
+        return Ok(Some(SuppressionDecision {
+            reason: "cooldown_active",
+        }));
     }
 
     if latest.status == TriggerLedgerStatus::Handled
         && !candidate.evidence_event_ids.is_empty()
         && latest.evidence_window == candidate.evidence_event_ids
     {
-        return Ok(true);
+        return Ok(Some(SuppressionDecision {
+            reason: "evidence_window_unchanged",
+        }));
     }
 
     if candidate.trigger_type == TriggerType::Periodic
@@ -307,10 +400,12 @@ where
         && latest.episode_watermark.unwrap_or_default()
             >= candidate.episode_watermark.unwrap_or_default()
     {
-        return Ok(true);
+        return Ok(Some(SuppressionDecision {
+            reason: "episode_watermark_unchanged",
+        }));
     }
 
-    Ok(false)
+    Ok(None)
 }
 
 async fn build_revision_snapshot<D>(
@@ -337,6 +432,7 @@ async fn validate_self_revision<D>(
     deps: &D,
     candidate: &TriggerCandidate,
     proposal: &SelfRevisionProposal,
+    governed_evidence_event_ids: &[String],
 ) -> Result<ValidatedSelfRevision, AppError>
 where
     D: ClaimStore + EpisodeStore + TriggerLedgerStore + Clock + Sync,
@@ -351,7 +447,7 @@ where
     };
 
     let commitments = if let Some(commitment_patch) = &proposal.machine_patch.commitment_patch {
-        if candidate.evidence_event_ids.is_empty() {
+        if governed_evidence_event_ids.is_empty() {
             return Err(AppError::InvalidParams(
                 "commitment auto-reflection updates require supporting evidence".to_string(),
             ));
@@ -566,19 +662,27 @@ async fn apply_validated_self_revision<D>(
     deps: &D,
     candidate: &TriggerCandidate,
     proposal: &SelfRevisionProposal,
+    governed_evidence_event_ids: &[String],
     validated: ValidatedSelfRevision,
 ) -> Result<AutoReflectResult, AppError>
 where
     D: EventStore + ReflectionTransactionRunner + Clock + IdGenerator + Sync,
 {
-    let handled_trigger_ledger_entry =
-        build_trigger_entry(deps, candidate, TriggerLedgerStatus::Handled, None, None).await?;
+    let handled_trigger_ledger_entry = build_trigger_entry(
+        deps,
+        candidate,
+        &candidate.evidence_event_ids,
+        TriggerLedgerStatus::Handled,
+        None,
+        None,
+    )
+    .await?;
     let reflection_input = ReflectionInput::record_only(
         Reflection::new(proposal.rationale.clone()),
-        candidate.evidence_event_ids.clone(),
+        governed_evidence_event_ids.to_vec(),
     )
     .with_optional_replacement_evidence_query(None)
-    .with_handled_trigger_ledger_entry(handled_trigger_ledger_entry);
+    .with_handled_trigger_ledger_entry(handled_trigger_ledger_entry.clone());
     let reflection_input = if let Some(identity_claims) = validated.identity_claims {
         reflection_input.with_identity_update(identity_claims)
     } else {
@@ -592,25 +696,29 @@ where
     let reflection = run_reflection::execute(deps, reflection_input).await?;
 
     Ok(AutoReflectResult::handled(
-        candidate.trigger_type,
+        candidate,
+        governed_evidence_event_ids.to_vec(),
         reflection.reflection_id,
+        handled_trigger_ledger_entry.cooldown_until,
     ))
 }
 
 async fn record_suppressed_trigger<D>(
     deps: &D,
     candidate: &TriggerCandidate,
-) -> Result<(), AppError>
+) -> Result<StoredTriggerLedgerEntry, AppError>
 where
     D: TriggerLedgerStore + Clock + IdGenerator + Sync,
 {
-    let preserved_cooldown_until = latest_live_cooldown_until(deps, &candidate.trigger_key).await?;
+    let preserved_reflection_id =
+        latest_suppression_reflection_id(deps, &candidate.trigger_key).await?;
+    let preserved_entry = latest_live_suppression_entry(deps, &candidate.trigger_key).await?;
     record_trigger_entry(
         deps,
         candidate,
         TriggerLedgerStatus::Suppressed,
-        None,
-        preserved_cooldown_until,
+        preserved_reflection_id,
+        preserved_entry.and_then(|entry| entry.cooldown_until),
     )
     .await
 }
@@ -619,7 +727,7 @@ async fn record_rejected_trigger<D>(
     deps: &D,
     candidate: &TriggerCandidate,
     reflection_id: Option<String>,
-) -> Result<(), AppError>
+) -> Result<StoredTriggerLedgerEntry, AppError>
 where
     D: TriggerLedgerStore + Clock + IdGenerator + Sync,
 {
@@ -636,6 +744,7 @@ where
 async fn build_trigger_entry<D>(
     deps: &D,
     candidate: &TriggerCandidate,
+    evidence_event_ids: &[String],
     status: TriggerLedgerStatus,
     reflection_id: Option<String>,
     cooldown_until_override: Option<chrono::DateTime<Utc>>,
@@ -658,7 +767,7 @@ where
         namespace: candidate.namespace.clone(),
         trigger_key: candidate.trigger_key.clone(),
         status,
-        evidence_window: candidate.evidence_event_ids.clone(),
+        evidence_window: evidence_event_ids.to_vec(),
         handled_at,
         cooldown_until,
         episode_watermark: candidate.episode_watermark,
@@ -672,27 +781,27 @@ async fn record_trigger_entry<D>(
     status: TriggerLedgerStatus,
     reflection_id: Option<String>,
     cooldown_until_override: Option<chrono::DateTime<Utc>>,
-) -> Result<(), AppError>
+) -> Result<StoredTriggerLedgerEntry, AppError>
 where
     D: TriggerLedgerStore + Clock + IdGenerator + Sync,
 {
-    deps.record_trigger_attempt(
-        build_trigger_entry(
-            deps,
-            candidate,
-            status,
-            reflection_id,
-            cooldown_until_override,
-        )
-        .await?,
+    let entry = build_trigger_entry(
+        deps,
+        candidate,
+        &candidate.evidence_event_ids,
+        status,
+        reflection_id,
+        cooldown_until_override,
     )
-    .await
+    .await?;
+    deps.record_trigger_attempt(entry.clone()).await?;
+    Ok(entry)
 }
 
-async fn latest_live_cooldown_until<D>(
+async fn latest_live_suppression_entry<D>(
     deps: &D,
     trigger_key: &str,
-) -> Result<Option<chrono::DateTime<Utc>>, AppError>
+) -> Result<Option<StoredTriggerLedgerEntry>, AppError>
 where
     D: TriggerLedgerStore + Clock + Sync,
 {
@@ -705,9 +814,31 @@ where
         latest.status,
         TriggerLedgerStatus::Handled | TriggerLedgerStatus::Suppressed
     )
-    .then_some(latest.cooldown_until)
-    .flatten()
-    .filter(|cooldown_until| *cooldown_until > now))
+    .then_some(latest)
+    .filter(|entry| {
+        entry
+            .cooldown_until
+            .is_some_and(|cooldown_until| cooldown_until > now)
+    }))
+}
+
+async fn latest_suppression_reflection_id<D>(
+    deps: &D,
+    trigger_key: &str,
+) -> Result<Option<String>, AppError>
+where
+    D: TriggerLedgerStore + Sync,
+{
+    Ok(deps
+        .latest_trigger_entry(trigger_key)
+        .await?
+        .filter(|entry| {
+            matches!(
+                entry.status,
+                TriggerLedgerStatus::Handled | TriggerLedgerStatus::Suppressed
+            )
+        })
+        .and_then(|entry| entry.reflection_id))
 }
 
 fn canonical_trigger_key(namespace: &Namespace, trigger_type: TriggerType) -> String {
@@ -716,6 +847,12 @@ fn canonical_trigger_key(namespace: &Namespace, trigger_type: TriggerType) -> St
         namespace.as_str(),
         trigger_type_label(trigger_type)
     )
+}
+
+impl AutoReflectInput {
+    pub fn trigger_key(&self) -> String {
+        canonical_trigger_key(&self.namespace, self.trigger_type)
+    }
 }
 
 fn trigger_type_label(trigger_type: TriggerType) -> &'static str {
@@ -742,4 +879,28 @@ fn dedupe_strings(values: Vec<String>) -> Vec<String> {
         }
     }
     deduped
+}
+
+fn resolve_governed_evidence_window(
+    candidate_evidence_event_ids: &[String],
+    proposal: &SelfRevisionProposal,
+) -> Result<Vec<String>, AppError> {
+    if proposal.proposed_evidence_event_ids.is_empty() {
+        return Ok(candidate_evidence_event_ids.to_vec());
+    }
+
+    let proposed_evidence_event_ids = dedupe_strings(proposal.proposed_evidence_event_ids.clone());
+    if proposed_evidence_event_ids
+        .iter()
+        .any(|event_id| !candidate_evidence_event_ids.contains(event_id))
+    {
+        return Err(AppError::InvalidParams(
+            "model proposed evidence outside the current trigger window".to_string(),
+        ));
+    }
+
+    let governed_evidence_event_ids =
+        dedupe_strings(proposed_evidence_event_ids.iter().cloned().collect());
+
+    Ok(governed_evidence_event_ids)
 }

@@ -9,7 +9,7 @@ use rmcp::{
     transport::stdio,
 };
 use serde::Serialize;
-use tracing::warn;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -40,6 +40,13 @@ use crate::{
 use super::dto::{
     BuildSelfSnapshotParams, DecideWithSnapshotParams, IngestInteractionParams, RunReflectionParams,
 };
+
+pub const AUTO_REFLECTION_RUNTIME_HOOKS: [&str; 3] = [
+    "ingest_interaction:failure",
+    "decide_with_snapshot:conflict",
+    "build_self_snapshot:periodic",
+];
+pub const SELF_REVISION_WRITE_PATH: &str = "run_reflection";
 
 pub async fn run_stdio_server() -> Result<()> {
     let config = AppConfig::load().map_err(anyhow::Error::msg)?;
@@ -82,22 +89,34 @@ impl Server {
     ) -> Result<CallToolResult, McpError> {
         let auto_reflect_input =
             AutoReflectInput::from_ingest(&params).map_err(app_error_to_mcp)?;
+        let auto_reflect_trigger_type = auto_reflect_input.trigger_type;
+        let auto_reflect_trigger_key = auto_reflect_input.trigger_key();
         let input =
             IngestInput::try_from(params).map_err(|error| app_error_to_mcp(error.into()))?;
         let result = ingest_interaction::execute(&self.runtime, input)
             .await
             .map_err(app_error_to_mcp)?;
-        if let Err(error) = auto_reflect_if_needed::execute(
+        match auto_reflect_if_needed::execute(
             &self.runtime,
             auto_reflect_input.with_recursion_guard(RecursionGuard::Allow),
         )
         .await
         {
-            warn!(
-                event_id = %result.event_id,
-                error = %error,
-                "best-effort auto-reflection failed after successful ingest"
-            );
+            Ok(diagnostics) => log_auto_reflection_success(
+                AUTO_REFLECTION_RUNTIME_HOOKS[0],
+                &diagnostics,
+                Some(result.event_id.as_str()),
+            ),
+            Err(error) => {
+                warn!(
+                    runtime_hook = AUTO_REFLECTION_RUNTIME_HOOKS[0],
+                    event_id = %result.event_id,
+                    trigger_type = ?auto_reflect_trigger_type,
+                    trigger_key = %auto_reflect_trigger_key,
+                    error = %error,
+                    "best-effort auto-reflection failed after successful ingest"
+                );
+            }
         }
         structured(result)
     }
@@ -107,6 +126,33 @@ impl Server {
         &self,
         Parameters(params): Parameters<BuildSelfSnapshotParams>,
     ) -> Result<CallToolResult, McpError> {
+        let auto_reflect_input =
+            AutoReflectInput::from_build_snapshot(&params).map_err(app_error_to_mcp)?;
+        if let Some(auto_reflect_input) = auto_reflect_input {
+            let auto_reflect_trigger_type = auto_reflect_input.trigger_type;
+            let auto_reflect_trigger_key = auto_reflect_input.trigger_key();
+            match auto_reflect_if_needed::execute(
+                &self.runtime,
+                auto_reflect_input.with_recursion_guard(RecursionGuard::Allow),
+            )
+            .await
+            {
+                Ok(diagnostics) => log_auto_reflection_success(
+                    AUTO_REFLECTION_RUNTIME_HOOKS[2],
+                    &diagnostics,
+                    None,
+                ),
+                Err(error) => {
+                    warn!(
+                        runtime_hook = AUTO_REFLECTION_RUNTIME_HOOKS[2],
+                        trigger_type = ?auto_reflect_trigger_type,
+                        trigger_key = %auto_reflect_trigger_key,
+                        error = %error,
+                        "best-effort periodic auto-reflection failed"
+                    );
+                }
+            }
+        }
         let result = build_self_snapshot::execute(&self.runtime, params.into())
             .await
             .map_err(app_error_to_mcp)?;
@@ -118,9 +164,38 @@ impl Server {
         &self,
         Parameters(params): Parameters<DecideWithSnapshotParams>,
     ) -> Result<CallToolResult, McpError> {
+        let auto_reflect_input =
+            AutoReflectInput::from_decide(&params).map_err(app_error_to_mcp)?;
         let result = decide_with_snapshot::execute(&self.runtime, params.into())
             .await
             .map_err(app_error_to_mcp)?;
+        if !result.blocked {
+            if let Some(auto_reflect_input) = auto_reflect_input {
+                let auto_reflect_trigger_type = auto_reflect_input.trigger_type;
+                let auto_reflect_trigger_key = auto_reflect_input.trigger_key();
+                match auto_reflect_if_needed::execute(
+                    &self.runtime,
+                    auto_reflect_input.with_recursion_guard(RecursionGuard::Allow),
+                )
+                .await
+                {
+                    Ok(diagnostics) => log_auto_reflection_success(
+                        AUTO_REFLECTION_RUNTIME_HOOKS[1],
+                        &diagnostics,
+                        None,
+                    ),
+                    Err(error) => {
+                        warn!(
+                            runtime_hook = AUTO_REFLECTION_RUNTIME_HOOKS[1],
+                            trigger_type = ?auto_reflect_trigger_type,
+                            trigger_key = %auto_reflect_trigger_key,
+                            error = %error,
+                            "best-effort conflict auto-reflection failed after successful decide_with_snapshot"
+                        );
+                    }
+                }
+            }
+        }
         structured(result)
     }
 
@@ -360,6 +435,27 @@ fn app_error_to_mcp(error: AppError) -> McpError {
         AppError::InvalidParams(message) => McpError::invalid_params(message, None),
         AppError::Message(message) => McpError::internal_error(message, None),
     }
+}
+
+fn log_auto_reflection_success(
+    runtime_hook: &'static str,
+    result: &auto_reflect_if_needed::AutoReflectResult,
+    event_id: Option<&str>,
+) {
+    info!(
+        runtime_hook,
+        event_id = ?event_id,
+        triggered = result.triggered,
+        trigger_type = ?result.trigger_type,
+        trigger_key = ?result.trigger_key,
+        ledger_status = ?result.ledger_status,
+        reflection_id = ?result.reflection_id,
+        suppression_reason = ?result.suppression_reason,
+        reason = ?result.reason,
+        cooldown_until = ?result.cooldown_until,
+        evidence_event_ids = ?result.evidence_event_ids,
+        "best-effort auto-reflection completed"
+    );
 }
 
 fn structured<T>(value: T) -> Result<CallToolResult, McpError>

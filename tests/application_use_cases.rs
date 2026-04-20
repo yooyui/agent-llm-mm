@@ -245,6 +245,19 @@ async fn auto_reflection_runs_once_for_repeated_failure_and_records_handled_ledg
 
     assert!(result.triggered);
     assert_eq!(result.trigger_type, Some(TriggerType::Failure));
+    assert!(result.reflection_id.is_some());
+    assert_eq!(result.ledger_status, Some(TriggerLedgerStatus::Handled));
+    assert_eq!(result.reason, None);
+    assert_eq!(
+        result.trigger_key.as_deref(),
+        Some("project/agent-llm-mm:failure")
+    );
+    assert_eq!(
+        result.evidence_event_ids,
+        vec!["evt-failure-2".to_string(), "evt-failure-1".to_string()]
+    );
+    assert!(result.cooldown_until.is_some());
+    assert_eq!(result.suppression_reason, None);
     assert!(!second.triggered);
     assert_eq!(second.trigger_type, Some(TriggerType::Failure));
     assert_eq!(second.ledger_status, Some(TriggerLedgerStatus::Suppressed));
@@ -799,6 +812,9 @@ mod test_support {
                     ]),
                 ),
             },
+            proposed_evidence_event_ids: Vec::new(),
+            proposed_evidence_query: None,
+            confidence: None,
         };
         InMemoryDeps::new(state)
     }

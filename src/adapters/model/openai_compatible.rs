@@ -119,7 +119,7 @@ fn build_self_revision_payload(model: &str, request: SelfRevisionRequest) -> Cha
         messages: vec![
             ChatMessage {
                 role: "system".to_string(),
-                content: "Return only a JSON self-revision proposal with should_reflect, rationale, machine_patch.identity_patch, and machine_patch.commitment_patch.".to_string(),
+                content: "Return only a JSON self-revision proposal with should_reflect, rationale, machine_patch.identity_patch, machine_patch.commitment_patch, proposed_evidence_event_ids, proposed_evidence_query, and confidence.".to_string(),
             },
             ChatMessage {
                 role: "user".to_string(),

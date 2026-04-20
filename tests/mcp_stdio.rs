@@ -424,6 +424,283 @@ async fn stdio_tools_share_runtime_state_across_calls() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn build_self_snapshot_can_trigger_periodic_auto_reflection_once_for_explicit_namespace() {
+    let stub_response = r#"{"should_reflect":true,"rationale":"Periodic review should tighten commitments after repeated project evidence.","machine_patch":{"identity_patch":null,"commitment_patch":{"commitments":["prefer:review_project_commitments_before_repeating_snapshot_builds"]}}}"#;
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": stub_response
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    for (summary, episode_reference) in [
+        (
+            "Observed one project-memory maintenance gap for periodic review.",
+            "episode:build-self-snapshot-periodic-0",
+        ),
+        (
+            "Observed another project-memory maintenance gap for periodic review.",
+            "episode:build-self-snapshot-periodic-1",
+        ),
+    ] {
+        let ingest = client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "World",
+                        "kind": "Observation",
+                        "summary": summary
+                    },
+                    "claim_drafts": [
+                        {
+                            "owner": "World",
+                            "namespace": "project/agent-llm-mm",
+                            "subject": "project.memory",
+                            "predicate": "needs",
+                            "object": "periodic-review",
+                            "mode": "Observed"
+                        }
+                    ],
+                    "episode_reference": episode_reference
+                }),
+            )
+            .await
+            .unwrap();
+        assert!(
+            ingest.get("error").is_none(),
+            "seed ingest should succeed without depending on auto-reflection: {ingest:?}"
+        );
+    }
+
+    let first = client
+        .call_tool(
+            "build_self_snapshot",
+            json!({
+                "budget": 4,
+                "auto_reflect_namespace": "project/agent-llm-mm"
+            }),
+        )
+        .await
+        .unwrap();
+    let second = client
+        .call_tool(
+            "build_self_snapshot",
+            json!({
+                "budget": 4,
+                "auto_reflect_namespace": "project/agent-llm-mm"
+            }),
+        )
+        .await
+        .unwrap();
+
+    for response in [&first, &second] {
+        assert!(
+            response.get("error").is_none(),
+            "build_self_snapshot should still return a snapshot object: {response:?}"
+        );
+        let snapshot = response
+            .get("result")
+            .and_then(|value| value.get("structuredContent"))
+            .and_then(|value| value.get("snapshot"));
+        assert!(
+            snapshot.is_some_and(Value::is_object),
+            "build_self_snapshot must preserve the snapshot payload shape: {response:?}"
+        );
+    }
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_rows = sqlx::query(
+        r#"
+        SELECT trigger_type, namespace, trigger_key, status
+        FROM reflection_trigger_ledger
+        ORDER BY rowid ASC
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|row| {
+        (
+            row.get::<String, _>("trigger_type"),
+            row.get::<String, _>("namespace"),
+            row.get::<String, _>("trigger_key"),
+            row.get::<String, _>("status"),
+        )
+    })
+    .collect::<Vec<_>>();
+
+    assert_eq!(reflection_count, 1);
+    assert_eq!(
+        trigger_rows,
+        vec![
+            (
+                "periodic".to_string(),
+                "project/agent-llm-mm".to_string(),
+                "project/agent-llm-mm:periodic".to_string(),
+                "handled".to_string(),
+            ),
+            (
+                "periodic".to_string(),
+                "project/agent-llm-mm".to_string(),
+                "project/agent-llm-mm:periodic".to_string(),
+                "suppressed".to_string(),
+            ),
+        ],
+        "explicit build_self_snapshot wiring should record one handled periodic trigger and one suppressed retry"
+    );
+    assert_eq!(stub.request_count().await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn build_self_snapshot_returns_snapshot_when_best_effort_periodic_auto_reflection_fails() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "not valid self revision json"
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    for (summary, episode_reference) in [
+        (
+            "Observed one project-memory maintenance gap before periodic snapshot reflection.",
+            "episode:build-self-snapshot-periodic-nonfatal-0",
+        ),
+        (
+            "Observed another project-memory maintenance gap before periodic snapshot reflection.",
+            "episode:build-self-snapshot-periodic-nonfatal-1",
+        ),
+    ] {
+        let ingest = client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "World",
+                        "kind": "Observation",
+                        "summary": summary
+                    },
+                    "claim_drafts": [
+                        {
+                            "owner": "World",
+                            "namespace": "project/agent-llm-mm",
+                            "subject": "project.memory",
+                            "predicate": "needs",
+                            "object": "periodic-review",
+                            "mode": "Observed"
+                        }
+                    ],
+                    "episode_reference": episode_reference
+                }),
+            )
+            .await
+            .unwrap();
+        assert!(
+            ingest.get("error").is_none(),
+            "seed ingest should succeed before best-effort periodic auto-reflection is attempted: {ingest:?}"
+        );
+    }
+
+    let response = client
+        .call_tool(
+            "build_self_snapshot",
+            json!({
+                "budget": 4,
+                "auto_reflect_namespace": "project/agent-llm-mm"
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        response.get("error").is_none(),
+        "build_self_snapshot should not surface periodic auto-reflection failures as MCP errors: {response:?}"
+    );
+    let snapshot = response
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("snapshot"));
+    assert!(
+        snapshot.is_some_and(Value::is_object),
+        "build_self_snapshot should still return a snapshot object after best-effort periodic auto-reflection fails: {response:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_ledger_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflection_trigger_ledger")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(reflection_count, 0);
+    assert_eq!(trigger_ledger_count, 0);
+    assert_eq!(stub.request_count().await, 1);
+}
+
 #[tokio::test]
 async fn conflicting_reflection_over_stdio_removes_claim_from_active_snapshot() {
     let mut client = test_support::spawn_stdio_client().await.unwrap();
@@ -575,6 +852,371 @@ async fn fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment() {
         model_decision.is_some_and(Value::is_null),
         "blocked decisions should not call the model: {decision:?}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blocked_decide_with_snapshot_does_not_auto_reflect_conflict_hints() {
+    let stub_response = r#"{"should_reflect":true,"rationale":"Conflict suggests tighter commitment hygiene.","machine_patch":{"identity_patch":null,"commitment_patch":{"commitments":["prefer:confirm_conflicting_commitment_updates_before_overwrite"]}}}"#;
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": stub_response
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Observation",
+                    "summary": "Bootstrap one evidence event so the blocked decision can still build a snapshot."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:blocked-decide-with-snapshot-conflict-auto-reflect"
+            }),
+        )
+        .await
+        .unwrap();
+
+    let snapshot = client
+        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .await
+        .unwrap();
+    let snapshot = snapshot
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("snapshot"))
+        .cloned()
+        .unwrap();
+
+    let decision = client
+        .call_tool(
+            "decide_with_snapshot",
+            json!({
+                "task": "attempt a forbidden direct identity write with conflict hints",
+                "action": "write_identity_core_directly",
+                "snapshot": snapshot,
+                "auto_reflect_namespace": "self",
+                "trigger_hints": ["conflict", "commitment"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    let blocked = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("blocked"))
+        .and_then(Value::as_bool)
+        .unwrap();
+    let model_decision = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("decision"));
+
+    assert!(
+        decision.get("error").is_none(),
+        "blocked decide_with_snapshot must not surface MCP errors: {decision:?}"
+    );
+    assert!(
+        blocked,
+        "commitment gate should still block this action: {decision:?}"
+    );
+    assert!(
+        model_decision.is_some_and(Value::is_null),
+        "blocked decisions must preserve the original null decision payload: {decision:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_ledger_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflection_trigger_ledger")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(reflection_count, 0);
+    assert_eq!(trigger_ledger_count, 0);
+    assert_eq!(stub.request_count().await, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unhinted_decide_with_snapshot_does_not_auto_reflect_conflict_from_existing_evidence() {
+    let stub_response = r#"{"should_reflect":true,"rationale":"Conflict suggests tighter commitment hygiene.","machine_patch":{"identity_patch":null,"commitment_patch":{"commitments":["prefer:confirm_conflicting_commitment_updates_before_overwrite"]}}}"#;
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": stub_response
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "Seed one evidence event before an unhinted decision."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:decide-with-snapshot-unhinted-conflict-auto-reflect"
+            }),
+        )
+        .await
+        .unwrap();
+
+    let snapshot = client
+        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .await
+        .unwrap();
+    let snapshot = snapshot
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("snapshot"))
+        .cloned()
+        .unwrap();
+
+    let decision = client
+        .call_tool(
+            "decide_with_snapshot",
+            json!({
+                "task": "resolve a routine commitment update without explicit conflict hints",
+                "action": "overwrite_commitment",
+                "snapshot": snapshot,
+                "auto_reflect_namespace": "self"
+            }),
+        )
+        .await
+        .unwrap();
+
+    let blocked = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("blocked"))
+        .and_then(Value::as_bool)
+        .unwrap();
+    let model_decision = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("decision"))
+        .cloned();
+
+    assert!(
+        decision.get("error").is_none(),
+        "unhinted decide_with_snapshot must not surface MCP errors: {decision:?}"
+    );
+    assert!(
+        !blocked,
+        "unhinted decide_with_snapshot should preserve the non-blocked decision flow: {decision:?}"
+    );
+    assert_eq!(
+        model_decision,
+        Some(json!({ "action": stub_response })),
+        "decision payload must remain the original decision response when conflict auto-reflection is not hinted: {decision:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_ledger_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflection_trigger_ledger")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(reflection_count, 0);
+    assert_eq!(trigger_ledger_count, 0);
+    assert_eq!(stub.request_count().await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn decide_with_snapshot_can_trigger_conflict_auto_reflection_without_breaking_decision_flow()
+{
+    let stub_response = r#"{"should_reflect":true,"rationale":"Conflict suggests tighter commitment hygiene.","machine_patch":{"identity_patch":null,"commitment_patch":{"commitments":["prefer:confirm_conflicting_commitment_updates_before_overwrite"]}}}"#;
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": stub_response
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "Seed one evidence event before resolving a conflicting commitment update."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:decide-with-snapshot-conflict-auto-reflect"
+            }),
+        )
+        .await
+        .unwrap();
+
+    let snapshot = client
+        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .await
+        .unwrap();
+    let snapshot = snapshot
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("snapshot"))
+        .cloned()
+        .unwrap();
+
+    let decision = client
+        .call_tool(
+            "decide_with_snapshot",
+            json!({
+                "task": "resolve a conflicting commitment update",
+                "action": "overwrite_commitment",
+                "snapshot": snapshot,
+                "auto_reflect_namespace": "self",
+                "trigger_hints": ["conflict", "commitment"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    let blocked = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("blocked"))
+        .and_then(Value::as_bool)
+        .unwrap();
+    let model_decision = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("decision"))
+        .cloned();
+
+    assert!(
+        decision.get("error").is_none(),
+        "conflict auto-reflection must not surface as an MCP error: {decision:?}"
+    );
+    assert!(
+        !blocked,
+        "conflict auto-reflection should not block a successful decision flow: {decision:?}"
+    );
+    assert_eq!(
+        model_decision,
+        Some(json!({ "action": stub_response })),
+        "decision payload must remain in the original shape after conflict auto-reflection: {decision:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_ledger_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflection_trigger_ledger")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let trigger_namespaces = sqlx::query_scalar::<_, String>(
+        "SELECT namespace FROM reflection_trigger_ledger ORDER BY rowid ASC",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(reflection_count, 1);
+    assert_eq!(trigger_ledger_count, 1);
+    assert_eq!(trigger_namespaces, vec!["self".to_string()]);
+    assert_eq!(stub.request_count().await, 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

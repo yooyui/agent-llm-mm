@@ -26,7 +26,7 @@
 - [development-windows.md](development-windows.md)
   - Windows 环境准备、配置、预检、启动和验证
 - [project-status.md](project-status.md)
-  - 当前实现边界、已实现 / 部分实现 / 未实现，重点包含唯一 MCP-wired automatic path 与未接线 trigger 的真实范围
+  - 当前实现边界、已实现 / 部分实现 / 未实现，重点包含当前 3 条 MCP-wired automatic path、structured diagnostics，以及 `run_reflection` durable write path 的保守范围
 - [release-readiness.md](release-readiness.md)
   - 当前 demo 是否适合发布到 GitHub
 - [roadmap.md](roadmap.md)
@@ -55,9 +55,9 @@
 ## 6. 接入与验证文档
 
 - [local-mcp-integration-2026-03-26.md](local-mcp-integration-2026-03-26.md)
-  - 如何把本项目接入本机 AI 客户端，以及 ingest-side auto-reflection 的运行边界
+  - 如何把本项目接入本机 AI 客户端，以及当前 runtime hooks、`doctor` 输出和 self-revision MVP 运行边界
 - [testing-guide-2026-03-24.md](testing-guide-2026-03-24.md)
-  - 当前测试基线、推荐验证顺序、self-revision MVP 定向回归和常见问题排查
+  - 当前测试基线、推荐验证顺序、self-revision runtime coverage / diagnostics / evidence policy 定向回归和常见问题排查
 - [examples/codex-mcp-config.toml](../examples/codex-mcp-config.toml)
   - Codex 本机 MCP 配置样例
 
@@ -96,5 +96,6 @@
 
 - 如果你是第一次看这个仓库：先读 README，再读 `project-status.md` 与 `release-readiness.md`
 - 如果你想确认 automatic self-revision 到底实现到哪里：直接读 `project-status.md`，再读 `roadmap.md`
-- 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md` 或 `testing-guide-2026-03-24.md`
+- 如果你想确认 runtime hooks、diagnostics 和 durable write path：读 `project-status.md`，再读 `local-mcp-integration-2026-03-26.md`
+- 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md` 与 `testing-guide-2026-03-24.md`
 - 如果你想追溯设计来源：最后读原始讨论资料和历史快照

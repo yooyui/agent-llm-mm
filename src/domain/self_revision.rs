@@ -1,4 +1,7 @@
-use crate::domain::{snapshot::SelfSnapshot, types::Namespace};
+use crate::{
+    domain::{snapshot::SelfSnapshot, types::Namespace},
+    ports::EvidenceQuery,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TriggerType {
@@ -68,6 +71,12 @@ pub struct SelfRevisionProposal {
     pub rationale: String,
     #[serde(default)]
     pub machine_patch: SelfRevisionPatch,
+    #[serde(default)]
+    pub proposed_evidence_event_ids: Vec<String>,
+    #[serde(default)]
+    pub proposed_evidence_query: Option<EvidenceQuery>,
+    #[serde(default)]
+    pub confidence: Option<String>,
 }
 
 impl SelfRevisionProposal {
@@ -76,6 +85,9 @@ impl SelfRevisionProposal {
             should_reflect: false,
             rationale: rationale.into(),
             machine_patch: SelfRevisionPatch::default(),
+            proposed_evidence_event_ids: Vec::new(),
+            proposed_evidence_query: None,
+            confidence: None,
         }
     }
 }

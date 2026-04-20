@@ -74,9 +74,11 @@
 - 已新增 `self_revision` 领域契约，包含 trigger type、proposal rationale 和 machine patch 最小结构
 - `ModelPort` 已支持 `propose_self_revision`
 - `mock` 与 `openai-compatible` adapter 已实现最小 proposal 行为
-- 已新增 trigger ledger 持久化，能记录 handled / rejected / suppressed 结果、episode watermark 和 cooldown
+- proposal 首阶段已支持 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence`；这些字段当前用于收口证据候选与置信度，不代表 richer widening / ranking engine 已落地
+- 已新增 trigger ledger 持久化，能记录 handled / rejected / suppressed 结果、episode watermark 和 cooldown，并通过 structured diagnostics 暴露 trigger / rejection / suppression / cooldown 信息
 - 已新增 `auto_reflect_if_needed` 协调器，负责 trigger 判定、proposal 请求、治理校验和写入前收口
-- 当前唯一 MCP-wired automatic path 是 `ingest_interaction -> failure trigger`；若 post-ingest auto-reflection 失败，不会把已经成功的 ingest 回滚成 MCP 错误
+- 当前 MCP-wired automatic path 已谨慎扩到 3 条：`ingest_interaction -> failure`、`decide_with_snapshot -> conflict`、`build_self_snapshot -> periodic`
+- `ingest_interaction` / `decide_with_snapshot` / `build_self_snapshot` 上的 best-effort auto-reflection 失败都不会把已经成功的 MCP 主路径改写成额外的 MCP 错误
 - 通过治理的 automatic self-revision 最终仍复用 `run_reflection` 作为 identity / commitments 的 durable write path
 - 直接 `run_reflection` MCP tool 不会递归触发 auto-reflection
 
@@ -127,16 +129,20 @@
 ### 7. self-revision 触发面与运行形态
 
 - 当前领域层 trigger type 已覆盖 `failure / conflict / periodic`
-- 当前协调器和 ledger 也能表达这些 trigger 类型
-- 但当前唯一接到 MCP entry point 的 automatic path 只有 `ingest_interaction` 成功后触发的 `failure` 路径，并通过 ingest DTO 提供 `trigger_hints`
-- `conflict` 与 `periodic` 目前只存在于 domain / coordinator / ledger 契约里，还没有接到 MCP entry point
+- 当前协调器和 ledger 也已接通这 3 类 trigger 的最小 runtime coverage
+- 当前 MCP-wired automatic path 只有这 3 条，而且需要按各自边界显式触发：
+  - `ingest_interaction -> failure`
+  - `decide_with_snapshot -> conflict`
+  - `build_self_snapshot -> periodic`
+- `decide_with_snapshot` 与 `build_self_snapshot` 仍要求调用方显式传 `auto_reflect_namespace`
+- `decide_with_snapshot` 的 conflict auto-reflection 还要求显式 conflict-style `trigger_hints`，并且只会在非 blocked 决策后 best-effort 运行，不会改变原有 decision payload 形状
 - 当前没有新增单独的 auto-reflection MCP tool，也没有后台 daemon、定时调度器或“所有入口统一自动反思”的运行形态
 
 因此，当前仓库可以准确描述成“已实现 trigger-ledger-backed automatic self-revision MVP”，但不能描述成“完整自治 self-governing agent”。
 
 ## 未实现
 
-- richer 自动 evidence lookup（当前仅有 `owner / kind / limit` 的窄化 evidence-oriented 查询基础）
+- richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍仅有 `owner / kind / limit` 的窄化 evidence-oriented 查询基础）
 - richer evidence weighting / relation / ranking
 - evidence weight / relation
 - `identity_core` 的 richer schema 与版本化形成机制

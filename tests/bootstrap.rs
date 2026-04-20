@@ -183,6 +183,23 @@ async fn doctor_bootstraps_configured_sqlite_database_and_returns_report() {
 }
 
 #[tokio::test]
+async fn doctor_reports_self_revision_runtime_coverage() {
+    let report = run_doctor(AppConfig::default())
+        .await
+        .expect("doctor should pass");
+
+    assert_eq!(
+        report.auto_reflection_runtime_hooks,
+        vec![
+            "ingest_interaction:failure".to_string(),
+            "decide_with_snapshot:conflict".to_string(),
+            "build_self_snapshot:periodic".to_string(),
+        ]
+    );
+    assert_eq!(report.self_revision_write_path, "run_reflection");
+}
+
+#[tokio::test]
 async fn run_uses_stdio_server_path_and_does_not_exit_immediately() {
     let handle = tokio::spawn(agent_llm_mm::run());
 

@@ -5,9 +5,9 @@ use agent_llm_mm::{
     domain::{
         self_revision::{SelfRevisionRequest, TriggerType},
         snapshot::SelfSnapshot,
-        types::Namespace,
+        types::{EventKind, Namespace, Owner},
     },
-    ports::{ModelDecisionRequest, ModelPort},
+    ports::{EvidenceQuery, ModelDecisionRequest, ModelPort},
     support::config::OpenAiCompatibleConfig,
 };
 use serde_json::{Value, json};
@@ -233,6 +233,49 @@ async fn openai_compatible_model_accepts_fenced_json_self_revision_proposal() {
     assert_eq!(proposal.rationale, "periodic review found stable evidence");
     assert!(proposal.machine_patch.identity_patch.is_none());
     assert!(proposal.machine_patch.commitment_patch.is_none());
+}
+
+#[tokio::test]
+async fn openai_compatible_model_parses_self_revision_evidence_policy() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "{\"should_reflect\":true,\"rationale\":\"rollback evidence supports a narrower commitment update\",\"machine_patch\":{\"identity_patch\":{\"canonical_claims\":[\"identity:self=architect\"]},\"commitment_patch\":null},\"proposed_evidence_event_ids\":[\"evt-1\",\"evt-2\"],\"proposed_evidence_query\":{\"owner\":\"Self_\",\"kind\":\"Action\",\"limit\":2},\"confidence\":\"medium\"}"
+                }
+            }]
+        }),
+    )
+    .await;
+    let model = OpenAiCompatibleModel::new(OpenAiCompatibleConfig {
+        base_url: stub.base_url(),
+        api_key: "example-test-key".to_string(),
+        model: "gpt-4o-mini".to_string(),
+        timeout_ms: 30_000,
+    })
+    .expect("model");
+
+    let proposal = model
+        .propose_self_revision(test_support::sample_self_revision_request())
+        .await
+        .expect("proposal");
+
+    assert!(proposal.should_reflect);
+    assert_eq!(
+        proposal.proposed_evidence_event_ids,
+        vec!["evt-1".to_string(), "evt-2".to_string()]
+    );
+    assert_eq!(
+        proposal.proposed_evidence_query,
+        Some(EvidenceQuery {
+            owner: Some(Owner::Self_),
+            kind: Some(EventKind::Action),
+            limit: Some(2),
+        })
+    );
+    assert_eq!(proposal.confidence.as_deref(), Some("medium"));
 }
 
 mod test_support {
