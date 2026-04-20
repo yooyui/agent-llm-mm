@@ -79,4 +79,10 @@ pub trait TriggerLedgerStore {
         &self,
         trigger_key: &str,
     ) -> Result<Option<StoredTriggerLedgerEntry>, AppError>;
+
+    /// Returns the most recently recorded handled attempt for `trigger_key`.
+    async fn latest_handled_trigger_entry(
+        &self,
+        trigger_key: &str,
+    ) -> Result<Option<StoredTriggerLedgerEntry>, AppError>;
 }

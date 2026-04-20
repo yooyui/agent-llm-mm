@@ -24,20 +24,20 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-04-19`，`cargo test -q` 全量通过，摘要如下：
+截至 `2026-04-20`，`cargo test` 全量通过，摘要如下：
 
 - `application_use_cases`: 20 passed
-- `bootstrap`: 12 passed
+- `bootstrap`: 13 passed
 - `decision_flow`: 2 passed
 - `domain_invariants`: 4 passed
 - `domain_snapshot`: 6 passed
-- `failure_modes`: 11 passed
-- `mcp_stdio`: 16 passed
-- `openai_compatible_model`: 6 passed
+- `failure_modes`: 27 passed
+- `mcp_stdio`: 26 passed
+- `openai_compatible_model`: 7 passed
 - `provider_config`: 5 passed
-- `sqlite_store`: 15 passed
+- `sqlite_store`: 17 passed
 
-合计：97 个测试通过。
+合计：127 个测试通过。
 
 ---
 
@@ -267,6 +267,9 @@ cargo test --test application_use_cases --test failure_modes
 ### 6.5 automatic self-revision runtime coverage
 
 ```zsh
+cargo test --test mcp_stdio ingest_interaction_can_trigger_conflict_auto_reflection_when_explicit_conflict_hints_present -v
+cargo test --test mcp_stdio ingest_interaction_does_not_auto_reflect_conflict_without_explicit_conflict_hints -v
+cargo test --test mcp_stdio ingest_interaction_returns_success_even_when_conflict_auto_reflection_fails -v
 cargo test --test mcp_stdio decide_with_snapshot_can_trigger_conflict_auto_reflection_without_breaking_decision_flow -v
 cargo test --test mcp_stdio blocked_decide_with_snapshot_does_not_auto_reflect_conflict_hints -v
 cargo test --test mcp_stdio build_self_snapshot_can_trigger_periodic_auto_reflection_once_for_explicit_namespace -v
@@ -278,9 +281,11 @@ cargo test --test mcp_stdio ingest_interaction_auto_reflects_once_and_does_not_r
 
 - 当前 MCP-wired automatic path 是否仍然准确限定为：
   - `ingest_interaction -> failure`
+  - `ingest_interaction -> conflict`
   - `decide_with_snapshot -> conflict`
   - `build_self_snapshot -> periodic`
-- `decide_with_snapshot` 的 conflict auto-reflection 是否仍要求显式 conflict-style `trigger_hints`，且只在非 blocked 决策后运行
+- `ingest_interaction -> conflict` 是否仍要求显式 `trigger_hints` 包含 `conflict` 或 `identity`
+- `decide_with_snapshot` 的 conflict auto-reflection 是否仍要求显式 conflict-compatible `trigger_hints`，且只在非 blocked 决策后运行
 - `build_self_snapshot` 的 periodic auto-reflection 是否仍要求显式 `auto_reflect_namespace`
 - best-effort auto-reflection 失败是否不会把主 MCP 成功路径改写成 MCP 错误
 - `run_reflection` 是否仍是唯一 durable write path / persistence funnel
@@ -307,6 +312,9 @@ cargo test --test bootstrap doctor_reports_self_revision_runtime_coverage -v
 ```zsh
 cargo test --test failure_modes auto_reflection_rejects_model_proposed_evidence_outside_trigger_window -v
 cargo test --test failure_modes auto_reflection_applies_model_proposed_evidence_subset_but_preserves_full_trigger_window_in_handled_ledger -v
+cargo test --test failure_modes auto_reflection_intersects_proposed_evidence_query_with_current_trigger_window_when_ids_are_empty -v
+cargo test --test failure_modes auto_reflection_applies_query_limit_within_current_trigger_window_when_ids_are_empty -v
+cargo test --test failure_modes auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_query_policy -v
 cargo test --test failure_modes auto_reflection_ignores_proposed_evidence_query_for_widening_when_ids_are_empty -v
 cargo test --test openai_compatible_model openai_compatible_model_parses_self_revision_evidence_policy -v
 ```
@@ -315,12 +323,15 @@ cargo test --test openai_compatible_model openai_compatible_model_parses_self_re
 
 - proposal 首阶段 evidence contract 是否包含 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence`
 - model 提议的 evidence id 是否仍必须落在当前 trigger window 内
+- 当 model 同时提供 explicit ids 和 `proposed_evidence_query` 时，这些 ids 是否仍必须满足 query 在当前 trigger window 内的过滤约束
 - handled ledger 是否保留完整 evidence window，而不是只保留 model 选择的子集
-- `proposed_evidence_query` 当前是否仍只作为首阶段 contract，而不会在 id 为空时自动 widening / ranking
+- `proposed_evidence_query` 在 explicit ids 为空时是否只会对当前 trigger window 做交集收口，并在有交集时只按当前窗口内候选应用 `limit`
+- `proposed_evidence_query` 在 explicit ids 为空且 query 无交集时是否会回退到 full trigger window
+- `proposed_evidence_query` 当前是否仍不会在 id 为空时自动 widening / ranking
 
 ### 6.8 automatic self-revision MVP 定向验证
 
-这是当前 self-revision MVP 的最低定向回归集。只要你改了下面任一部分，就至少补跑这 5 条：
+这是当前 self-revision MVP 的最低定向回归集。只要你改了下面任一部分，就至少补跑这 7 条：
 
 - `src/application/auto_reflect_if_needed.rs`
 - `src/interfaces/mcp/server.rs`
@@ -335,6 +346,8 @@ cargo test --test openai_compatible_model openai_compatible_model_parses_self_re
 cargo test --test application_use_cases auto_reflection_runs_once_for_repeated_failure_and_records_handled_ledger -v
 cargo test --test sqlite_store sqlite_trigger_ledger_records_namespace_periodic_watermark_and_cooldown -v
 cargo test --test mcp_stdio ingest_interaction_auto_reflects_once_and_does_not_recurse_inside_run_reflection -v
+cargo test --test mcp_stdio ingest_interaction_can_trigger_conflict_auto_reflection_when_explicit_conflict_hints_present -v
+cargo test --test mcp_stdio ingest_interaction_does_not_auto_reflect_conflict_without_explicit_conflict_hints -v
 cargo test --test mcp_stdio decide_with_snapshot_can_trigger_conflict_auto_reflection_without_breaking_decision_flow -v
 cargo test --test mcp_stdio build_self_snapshot_can_trigger_periodic_auto_reflection_once_for_explicit_namespace -v
 ```
@@ -349,15 +362,16 @@ cargo test --test provider_config -v
 
 - 应用层会在重复 failure 窗口里只自动修订一次，并把 handled ledger 正确落盘
 - SQLite adapter 会持久化 trigger ledger 的 `namespace`、`episode_watermark` 和 `cooldown_until`
-- stdio runtime 的 3 条当前 MCP-wired automatic path 都会被最低回归集直接覆盖：
+- stdio runtime 的 4 条当前 MCP-wired automatic path 都会被最低回归集直接覆盖：
   - `ingest_interaction -> failure`
+  - `ingest_interaction -> conflict`
   - `decide_with_snapshot -> conflict`
   - `build_self_snapshot -> periodic`
 - direct `run_reflection` 不会递归回自动链路
 
 额外注意：
 
-- `decide_with_snapshot` / `build_self_snapshot` 仍要求显式 `auto_reflect_namespace`，`decide_with_snapshot` 还要求显式 conflict-style `trigger_hints`，并且只在非 blocked 决策后才会 best-effort 触发
+- `decide_with_snapshot` / `build_self_snapshot` 仍要求显式 `auto_reflect_namespace`，`decide_with_snapshot` 还要求显式 conflict-compatible `trigger_hints`，并且只在非 blocked 决策后才会 best-effort 触发
 - 不要把这组测试解读成“所有 MCP 入口都会自动反思”
 - 当前 auto-reflection 仍通过已有 `run_reflection` 写入 identity / commitments，不存在新的 durable write 通道
 
@@ -487,7 +501,7 @@ cargo test --test mcp_stdio build_self_snapshot_can_trigger_periodic_auto_reflec
 - 已成功的 `ingest_interaction` 不会因为 post-ingest auto-reflection 失败而变成 MCP error
 - 已成功的 `decide_with_snapshot` / `build_self_snapshot` 也不应因为 best-effort auto-reflection 失败而变成 MCP error
 - direct `run_reflection` 只执行显式请求，不会再触发一轮自动修订
-- 这组验证只覆盖当前 3 条已接线 hook；不代表所有 MCP entry point 都会自动反思
+- 这组验证只覆盖当前 4 条已接线 hook；不代表所有 MCP entry point 都会自动反思
 
 ---
 

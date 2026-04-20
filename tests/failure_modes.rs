@@ -364,6 +364,257 @@ async fn auto_reflection_rejects_mixed_valid_and_invalid_model_proposed_evidence
 }
 
 #[tokio::test]
+async fn auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_query_policy() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_events(vec![
+        StoredEvent::new(
+            "evt-conflict-outside-window".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T09:55:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "older conflicting observation outside the current trigger window",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-1".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::User,
+                EventKind::Conversation,
+                "user raised a possible commitment conflict",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-2".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "current conflicting observation inside the trigger window",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-3".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:03:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::Self_,
+                EventKind::Action,
+                "self attempted a conflicting overwrite",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-4".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:04:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::User,
+                EventKind::Conversation,
+                "user requested commitment clarification",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-5".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:05:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::Self_,
+                EventKind::Action,
+                "self retried the conflicting overwrite",
+            ),
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            vec!["evt-conflict-3".to_string()],
+            Some(EvidenceQuery {
+                owner: Some(Owner::World),
+                kind: Some(EventKind::Observation),
+                limit: Some(5),
+            }),
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::self_(),
+            vec!["conflict".to_string(), "commitment".to_string()],
+        ),
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
+    );
+    assert!(deps.latest_reflection().is_none());
+}
+
+#[tokio::test]
+async fn auto_reflection_keeps_explicit_ids_authoritative_when_query_limit_only_matches_outside_window()
+{
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_events(vec![
+        StoredEvent::new(
+            "evt-outside-newest".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:06:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::User,
+                EventKind::Conversation,
+                "newest non-failure event outside the failure trigger window",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-failure-1".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::Self_,
+                EventKind::Action,
+                "rollback after violating a hard commitment",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-failure-2".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::Self_,
+                EventKind::Action,
+                "second rollback after violating the same hard commitment",
+            ),
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            vec!["evt-failure-2".to_string()],
+            Some(EvidenceQuery {
+                owner: None,
+                kind: None,
+                limit: Some(1),
+            }),
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(result.triggered);
+    assert_eq!(result.evidence_event_ids, vec!["evt-failure-2".to_string()]);
+}
+
+#[tokio::test]
+async fn auto_reflection_applies_query_limit_within_current_trigger_window_when_ids_are_empty() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_events(vec![
+        StoredEvent::new(
+            "evt-outside-newest-1".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:06:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::User,
+                EventKind::Conversation,
+                "newest non-failure event outside the failure trigger window",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-outside-newest-2".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:05:30Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "second newest non-failure event outside the failure trigger window",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-failure-1".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::Self_,
+                EventKind::Action,
+                "rollback after violating a hard commitment",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-failure-2".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::Self_,
+                EventKind::Action,
+                "second rollback after violating the same hard commitment",
+            ),
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            Vec::new(),
+            Some(EvidenceQuery {
+                owner: None,
+                kind: None,
+                limit: Some(1),
+            }),
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(result.triggered);
+    assert_eq!(result.evidence_event_ids, vec!["evt-failure-2".to_string()]);
+    let reflection = deps
+        .latest_reflection()
+        .expect("query-limited auto-reflection should persist a reflection");
+    assert_eq!(
+        reflection.supporting_evidence_event_ids,
+        vec!["evt-failure-2".to_string()]
+    );
+    let handled_entry = deps
+        .latest_trigger_entry()
+        .expect("handled auto-reflection should persist a trigger ledger entry");
+    assert_eq!(
+        handled_entry.evidence_window,
+        vec!["evt-failure-2".to_string(), "evt-failure-1".to_string()]
+    );
+}
+
+#[tokio::test]
 async fn auto_reflection_applies_model_proposed_evidence_subset_but_preserves_full_trigger_window_in_handled_ledger()
  {
     let deps = test_support::deps_for_failure_modes();
@@ -464,6 +715,79 @@ async fn auto_reflection_suppresses_unchanged_failure_window_after_cooldown_when
 }
 
 #[tokio::test]
+async fn auto_reflection_preserves_handled_baseline_across_cooldown_suppression_for_unchanged_failure_window()
+{
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_failure_window(vec![
+        (
+            "evt-failure-1",
+            "rollback after violating a hard commitment",
+        ),
+        (
+            "evt-failure-2",
+            "second rollback after violating the same hard commitment",
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            vec!["evt-failure-2".to_string()],
+            None,
+        ),
+    );
+
+    let first = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+    let second = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+    deps.advance_now_by_hours(25);
+    let third = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(first.triggered);
+    assert_eq!(first.ledger_status, Some(TriggerLedgerStatus::Handled));
+
+    assert!(!second.triggered);
+    assert_eq!(second.ledger_status, Some(TriggerLedgerStatus::Suppressed));
+    assert_eq!(
+        second.suppression_reason.as_deref(),
+        Some("cooldown_active")
+    );
+
+    assert!(!third.triggered);
+    assert_eq!(third.ledger_status, Some(TriggerLedgerStatus::Suppressed));
+    assert_eq!(
+        third.suppression_reason.as_deref(),
+        Some("evidence_window_unchanged")
+    );
+    assert_eq!(
+        deps.reflections().len(),
+        1,
+        "cooldown-expired unchanged failure windows should stay suppressed against the last handled baseline"
+    );
+}
+
+#[tokio::test]
 async fn auto_reflection_ignores_proposed_evidence_query_for_widening_when_ids_are_empty() {
     let deps = test_support::deps_for_failure_modes();
     deps.seed_failure_window(vec![
@@ -509,6 +833,216 @@ async fn auto_reflection_ignores_proposed_evidence_query_for_widening_when_ids_a
         reflection.supporting_evidence_event_ids,
         vec!["evt-failure-2".to_string(), "evt-failure-1".to_string()]
     );
+}
+
+#[tokio::test]
+async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger_window_when_ids_are_empty()
+{
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_events(vec![
+        StoredEvent::new(
+            "evt-conflict-outside-window".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T09:55:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "older conflicting observation outside the current trigger window",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-1".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::User,
+                EventKind::Conversation,
+                "user raised a possible commitment conflict",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-2".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "current conflicting observation inside the trigger window",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-3".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:03:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::Self_,
+                EventKind::Action,
+                "self attempted a conflicting overwrite",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-4".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:04:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::User,
+                EventKind::Conversation,
+                "user requested commitment clarification",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-5".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:05:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::Self_,
+                EventKind::Action,
+                "self retried the conflicting overwrite",
+            ),
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            Vec::new(),
+            Some(EvidenceQuery {
+                owner: Some(Owner::World),
+                kind: Some(EventKind::Observation),
+                limit: Some(5),
+            }),
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::self_(),
+            vec!["conflict".to_string(), "commitment".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(result.triggered);
+    assert_eq!(result.evidence_event_ids, vec!["evt-conflict-2".to_string()]);
+    let reflection = deps
+        .latest_reflection()
+        .expect("query-intersected auto-reflection should persist a reflection");
+    assert_eq!(
+        reflection.supporting_evidence_event_ids,
+        vec!["evt-conflict-2".to_string()]
+    );
+    let handled_entry = deps
+        .latest_trigger_entry()
+        .expect("handled auto-reflection should persist a trigger ledger entry");
+    assert_eq!(
+        handled_entry.evidence_window,
+        vec![
+            "evt-conflict-5".to_string(),
+            "evt-conflict-4".to_string(),
+            "evt-conflict-3".to_string(),
+            "evt-conflict-2".to_string(),
+            "evt-conflict-1".to_string(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn auto_reflection_preserves_handled_reflection_id_when_unchanged_suppression_follows_rejected_attempt()
+{
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_failure_window(vec![
+        (
+            "evt-failure-1",
+            "rollback after violating a hard commitment",
+        ),
+        (
+            "evt-failure-2",
+            "second rollback after violating the same hard commitment",
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            vec!["evt-failure-2".to_string()],
+            None,
+        ),
+    );
+
+    let handled = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    deps.advance_now_by_hours(25);
+    deps.seed_failure_window(vec![
+        (
+            "evt-failure-2",
+            "second rollback after violating a hard commitment",
+        ),
+        (
+            "evt-failure-3",
+            "third rollback after violating a different hard commitment",
+        ),
+    ]);
+    deps.set_self_revision_proposal(agent_llm_mm::domain::self_revision::SelfRevisionProposal::no_revision(
+        "mock model did not detect a valid Failure revision".to_string(),
+    ));
+
+    let rejected = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    deps.seed_failure_window(vec![
+        (
+            "evt-failure-1",
+            "rollback after violating a hard commitment",
+        ),
+        (
+            "evt-failure-2",
+            "second rollback after violating the same hard commitment",
+        ),
+    ]);
+
+    let suppressed = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(handled.triggered);
+    assert_eq!(handled.ledger_status, Some(TriggerLedgerStatus::Handled));
+
+    assert!(!rejected.triggered);
+    assert_eq!(rejected.ledger_status, Some(TriggerLedgerStatus::Rejected));
+
+    assert!(!suppressed.triggered);
+    assert_eq!(suppressed.ledger_status, Some(TriggerLedgerStatus::Suppressed));
+    assert_eq!(
+        suppressed.suppression_reason.as_deref(),
+        Some("evidence_window_unchanged")
+    );
+    assert_eq!(suppressed.reflection_id, handled.reflection_id);
+    assert_eq!(deps.reflections().len(), 1);
 }
 
 #[tokio::test]
@@ -1157,6 +1691,21 @@ impl FailureModeDeps {
             .collect();
     }
 
+    fn seed_events(&self, events: Vec<StoredEvent>) {
+        let mut event_references = events
+            .iter()
+            .map(|event| (event.recorded_at, format!("event:{}", event.event_id)))
+            .collect::<Vec<_>>();
+        event_references.sort_by(|lhs, rhs| rhs.0.cmp(&lhs.0).then_with(|| rhs.1.cmp(&lhs.1)));
+        let event_references = event_references
+            .into_iter()
+            .map(|(_, event_reference)| event_reference)
+            .collect();
+        let mut state = self.state.lock().unwrap();
+        state.committed.events = events;
+        state.committed.event_references = event_references;
+    }
+
     fn advance_now_by_hours(&self, hours: i64) {
         let mut state = self.state.lock().unwrap();
         state.now += chrono::Duration::hours(hours);
@@ -1313,20 +1862,7 @@ impl EventStore for FailureModeDeps {
         query: EvidenceQuery,
     ) -> Result<Vec<String>, AppError> {
         let mut events = self.state.lock().unwrap().committed.events.clone();
-
-        if let Some(owner) = query.owner {
-            events.retain(|event| event.event.owner() == owner);
-        }
-
-        if let Some(kind) = query.kind {
-            events.retain(|event| event.event.kind() == kind);
-        }
-
-        events.sort_by(|lhs, rhs| {
-            rhs.recorded_at
-                .cmp(&lhs.recorded_at)
-                .then_with(|| rhs.event_id.cmp(&lhs.event_id))
-        });
+        filter_and_order_events(&mut events, query.owner, query.kind);
 
         let limit = query.limit.unwrap_or(10);
         if limit == 0 {
@@ -1340,6 +1876,22 @@ impl EventStore for FailureModeDeps {
             .collect())
     }
 
+    async fn query_evidence_event_ids_unbounded(
+        &self,
+        query: EvidenceQuery,
+    ) -> Result<Vec<String>, AppError> {
+        let mut events = self.state.lock().unwrap().committed.events.clone();
+        filter_and_order_events(&mut events, query.owner, query.kind);
+
+        let events = if let Some(limit) = query.limit {
+            events.into_iter().take(limit).collect()
+        } else {
+            events
+        };
+
+        Ok(events.into_iter().map(|event| event.event_id).collect())
+    }
+
     async fn has_event(&self, event_id: &str) -> Result<bool, AppError> {
         Ok(self
             .state
@@ -1350,6 +1902,26 @@ impl EventStore for FailureModeDeps {
             .iter()
             .any(|event| event.event_id == event_id))
     }
+}
+
+fn filter_and_order_events(
+    events: &mut Vec<StoredEvent>,
+    owner: Option<Owner>,
+    kind: Option<EventKind>,
+) {
+    if let Some(owner) = owner {
+        events.retain(|event| event.event.owner() == owner);
+    }
+
+    if let Some(kind) = kind {
+        events.retain(|event| event.event.kind() == kind);
+    }
+
+    events.sort_by(|lhs, rhs| {
+        rhs.recorded_at
+            .cmp(&lhs.recorded_at)
+            .then_with(|| rhs.event_id.cmp(&lhs.event_id))
+    });
 }
 
 #[async_trait]
@@ -1478,6 +2050,24 @@ impl TriggerLedgerStore for FailureModeDeps {
             .iter()
             .rev()
             .find(|entry| entry.trigger_key == trigger_key)
+            .cloned())
+    }
+
+    async fn latest_handled_trigger_entry(
+        &self,
+        trigger_key: &str,
+    ) -> Result<Option<StoredTriggerLedgerEntry>, AppError> {
+        Ok(self
+            .state
+            .lock()
+            .unwrap()
+            .committed
+            .trigger_ledger
+            .iter()
+            .rev()
+            .find(|entry| {
+                entry.trigger_key == trigger_key && entry.status == TriggerLedgerStatus::Handled
+            })
             .cloned())
     }
 }

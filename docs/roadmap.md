@@ -24,8 +24,9 @@
 
 目标：
 
-- 先把当前已落地的 3 条 MCP runtime hook 文档、验证与诊断口径收口稳定：
+- 先把当前已落地的 4 条 MCP runtime hook 文档、验证与诊断口径收口稳定：
   - `ingest_interaction -> failure`
+  - `ingest_interaction -> conflict`
   - `decide_with_snapshot -> conflict`
   - `build_self_snapshot -> periodic`
 - 在不新增旁路持久化接口的前提下，优先验证这些 hook 的 opt-in 条件、best-effort 失败语义和排查路径，而不是继续扩大到“所有入口自动反思”
@@ -33,7 +34,7 @@
 重点边界：
 
 - `decide_with_snapshot` 已可走 `openai-compatible` provider，但仍不是完整决策引擎
-- 当前 MCP-wired automatic path 只有上述 3 条，不代表所有 MCP entry point 都会自动反思
+- 当前 MCP-wired automatic path 只有上述 4 条，不代表所有 MCP entry point 都会自动反思
 - `decide_with_snapshot` 与 `build_self_snapshot` 当前仍要求显式 `auto_reflect_namespace`
 - `run_reflection` 仍是唯一 durable write path；没有新增旁路持久化接口
 - direct `run_reflection` 不递归 auto-reflection；没有后台 daemon 或“所有入口自动反思”

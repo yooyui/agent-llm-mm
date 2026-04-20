@@ -202,8 +202,8 @@ timeout_ms = 30000
         .unwrap();
 
     let pool = SqlitePool::connect(&database_url).await.unwrap();
-    let trigger_namespaces = sqlx::query_scalar::<_, String>(
-        "SELECT namespace FROM reflection_trigger_ledger ORDER BY rowid ASC",
+    let trigger_rows = sqlx::query_as::<_, (String, String)>(
+        "SELECT trigger_type, namespace FROM reflection_trigger_ledger ORDER BY rowid ASC",
     )
     .fetch_all(&pool)
     .await
@@ -214,7 +214,10 @@ timeout_ms = 30000
         .unwrap();
 
     assert_eq!(reflection_count, 1);
-    assert_eq!(trigger_namespaces, vec!["self".to_string()]);
+    assert_eq!(
+        trigger_rows,
+        vec![("failure".to_string(), "self".to_string())]
+    );
     assert_eq!(stub.request_count().await, 1);
 
     let ingest = client
@@ -279,6 +282,240 @@ timeout_ms = 30000
     assert_eq!(reflection_count, 2);
     assert_eq!(trigger_ledger_count, 1);
     assert_eq!(stub.request_count().await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ingest_interaction_can_trigger_conflict_auto_reflection_when_explicit_conflict_hints_present()
+{
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": r#"{"should_reflect":true,"rationale":"Conflict evidence suggests tighter commitment hygiene.","machine_patch":{"commitment_patch":{"commitments":["prefer:confirm_conflicting_commitment_updates_before_overwrite"]}}}"#
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "Self_",
+                    "kind": "Action",
+                    "summary": "self attempted a commitment overwrite that may need review"
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:ingest-conflict-auto-reflect",
+                "trigger_hints": ["conflict", "commitment"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    let event_id = response
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str);
+    assert!(
+        response.get("error").is_none(),
+        "ingest must still succeed when conflict auto-reflection runs: {response:?}"
+    );
+    assert!(
+        event_id.is_some(),
+        "ingest should still succeed when conflict auto-reflection runs: {response:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_rows = sqlx::query_as::<_, (String, String)>(
+        "SELECT trigger_type, status FROM reflection_trigger_ledger ORDER BY rowid ASC",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(reflection_count, 1);
+    assert_eq!(
+        trigger_rows,
+        vec![("conflict".to_string(), "handled".to_string())]
+    );
+    assert_eq!(stub.request_count().await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ingest_interaction_returns_success_even_when_conflict_auto_reflection_fails() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "not valid self revision json"
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "Self_",
+                    "kind": "Action",
+                    "summary": "self attempted a commitment overwrite that may need review"
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:ingest-conflict-auto-reflect-nonfatal",
+                "trigger_hints": ["conflict", "commitment"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        response.get("error").is_none(),
+        "ingest must still succeed when best-effort conflict auto-reflection fails: {response:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let event_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(event_count, 1);
+    assert_eq!(reflection_count, 0);
+    assert_eq!(stub.request_count().await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ingest_interaction_does_not_auto_reflect_conflict_without_explicit_conflict_hints() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": r#"{"should_reflect":true,"rationale":"Conflict evidence suggests tighter commitment hygiene.","machine_patch":{"commitment_patch":{"commitments":["prefer:confirm_conflicting_commitment_updates_before_overwrite"]}}}"#
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "Self_",
+                    "kind": "Action",
+                    "summary": "self attempted a conflicting commitment overwrite"
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:ingest-conflict-without-hints"
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        response.get("error").is_none(),
+        "ingest must still succeed without explicit conflict hints: {response:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_ledger_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflection_trigger_ledger")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(reflection_count, 0);
+    assert_eq!(trigger_ledger_count, 0);
+    assert_eq!(stub.request_count().await, 0);
 }
 
 #[tokio::test]
@@ -701,6 +938,97 @@ timeout_ms = 30000
     assert_eq!(stub.request_count().await, 1);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn build_self_snapshot_does_not_auto_reflect_without_explicit_namespace() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": r#"{"should_reflect":true,"rationale":"Periodic review is warranted.","machine_patch":{"commitment_patch":{"commitments":["prefer:periodic_project_review"]}}}"#
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "Seed an episode before a snapshot without auto-reflect namespace."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "World",
+                        "namespace": "project/agent-llm-mm",
+                        "subject": "project.memory",
+                        "predicate": "needs",
+                        "object": "structure",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:build-self-snapshot-without-namespace"
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        ingest.get("error").is_none(),
+        "seed ingest should succeed before a namespace-free snapshot: {ingest:?}"
+    );
+
+    let response = client
+        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .await
+        .unwrap();
+
+    assert!(
+        response.get("error").is_none(),
+        "build_self_snapshot must still succeed without explicit auto_reflect_namespace: {response:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_ledger_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflection_trigger_ledger")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(reflection_count, 0);
+    assert_eq!(trigger_ledger_count, 0);
+    assert_eq!(stub.request_count().await, 0);
+}
+
 #[tokio::test]
 async fn conflicting_reflection_over_stdio_removes_claim_from_active_snapshot() {
     let mut client = test_support::spawn_stdio_client().await.unwrap();
@@ -1073,6 +1401,104 @@ timeout_ms = 30000
         model_decision,
         Some(json!({ "action": stub_response })),
         "decision payload must remain the original decision response when conflict auto-reflection is not hinted: {decision:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_ledger_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflection_trigger_ledger")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(reflection_count, 0);
+    assert_eq!(trigger_ledger_count, 0);
+    assert_eq!(stub.request_count().await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn decide_with_snapshot_does_not_auto_reflect_conflict_without_explicit_namespace() {
+    let stub_response = r#"{"should_reflect":true,"rationale":"Conflict suggests tighter commitment hygiene.","machine_patch":{"identity_patch":null,"commitment_patch":{"commitments":["prefer:confirm_conflicting_commitment_updates_before_overwrite"]}}}"#;
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": stub_response
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "Seed one evidence event before a namespaceless conflict-hinted decision."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:decide-with-snapshot-without-namespace"
+            }),
+        )
+        .await
+        .unwrap();
+
+    let snapshot = client
+        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .await
+        .unwrap();
+    let snapshot = snapshot
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("snapshot"))
+        .cloned()
+        .unwrap();
+
+    let decision = client
+        .call_tool(
+            "decide_with_snapshot",
+            json!({
+                "task": "resolve a commitment overwrite with explicit conflict hints but no namespace opt-in",
+                "action": "overwrite_commitment",
+                "snapshot": snapshot,
+                "trigger_hints": ["conflict", "commitment"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        decision.get("error").is_none(),
+        "decide_with_snapshot must still succeed without explicit auto_reflect_namespace: {decision:?}"
     );
 
     let pool = SqlitePool::connect(&database_url).await.unwrap();

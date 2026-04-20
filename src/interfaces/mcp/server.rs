@@ -25,7 +25,7 @@ use crate::{
         run_reflection::ReflectionInput,
     },
     domain::identity_core::IdentityCore,
-    domain::self_revision::{SelfRevisionProposal, SelfRevisionRequest},
+    domain::self_revision::{SelfRevisionProposal, SelfRevisionRequest, TriggerType},
     error::AppError,
     ports::{
         ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
@@ -41,8 +41,9 @@ use super::dto::{
     BuildSelfSnapshotParams, DecideWithSnapshotParams, IngestInteractionParams, RunReflectionParams,
 };
 
-pub const AUTO_REFLECTION_RUNTIME_HOOKS: [&str; 3] = [
+pub const AUTO_REFLECTION_RUNTIME_HOOKS: [&str; 4] = [
     "ingest_interaction:failure",
+    "ingest_interaction:conflict",
     "decide_with_snapshot:conflict",
     "build_self_snapshot:periodic",
 ];
@@ -89,6 +90,7 @@ impl Server {
     ) -> Result<CallToolResult, McpError> {
         let auto_reflect_input =
             AutoReflectInput::from_ingest(&params).map_err(app_error_to_mcp)?;
+        let runtime_hook = runtime_hook_for("ingest_interaction", auto_reflect_input.trigger_type);
         let auto_reflect_trigger_type = auto_reflect_input.trigger_type;
         let auto_reflect_trigger_key = auto_reflect_input.trigger_key();
         let input =
@@ -102,14 +104,12 @@ impl Server {
         )
         .await
         {
-            Ok(diagnostics) => log_auto_reflection_success(
-                AUTO_REFLECTION_RUNTIME_HOOKS[0],
-                &diagnostics,
-                Some(result.event_id.as_str()),
-            ),
+            Ok(diagnostics) => {
+                log_auto_reflection_success(runtime_hook, &diagnostics, Some(result.event_id.as_str()))
+            }
             Err(error) => {
                 warn!(
-                    runtime_hook = AUTO_REFLECTION_RUNTIME_HOOKS[0],
+                    runtime_hook,
                     event_id = %result.event_id,
                     trigger_type = ?auto_reflect_trigger_type,
                     trigger_key = %auto_reflect_trigger_key,
@@ -138,13 +138,14 @@ impl Server {
             .await
             {
                 Ok(diagnostics) => log_auto_reflection_success(
-                    AUTO_REFLECTION_RUNTIME_HOOKS[2],
+                    runtime_hook_for("build_self_snapshot", auto_reflect_trigger_type),
                     &diagnostics,
                     None,
                 ),
                 Err(error) => {
                     warn!(
-                        runtime_hook = AUTO_REFLECTION_RUNTIME_HOOKS[2],
+                        runtime_hook =
+                            runtime_hook_for("build_self_snapshot", auto_reflect_trigger_type),
                         trigger_type = ?auto_reflect_trigger_type,
                         trigger_key = %auto_reflect_trigger_key,
                         error = %error,
@@ -180,13 +181,14 @@ impl Server {
                 .await
                 {
                     Ok(diagnostics) => log_auto_reflection_success(
-                        AUTO_REFLECTION_RUNTIME_HOOKS[1],
+                        runtime_hook_for("decide_with_snapshot", auto_reflect_trigger_type),
                         &diagnostics,
                         None,
                     ),
                     Err(error) => {
                         warn!(
-                            runtime_hook = AUTO_REFLECTION_RUNTIME_HOOKS[1],
+                            runtime_hook =
+                                runtime_hook_for("decide_with_snapshot", auto_reflect_trigger_type),
                             trigger_type = ?auto_reflect_trigger_type,
                             trigger_key = %auto_reflect_trigger_key,
                             error = %error,
@@ -303,6 +305,13 @@ impl EventStore for Runtime {
         self.store.query_evidence_event_ids(query).await
     }
 
+    async fn query_evidence_event_ids_unbounded(
+        &self,
+        query: EvidenceQuery,
+    ) -> Result<Vec<String>, AppError> {
+        self.store.query_evidence_event_ids_unbounded(query).await
+    }
+
     async fn has_event(&self, event_id: &str) -> Result<bool, AppError> {
         self.store.has_event(event_id).await
     }
@@ -369,6 +378,13 @@ impl TriggerLedgerStore for Runtime {
         trigger_key: &str,
     ) -> Result<Option<StoredTriggerLedgerEntry>, AppError> {
         self.store.latest_trigger_entry(trigger_key).await
+    }
+
+    async fn latest_handled_trigger_entry(
+        &self,
+        trigger_key: &str,
+    ) -> Result<Option<StoredTriggerLedgerEntry>, AppError> {
+        self.store.latest_handled_trigger_entry(trigger_key).await
     }
 }
 
@@ -456,6 +472,16 @@ fn log_auto_reflection_success(
         evidence_event_ids = ?result.evidence_event_ids,
         "best-effort auto-reflection completed"
     );
+}
+
+fn runtime_hook_for(source: &'static str, trigger_type: TriggerType) -> &'static str {
+    match (source, trigger_type) {
+        ("ingest_interaction", TriggerType::Failure) => AUTO_REFLECTION_RUNTIME_HOOKS[0],
+        ("ingest_interaction", TriggerType::Conflict) => AUTO_REFLECTION_RUNTIME_HOOKS[1],
+        ("decide_with_snapshot", TriggerType::Conflict) => AUTO_REFLECTION_RUNTIME_HOOKS[2],
+        ("build_self_snapshot", TriggerType::Periodic) => AUTO_REFLECTION_RUNTIME_HOOKS[3],
+        _ => "auto_reflection:unknown",
+    }
 }
 
 fn structured<T>(value: T) -> Result<CallToolResult, McpError>

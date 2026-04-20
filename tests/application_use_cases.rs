@@ -1292,20 +1292,7 @@ impl EventStore for InMemoryDeps {
         query: EvidenceQuery,
     ) -> Result<Vec<String>, AppError> {
         let mut events = self.state.lock().unwrap().committed.events.clone();
-
-        if let Some(owner) = query.owner {
-            events.retain(|event| event.event.owner() == owner);
-        }
-
-        if let Some(kind) = query.kind {
-            events.retain(|event| event.event.kind() == kind);
-        }
-
-        events.sort_by(|lhs, rhs| {
-            rhs.recorded_at
-                .cmp(&lhs.recorded_at)
-                .then_with(|| rhs.event_id.cmp(&lhs.event_id))
-        });
+        filter_and_order_events(&mut events, query.owner, query.kind);
 
         let limit = query.limit.unwrap_or(10);
         if limit == 0 {
@@ -1318,6 +1305,42 @@ impl EventStore for InMemoryDeps {
             .map(|event| event.event_id)
             .collect())
     }
+
+    async fn query_evidence_event_ids_unbounded(
+        &self,
+        query: EvidenceQuery,
+    ) -> Result<Vec<String>, AppError> {
+        let mut events = self.state.lock().unwrap().committed.events.clone();
+        filter_and_order_events(&mut events, query.owner, query.kind);
+
+        let events = if let Some(limit) = query.limit {
+            events.into_iter().take(limit).collect()
+        } else {
+            events
+        };
+
+        Ok(events.into_iter().map(|event| event.event_id).collect())
+    }
+}
+
+fn filter_and_order_events(
+    events: &mut Vec<StoredEvent>,
+    owner: Option<Owner>,
+    kind: Option<EventKind>,
+) {
+    if let Some(owner) = owner {
+        events.retain(|event| event.event.owner() == owner);
+    }
+
+    if let Some(kind) = kind {
+        events.retain(|event| event.event.kind() == kind);
+    }
+
+    events.sort_by(|lhs, rhs| {
+        rhs.recorded_at
+            .cmp(&lhs.recorded_at)
+            .then_with(|| rhs.event_id.cmp(&lhs.event_id))
+    });
 }
 
 #[async_trait]
@@ -1485,6 +1508,24 @@ impl TriggerLedgerStore for InMemoryDeps {
             .iter()
             .rev()
             .find(|entry| entry.trigger_key == trigger_key)
+            .cloned())
+    }
+
+    async fn latest_handled_trigger_entry(
+        &self,
+        trigger_key: &str,
+    ) -> Result<Option<StoredTriggerLedgerEntry>, AppError> {
+        Ok(self
+            .state
+            .lock()
+            .unwrap()
+            .committed
+            .trigger_ledger
+            .iter()
+            .rev()
+            .find(|entry| {
+                entry.trigger_key == trigger_key && entry.status == TriggerLedgerStatus::Handled
+            })
             .cloned())
     }
 }

@@ -129,6 +129,33 @@ impl EventStore for SqliteStore {
         &self,
         query: EvidenceQuery,
     ) -> Result<Vec<String>, AppError> {
+        query_evidence_event_ids_with_limit(&self.pool, query, Some(10)).await
+    }
+
+    async fn query_evidence_event_ids_unbounded(
+        &self,
+        query: EvidenceQuery,
+    ) -> Result<Vec<String>, AppError> {
+        query_evidence_event_ids_with_limit(&self.pool, query, None).await
+    }
+
+    async fn has_event(&self, event_id: &str) -> Result<bool, AppError> {
+        let count = map_sqlite(
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events WHERE event_id = ?")
+                .bind(event_id)
+                .fetch_one(&self.pool)
+                .await,
+        )?;
+
+        Ok(count > 0)
+    }
+}
+
+async fn query_evidence_event_ids_with_limit(
+    pool: &SqlitePool,
+    query: EvidenceQuery,
+    default_limit: Option<usize>,
+) -> Result<Vec<String>, AppError> {
         let mut sql =
             String::from("SELECT event_id, recorded_at, owner, kind, summary FROM events");
         let mut predicates = Vec::new();
@@ -146,7 +173,10 @@ impl EventStore for SqliteStore {
             sql.push_str(&predicates.join(" AND "));
         }
 
-        sql.push_str(" ORDER BY recorded_at DESC, rowid DESC LIMIT ?");
+        sql.push_str(" ORDER BY recorded_at DESC, rowid DESC");
+        if query.limit.is_some() || default_limit.is_some() {
+            sql.push_str(" LIMIT ?");
+        }
 
         let mut rows = {
             let mut query_builder = sqlx::query(&sql);
@@ -159,33 +189,22 @@ impl EventStore for SqliteStore {
                 query_builder = query_builder.bind(event_kind_as_str(kind));
             }
 
-            let limit = query.limit.unwrap_or(10);
-            let limit = i64::try_from(limit).map_err(|_| {
-                AppError::InvalidParams(
-                    "evidence query limit exceeds the supported maximum".to_string(),
-                )
-            })?;
-            query_builder = query_builder.bind(limit);
+            if let Some(limit) = query.limit.or(default_limit) {
+                let limit = i64::try_from(limit).map_err(|_| {
+                    AppError::InvalidParams(
+                        "evidence query limit exceeds the supported maximum".to_string(),
+                    )
+                })?;
+                query_builder = query_builder.bind(limit);
+            }
 
-            map_sqlite(query_builder.fetch_all(&self.pool).await)?
+            map_sqlite(query_builder.fetch_all(pool).await)?
         };
 
         Ok(rows
             .drain(..)
             .map(|row| row.get::<String, _>("event_id"))
             .collect())
-    }
-
-    async fn has_event(&self, event_id: &str) -> Result<bool, AppError> {
-        let count = map_sqlite(
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events WHERE event_id = ?")
-                .bind(event_id)
-                .fetch_one(&self.pool)
-                .await,
-        )?;
-
-        Ok(count > 0)
-    }
 }
 
 #[async_trait]
@@ -302,6 +321,41 @@ impl TriggerLedgerStore for SqliteStore {
                 "#,
             )
             .bind(trigger_key)
+            .fetch_optional(&self.pool)
+            .await,
+        )?;
+
+        row.as_ref()
+            .map(stored_trigger_ledger_entry_from_row)
+            .transpose()
+    }
+
+    async fn latest_handled_trigger_entry(
+        &self,
+        trigger_key: &str,
+    ) -> Result<Option<StoredTriggerLedgerEntry>, AppError> {
+        let row = map_sqlite(
+            sqlx::query(
+                r#"
+                SELECT
+                    ledger_id,
+                    trigger_type,
+                    namespace,
+                    trigger_key,
+                    status,
+                    evidence_window,
+                    handled_at,
+                    cooldown_until,
+                    episode_watermark,
+                    reflection_id
+                FROM reflection_trigger_ledger
+                WHERE trigger_key = ? AND status = ?
+                ORDER BY rowid DESC
+                LIMIT 1
+                "#,
+            )
+            .bind(trigger_key)
+            .bind(TriggerLedgerStatus::Handled.as_str())
             .fetch_optional(&self.pool)
             .await,
         )?;

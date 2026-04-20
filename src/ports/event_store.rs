@@ -43,5 +43,9 @@ pub trait EventStore {
     async fn list_event_references(&self) -> Result<Vec<String>, AppError>;
     async fn query_evidence_event_ids(&self, query: EvidenceQuery)
     -> Result<Vec<String>, AppError>;
+    async fn query_evidence_event_ids_unbounded(
+        &self,
+        query: EvidenceQuery,
+    ) -> Result<Vec<String>, AppError>;
     async fn has_event(&self, event_id: &str) -> Result<bool, AppError>;
 }

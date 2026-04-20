@@ -58,10 +58,11 @@
   - 已支持带审计记录的最小 `identity_core` / `commitments` 深层修订
 - trigger-ledger-backed automatic self-revision MVP
   - 已有 `self_revision` 领域契约、`ModelPort::propose_self_revision` 端口，以及 `mock` / `openai-compatible` proposal adapter
-  - proposal 首阶段已带 `proposed_evidence_event_ids`、`proposed_evidence_query`、`confidence` 契约，用于收口证据候选与置信度；其中 `proposed_evidence_query` 仍只是首阶段证据契约，不是 widening/ranking engine
+  - proposal 首阶段已带 `proposed_evidence_event_ids`、`proposed_evidence_query`、`confidence` 契约，用于收口证据候选与置信度；其中 `proposed_evidence_query` 在 explicit ids 为空时可作为 bounded narrowing hint，对当前 trigger window 做交集收口，并在有交集时按当前窗口内的候选顺序应用 `limit`；若没有交集则回退到 full trigger window。explicit ids 非空时，这些 ids 也必须满足 query 在当前 trigger window 内的过滤约束，但仍不是 widening/ranking engine
   - 已有 trigger ledger 持久化、cooldown 去重，以及带 structured trigger / rejection / suppression / cooldown 信息的 handled/rejected/suppressed 诊断
-  - 当前 MCP-wired automatic path 只有 3 条：
+  - 当前 MCP-wired automatic path 只有 4 条：
     - `ingest_interaction -> failure`
+    - `ingest_interaction -> conflict`
     - `decide_with_snapshot -> conflict`
     - `build_self_snapshot -> periodic`
   - 这些 automatic path 仍是 best-effort runtime hook，不代表“所有请求都会自动反思”
@@ -91,8 +92,9 @@
   - 当前只支持返回“动作字符串”的最小协议
 - self-revision 触发面与治理深度
   - 当前 trigger type 已有 `failure / conflict / periodic` 契约，协调器与 ledger 也支持这些类型
-  - 当前 MCP runtime coverage 已谨慎接到 3 条路径：`ingest_interaction -> failure`、`decide_with_snapshot -> conflict`、`build_self_snapshot -> periodic`
-  - 其中 `decide_with_snapshot` 与 `build_self_snapshot` 仍要求显式 `auto_reflect_namespace`，`decide_with_snapshot` 还需要显式 conflict-style `trigger_hints`，并且只在非 blocked 决策后做 best-effort conflict auto-reflection
+  - 当前 MCP runtime coverage 已谨慎接到 4 条路径：`ingest_interaction -> failure`、`ingest_interaction -> conflict`、`decide_with_snapshot -> conflict`、`build_self_snapshot -> periodic`
+  - `ingest_interaction -> conflict` 仍要求显式 `trigger_hints` 包含 `conflict` 或 `identity`
+  - `decide_with_snapshot` 与 `build_self_snapshot` 仍要求显式 `auto_reflect_namespace`，`decide_with_snapshot` 还需要显式 conflict-compatible `trigger_hints`，并且只在非 blocked 决策后做 best-effort conflict auto-reflection
   - 当前没有“所有 MCP entry point 自动反思”的统一运行形态，也没有后台 daemon / 定时自治进程
   - 当前 evidence 选择、trigger 判定和 deep-update 校验仍是保守的 MVP 规则，不是完整自治治理系统
 - provider 扩展性

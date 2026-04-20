@@ -26,7 +26,7 @@
 - [development-windows.md](development-windows.md)
   - Windows 环境准备、配置、预检、启动和验证
 - [project-status.md](project-status.md)
-  - 当前实现边界、已实现 / 部分实现 / 未实现，重点包含当前 3 条 MCP-wired automatic path、structured diagnostics，以及 `run_reflection` durable write path 的保守范围
+  - 当前实现边界、已实现 / 部分实现 / 未实现，重点包含当前 4 条 MCP-wired automatic path、structured diagnostics，以及 `run_reflection` durable write path 的保守范围
 - [release-readiness.md](release-readiness.md)
   - 当前 demo 是否适合发布到 GitHub
 - [roadmap.md](roadmap.md)
@@ -51,6 +51,8 @@
   - GitHub description、topics、首页文案和发布阻塞项
 - [2026-03-31-initial-public-release.md](releases/2026-03-31-initial-public-release.md)
   - 首次公开发布的 release note 草稿
+- [2026-04-20-self-revision-runtime-coverage-and-governance-hardening.md](releases/2026-04-20-self-revision-runtime-coverage-and-governance-hardening.md)
+  - 本地 runtime coverage 与 evidence governance 收口更新记录
 
 ## 6. 接入与验证文档
 

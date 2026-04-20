@@ -192,6 +192,7 @@ async fn doctor_reports_self_revision_runtime_coverage() {
         report.auto_reflection_runtime_hooks,
         vec![
             "ingest_interaction:failure".to_string(),
+            "ingest_interaction:conflict".to_string(),
             "decide_with_snapshot:conflict".to_string(),
             "build_self_snapshot:periodic".to_string(),
         ]

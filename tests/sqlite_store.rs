@@ -119,6 +119,52 @@ async fn sqlite_query_evidence_event_ids_rejects_limit_above_i64_max() {
     assert!(matches!(result, Err(AppError::InvalidParams(_))));
 }
 
+#[tokio::test]
+async fn sqlite_query_evidence_event_ids_unbounded_ignores_default_limit() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+
+    for index in 0..11 {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                format!("evt-world-{index}"),
+                now + chrono::Duration::seconds(index as i64),
+                Event::new(
+                    Owner::World,
+                    EventKind::Observation,
+                    format!("world observation {index}"),
+                ),
+            ))
+            .await
+            .unwrap();
+    }
+
+    let bounded_results = context
+        .store
+        .query_evidence_event_ids(EvidenceQuery {
+            owner: Some(Owner::World),
+            kind: Some(EventKind::Observation),
+            limit: None,
+        })
+        .await
+        .unwrap();
+    let unbounded_results = context
+        .store
+        .query_evidence_event_ids_unbounded(EvidenceQuery {
+            owner: Some(Owner::World),
+            kind: Some(EventKind::Observation),
+            limit: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(bounded_results.len(), 10);
+    assert_eq!(unbounded_results.len(), 11);
+    assert_eq!(unbounded_results[0], "evt-world-10".to_string());
+    assert_eq!(unbounded_results[10], "evt-world-0".to_string());
+}
+
 #[test]
 fn sqlite_owner_namespace_sql_rules_have_single_source() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -827,6 +873,98 @@ async fn sqlite_trigger_ledger_latest_entry_uses_append_order_not_handled_at() {
     assert_eq!(entry.ledger_id, "ledger-appended-last");
     assert_eq!(entry.handled_at, Some(earlier_business_time));
     assert_eq!(entry.status, TriggerLedgerStatus::Suppressed);
+}
+
+#[tokio::test]
+async fn sqlite_trigger_ledger_latest_handled_entry_skips_newer_non_handled_rows() {
+    let context = test_support::new_sqlite_store().await;
+    let trigger_key = "periodic:project/agent-llm-mm";
+    let first_handled_at = test_support::fixed_now() + chrono::Duration::hours(2);
+    let second_handled_at = test_support::fixed_now() - chrono::Duration::hours(1);
+
+    context
+        .store
+        .record_trigger_attempt(StoredTriggerLedgerEntry {
+            ledger_id: "ledger-handled-first".to_string(),
+            trigger_type: TriggerType::Periodic,
+            namespace: Namespace::for_project("agent-llm-mm"),
+            trigger_key: trigger_key.to_string(),
+            status: TriggerLedgerStatus::Handled,
+            evidence_window: vec!["event:handled-first".to_string()],
+            handled_at: Some(first_handled_at),
+            cooldown_until: Some(first_handled_at + chrono::Duration::hours(1)),
+            episode_watermark: Some(10),
+            reflection_id: Some("refl-first".to_string()),
+        })
+        .await
+        .unwrap();
+
+    context
+        .store
+        .record_trigger_attempt(StoredTriggerLedgerEntry {
+            ledger_id: "ledger-suppressed-newer".to_string(),
+            trigger_type: TriggerType::Periodic,
+            namespace: Namespace::for_project("agent-llm-mm"),
+            trigger_key: trigger_key.to_string(),
+            status: TriggerLedgerStatus::Suppressed,
+            evidence_window: vec!["event:suppressed".to_string()],
+            handled_at: None,
+            cooldown_until: Some(test_support::fixed_now() + chrono::Duration::hours(1)),
+            episode_watermark: Some(11),
+            reflection_id: Some("refl-first".to_string()),
+        })
+        .await
+        .unwrap();
+
+    context
+        .store
+        .record_trigger_attempt(StoredTriggerLedgerEntry {
+            ledger_id: "ledger-rejected-newest".to_string(),
+            trigger_type: TriggerType::Periodic,
+            namespace: Namespace::for_project("agent-llm-mm"),
+            trigger_key: trigger_key.to_string(),
+            status: TriggerLedgerStatus::Rejected,
+            evidence_window: vec!["event:rejected".to_string()],
+            handled_at: None,
+            cooldown_until: None,
+            episode_watermark: Some(12),
+            reflection_id: None,
+        })
+        .await
+        .unwrap();
+
+    context
+        .store
+        .record_trigger_attempt(StoredTriggerLedgerEntry {
+            ledger_id: "ledger-handled-second".to_string(),
+            trigger_type: TriggerType::Periodic,
+            namespace: Namespace::for_project("agent-llm-mm"),
+            trigger_key: trigger_key.to_string(),
+            status: TriggerLedgerStatus::Handled,
+            evidence_window: vec!["event:handled-second".to_string()],
+            handled_at: Some(second_handled_at),
+            cooldown_until: Some(second_handled_at + chrono::Duration::hours(1)),
+            episode_watermark: Some(20),
+            reflection_id: Some("refl-second".to_string()),
+        })
+        .await
+        .unwrap();
+
+    let entry = context
+        .store
+        .latest_handled_trigger_entry(trigger_key)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(entry.ledger_id, "ledger-handled-second");
+    assert_eq!(entry.status, TriggerLedgerStatus::Handled);
+    assert_eq!(entry.handled_at, Some(second_handled_at));
+    assert_eq!(
+        entry.evidence_window,
+        vec!["event:handled-second".to_string()]
+    );
+    assert_eq!(entry.reflection_id.as_deref(), Some("refl-second"));
 }
 
 mod test_support {

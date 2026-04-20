@@ -74,10 +74,10 @@
 - 已新增 `self_revision` 领域契约，包含 trigger type、proposal rationale 和 machine patch 最小结构
 - `ModelPort` 已支持 `propose_self_revision`
 - `mock` 与 `openai-compatible` adapter 已实现最小 proposal 行为
-- proposal 首阶段已支持 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence`；这些字段当前用于收口证据候选与置信度，不代表 richer widening / ranking engine 已落地
+- proposal 首阶段已支持 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence`；这些字段当前用于收口证据候选与置信度，其中 `proposed_evidence_query` 在 explicit ids 为空时可作为 bounded narrowing hint，对当前 trigger window 做交集收口，并在有交集时按当前窗口内的候选顺序应用 `limit`；若没有交集则回退到 full trigger window。explicit ids 非空时，这些 ids 也必须满足 query 在当前 trigger window 内的过滤约束，但不代表 richer widening / ranking engine 已落地
 - 已新增 trigger ledger 持久化，能记录 handled / rejected / suppressed 结果、episode watermark 和 cooldown，并通过 structured diagnostics 暴露 trigger / rejection / suppression / cooldown 信息
 - 已新增 `auto_reflect_if_needed` 协调器，负责 trigger 判定、proposal 请求、治理校验和写入前收口
-- 当前 MCP-wired automatic path 已谨慎扩到 3 条：`ingest_interaction -> failure`、`decide_with_snapshot -> conflict`、`build_self_snapshot -> periodic`
+- 当前 MCP-wired automatic path 已谨慎扩到 4 条：`ingest_interaction -> failure`、`ingest_interaction -> conflict`、`decide_with_snapshot -> conflict`、`build_self_snapshot -> periodic`
 - `ingest_interaction` / `decide_with_snapshot` / `build_self_snapshot` 上的 best-effort auto-reflection 失败都不会把已经成功的 MCP 主路径改写成额外的 MCP 错误
 - 通过治理的 automatic self-revision 最终仍复用 `run_reflection` 作为 identity / commitments 的 durable write path
 - 直接 `run_reflection` MCP tool 不会递归触发 auto-reflection
@@ -130,12 +130,14 @@
 
 - 当前领域层 trigger type 已覆盖 `failure / conflict / periodic`
 - 当前协调器和 ledger 也已接通这 3 类 trigger 的最小 runtime coverage
-- 当前 MCP-wired automatic path 只有这 3 条，而且需要按各自边界显式触发：
+- 当前 MCP-wired automatic path 只有这 4 条，而且需要按各自边界显式触发：
   - `ingest_interaction -> failure`
+  - `ingest_interaction -> conflict`
   - `decide_with_snapshot -> conflict`
   - `build_self_snapshot -> periodic`
+- `ingest_interaction -> conflict` 仍要求显式 `trigger_hints` 包含 `conflict` 或 `identity`
 - `decide_with_snapshot` 与 `build_self_snapshot` 仍要求调用方显式传 `auto_reflect_namespace`
-- `decide_with_snapshot` 的 conflict auto-reflection 还要求显式 conflict-style `trigger_hints`，并且只会在非 blocked 决策后 best-effort 运行，不会改变原有 decision payload 形状
+- `decide_with_snapshot` 的 conflict auto-reflection 还要求显式 conflict-compatible `trigger_hints`，并且只会在非 blocked 决策后 best-effort 运行，不会改变原有 decision payload 形状
 - 当前没有新增单独的 auto-reflection MCP tool，也没有后台 daemon、定时调度器或“所有入口统一自动反思”的运行形态
 
 因此，当前仓库可以准确描述成“已实现 trigger-ledger-backed automatic self-revision MVP”，但不能描述成“完整自治 self-governing agent”。
@@ -154,24 +156,24 @@
 
 ## 当前验证状态
 
-截至 `2026-04-19`，已 fresh 运行：
+截至 `2026-04-20`，已 fresh 运行：
 
-- `cargo test -q`
+- `cargo test`
 - `./scripts/agent-llm-mm.sh doctor` 或 `cargo run --quiet -- doctor`
 
 结果：
 
 - `application_use_cases`: 20
-- `bootstrap`: 12
+- `bootstrap`: 13
 - `decision_flow`: 2
 - `domain_invariants`: 4
 - `domain_snapshot`: 6
-- `failure_modes`: 11
-- `mcp_stdio`: 16
-- `openai_compatible_model`: 6
+- `failure_modes`: 27
+- `mcp_stdio`: 26
+- `openai_compatible_model`: 7
 - `provider_config`: 5
-- `sqlite_store`: 15
-- 合计：97 个测试通过
+- `sqlite_store`: 17
+- 合计：127 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 
 ## 对外描述建议

@@ -12,6 +12,7 @@ use crate::{
         commitment::Commitment,
         event::Event,
         reflection::{Reflection, ReflectionIdentityUpdate},
+        self_revision::TriggerType,
         snapshot::{SelfSnapshot, SnapshotBudget},
         types::{EventKind, Mode, Namespace, Owner},
     },
@@ -196,11 +197,22 @@ impl IngestInteractionParams {
 
 impl AutoReflectInput {
     pub fn from_ingest(params: &IngestInteractionParams) -> Result<Self, AppError> {
-        Ok(Self::for_failure(
+        Ok(Self::new(
             params.auto_reflect_namespace()?,
+            ingest_trigger_type_from_hints(&params.trigger_hints),
             params.trigger_hints.clone(),
         ))
     }
+}
+
+// Ingest only upgrades to the conflict hook for explicit conflict/identity hints.
+// Rollback-only hints stay on the existing failure path.
+fn ingest_trigger_type_from_hints(trigger_hints: &[String]) -> TriggerType {
+    trigger_hints
+        .iter()
+        .any(|hint| matches!(hint.to_ascii_lowercase().as_str(), "conflict" | "identity"))
+        .then_some(TriggerType::Conflict)
+        .unwrap_or(TriggerType::Failure)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

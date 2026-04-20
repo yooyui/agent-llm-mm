@@ -277,7 +277,8 @@ where
     }
 
     let governed_evidence_event_ids =
-        match resolve_governed_evidence_window(&candidate.evidence_event_ids, &proposal) {
+        match resolve_governed_evidence_window(deps, &candidate.evidence_event_ids, &proposal).await
+        {
             Ok(governed_evidence_event_ids) => governed_evidence_event_ids,
             Err(error) => {
                 record_rejected_trigger(deps, &candidate, None).await?;
@@ -386,9 +387,12 @@ where
         }));
     }
 
-    if latest.status == TriggerLedgerStatus::Handled
-        && !candidate.evidence_event_ids.is_empty()
-        && latest.evidence_window == candidate.evidence_event_ids
+    let latest_handled = deps.latest_handled_trigger_entry(&candidate.trigger_key).await?;
+
+    if !candidate.evidence_event_ids.is_empty()
+        && latest_handled
+            .as_ref()
+            .is_some_and(|entry| entry.evidence_window == candidate.evidence_event_ids)
     {
         return Ok(Some(SuppressionDecision {
             reason: "evidence_window_unchanged",
@@ -396,9 +400,10 @@ where
     }
 
     if candidate.trigger_type == TriggerType::Periodic
-        && latest.status == TriggerLedgerStatus::Handled
-        && latest.episode_watermark.unwrap_or_default()
-            >= candidate.episode_watermark.unwrap_or_default()
+        && latest_handled.as_ref().is_some_and(|entry| {
+            entry.episode_watermark.unwrap_or_default()
+                >= candidate.episode_watermark.unwrap_or_default()
+        })
     {
         return Ok(Some(SuppressionDecision {
             reason: "episode_watermark_unchanged",
@@ -829,7 +834,7 @@ async fn latest_suppression_reflection_id<D>(
 where
     D: TriggerLedgerStore + Sync,
 {
-    Ok(deps
+    let latest_reflection_id = deps
         .latest_trigger_entry(trigger_key)
         .await?
         .filter(|entry| {
@@ -838,6 +843,15 @@ where
                 TriggerLedgerStatus::Handled | TriggerLedgerStatus::Suppressed
             )
         })
+        .and_then(|entry| entry.reflection_id);
+
+    if latest_reflection_id.is_some() {
+        return Ok(latest_reflection_id);
+    }
+
+    Ok(deps
+        .latest_handled_trigger_entry(trigger_key)
+        .await?
         .and_then(|entry| entry.reflection_id))
 }
 
@@ -881,12 +895,52 @@ fn dedupe_strings(values: Vec<String>) -> Vec<String> {
     deduped
 }
 
-fn resolve_governed_evidence_window(
+async fn resolve_governed_evidence_window<D>(
+    deps: &D,
     candidate_evidence_event_ids: &[String],
     proposal: &SelfRevisionProposal,
-) -> Result<Vec<String>, AppError> {
+) -> Result<Vec<String>, AppError>
+where
+    D: EventStore + Sync,
+{
+    let query_constrained_candidate_ids = if let Some(proposed_evidence_query) =
+        proposal.proposed_evidence_query.clone()
+    {
+        let query_limit = proposed_evidence_query.limit;
+        let proposed_query_event_ids = dedupe_strings(
+            deps.query_evidence_event_ids_unbounded(EvidenceQuery {
+                owner: proposed_evidence_query.owner,
+                kind: proposed_evidence_query.kind,
+                limit: None,
+            })
+            .await?,
+        );
+        let filtered_candidate_ids = candidate_evidence_event_ids
+            .iter()
+            .filter(|event_id| proposed_query_event_ids.contains(event_id))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        Some((filtered_candidate_ids, query_limit))
+    } else {
+        None
+    };
+
     if proposal.proposed_evidence_event_ids.is_empty() {
-        return Ok(candidate_evidence_event_ids.to_vec());
+        let Some((filtered_candidate_ids, query_limit)) = query_constrained_candidate_ids else {
+            return Ok(candidate_evidence_event_ids.to_vec());
+        };
+
+        if filtered_candidate_ids.is_empty() {
+            return Ok(candidate_evidence_event_ids.to_vec());
+        }
+
+        let governed_evidence_event_ids = if let Some(limit) = query_limit {
+            filtered_candidate_ids.into_iter().take(limit).collect()
+        } else {
+            filtered_candidate_ids
+        };
+        return Ok(governed_evidence_event_ids);
     }
 
     let proposed_evidence_event_ids = dedupe_strings(proposal.proposed_evidence_event_ids.clone());
@@ -897,6 +951,17 @@ fn resolve_governed_evidence_window(
         return Err(AppError::InvalidParams(
             "model proposed evidence outside the current trigger window".to_string(),
         ));
+    }
+
+    if let Some((eligible_query_event_ids, _)) = query_constrained_candidate_ids {
+        if proposed_evidence_event_ids
+            .iter()
+            .any(|event_id| !eligible_query_event_ids.contains(event_id))
+        {
+            return Err(AppError::InvalidParams(
+                "model proposed evidence ids do not satisfy the proposed evidence query within the current trigger window".to_string(),
+            ));
+        }
     }
 
     let governed_evidence_event_ids =
