@@ -16,13 +16,14 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：适合以“公开技术 demo / MVP”身份发布到 GitHub，不应包装成完整产品
-- 最新 fresh 验证：`2026-04-19`
-  - `cargo test -q` 全量通过，共 97 个测试
+- 最新 fresh 验证：`2026-04-20`
+  - `cargo test -q` 全量通过，共 127 个测试
   - `doctor` 预检返回 `status = ok`
 
 ## 先看这些
 
 - [当前实现状态](docs/project-status.md)
+- [进度追踪对照表](docs/progress-tracker.md)
 - [发布准备评估](docs/release-readiness.md)
 - [未来路线图](docs/roadmap.md)
 - [文档总览](docs/document-map.md)
@@ -140,6 +141,7 @@
 
 - [文档总览](docs/document-map.md)
 - [当前实现状态](docs/project-status.md)
+- [进度追踪对照表](docs/progress-tracker.md)
 - [未来路线图](docs/roadmap.md)
 - [发布准备评估](docs/release-readiness.md)
 - [协作说明](CONTRIBUTING.md)

@@ -27,6 +27,8 @@
   - Windows 环境准备、配置、预检、启动和验证
 - [project-status.md](project-status.md)
   - 当前实现边界、已实现 / 部分实现 / 未实现，重点包含当前 4 条 MCP-wired automatic path、structured diagnostics，以及 `run_reflection` durable write path 的保守范围
+- [progress-tracker.md](progress-tracker.md)
+  - 把“目标态 / 当前状态 / 当前证据 / 剩余缺口 / 建议下一步”压成一张持续更新的进度追踪对照表
 - [release-readiness.md](release-readiness.md)
   - 当前 demo 是否适合发布到 GitHub
 - [roadmap.md](roadmap.md)
@@ -40,6 +42,8 @@
   - 公开协作入口、验证要求与文档更新预期
 - [project-status.md](project-status.md)
   - 当前实现边界、已实现 / 部分实现 / 未实现
+- [progress-tracker.md](progress-tracker.md)
+  - 适合直接用来跟踪后续开发任务推进
 - [release-readiness.md](release-readiness.md)
   - 当前 demo 是否适合发布到 GitHub
 - [roadmap.md](roadmap.md)
