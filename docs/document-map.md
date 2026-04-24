@@ -27,6 +27,8 @@
   - Windows 环境准备、配置、预检、启动和验证
 - [project-status.md](project-status.md)
   - 当前实现边界、已实现 / 部分实现 / 未实现，重点包含当前 4 条 MCP-wired automatic path、structured diagnostics，以及 `run_reflection` durable write path 的保守范围
+- [self-revision-demo-guide-2026-04-24.md](self-revision-demo-guide-2026-04-24.md)
+  - 零外网依赖的一键 self-revision demo package 运行指南与 artifact 说明
 - [progress-tracker.md](progress-tracker.md)
   - 把“目标态 / 当前状态 / 当前证据 / 剩余缺口 / 建议下一步”压成一张持续更新的进度追踪对照表
 - [release-readiness.md](release-readiness.md)
@@ -57,6 +59,8 @@
   - 首次公开发布的 release note 草稿
 - [2026-04-20-self-revision-runtime-coverage-and-governance-hardening.md](releases/2026-04-20-self-revision-runtime-coverage-and-governance-hardening.md)
   - 本地 runtime coverage 与 evidence governance 收口更新记录
+- [self-revision-demo-2026-04-24.md](reports/self-revision-demo-2026-04-24.md)
+  - self-revision demo package 的 canonical report 口径
 
 ## 6. 接入与验证文档
 
@@ -64,8 +68,12 @@
   - 如何把本项目接入本机 AI 客户端，以及当前 runtime hooks、`doctor` 输出和 self-revision MVP 运行边界
 - [testing-guide-2026-03-24.md](testing-guide-2026-03-24.md)
   - 当前测试基线、推荐验证顺序、self-revision runtime coverage / diagnostics / evidence policy 定向回归和常见问题排查
+- [self-revision-demo-guide-2026-04-24.md](self-revision-demo-guide-2026-04-24.md)
+  - 如何运行 `./scripts/run-self-revision-demo.sh` 并复核 8 个 demo artifact
 - [examples/codex-mcp-config.toml](../examples/codex-mcp-config.toml)
   - Codex 本机 MCP 配置样例
+- [examples/agent-llm-mm.demo.example.toml](../examples/agent-llm-mm.demo.example.toml)
+  - self-revision demo runner 使用的本地 deterministic provider 配置样例
 
 ## 7. 原始资料与历史快照
 
@@ -91,6 +99,8 @@
   - 某一轮阶段计划，不等于当前稳定路线图
 - [2026-04-19-self-agent-memory-self-revision-mvp.md](superpowers/plans/2026-04-19-self-agent-memory-self-revision-mvp.md)
   - 基于 2026-04-19 self-revision 设计初稿拆出的实现计划，默认面向 subagent 执行
+- [2026-04-24-self-revision-demo-package.md](superpowers/plans/2026-04-24-self-revision-demo-package.md)
+  - self-revision demo package 的分步实现计划
 - [2026-03-28-openai-compatible-provider-claude-code.md](superpowers/plans/2026-03-28-openai-compatible-provider-claude-code.md)
   - 较早的 provider 实现计划草稿，已被后续配置文件方案替代
 - [2026-03-28-openai-compatible-provider-claude-code-design.md](superpowers/specs/2026-03-28-openai-compatible-provider-claude-code-design.md)
@@ -102,6 +112,7 @@
 
 - 如果你是第一次看这个仓库：先读 README，再读 `project-status.md` 与 `release-readiness.md`
 - 如果你想确认 automatic self-revision 到底实现到哪里：直接读 `project-status.md`，再读 `roadmap.md`
+- 如果你想快速看见 automatic self-revision 的证据链：读 `self-revision-demo-guide-2026-04-24.md`，再运行 `./scripts/run-self-revision-demo.sh`
 - 如果你想确认 runtime hooks、diagnostics 和 durable write path：读 `project-status.md`，再读 `local-mcp-integration-2026-03-26.md`
 - 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md` 与 `testing-guide-2026-03-24.md`
 - 如果你想追溯设计来源：最后读原始讨论资料和历史快照

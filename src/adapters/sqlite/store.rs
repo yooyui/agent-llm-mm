@@ -156,55 +156,54 @@ async fn query_evidence_event_ids_with_limit(
     query: EvidenceQuery,
     default_limit: Option<usize>,
 ) -> Result<Vec<String>, AppError> {
-        let mut sql =
-            String::from("SELECT event_id, recorded_at, owner, kind, summary FROM events");
-        let mut predicates = Vec::new();
+    let mut sql = String::from("SELECT event_id, recorded_at, owner, kind, summary FROM events");
+    let mut predicates = Vec::new();
 
-        if query.owner.is_some() {
-            predicates.push("owner = ?");
+    if query.owner.is_some() {
+        predicates.push("owner = ?");
+    }
+
+    if query.kind.is_some() {
+        predicates.push("kind = ?");
+    }
+
+    if !predicates.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&predicates.join(" AND "));
+    }
+
+    sql.push_str(" ORDER BY recorded_at DESC, rowid DESC");
+    if query.limit.is_some() || default_limit.is_some() {
+        sql.push_str(" LIMIT ?");
+    }
+
+    let mut rows = {
+        let mut query_builder = sqlx::query(&sql);
+
+        if let Some(owner) = query.owner {
+            query_builder = query_builder.bind(owner_as_str(owner));
         }
 
-        if query.kind.is_some() {
-            predicates.push("kind = ?");
+        if let Some(kind) = query.kind {
+            query_builder = query_builder.bind(event_kind_as_str(kind));
         }
 
-        if !predicates.is_empty() {
-            sql.push_str(" WHERE ");
-            sql.push_str(&predicates.join(" AND "));
+        if let Some(limit) = query.limit.or(default_limit) {
+            let limit = i64::try_from(limit).map_err(|_| {
+                AppError::InvalidParams(
+                    "evidence query limit exceeds the supported maximum".to_string(),
+                )
+            })?;
+            query_builder = query_builder.bind(limit);
         }
 
-        sql.push_str(" ORDER BY recorded_at DESC, rowid DESC");
-        if query.limit.is_some() || default_limit.is_some() {
-            sql.push_str(" LIMIT ?");
-        }
+        map_sqlite(query_builder.fetch_all(pool).await)?
+    };
 
-        let mut rows = {
-            let mut query_builder = sqlx::query(&sql);
-
-            if let Some(owner) = query.owner {
-                query_builder = query_builder.bind(owner_as_str(owner));
-            }
-
-            if let Some(kind) = query.kind {
-                query_builder = query_builder.bind(event_kind_as_str(kind));
-            }
-
-            if let Some(limit) = query.limit.or(default_limit) {
-                let limit = i64::try_from(limit).map_err(|_| {
-                    AppError::InvalidParams(
-                        "evidence query limit exceeds the supported maximum".to_string(),
-                    )
-                })?;
-                query_builder = query_builder.bind(limit);
-            }
-
-            map_sqlite(query_builder.fetch_all(pool).await)?
-        };
-
-        Ok(rows
-            .drain(..)
-            .map(|row| row.get::<String, _>("event_id"))
-            .collect())
+    Ok(rows
+        .drain(..)
+        .map(|row| row.get::<String, _>("event_id"))
+        .collect())
 }
 
 #[async_trait]

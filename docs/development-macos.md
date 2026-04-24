@@ -10,6 +10,7 @@
 - 当前仓库内提供 macOS 原生入口脚本：
   - `./scripts/agent-llm-mm.sh doctor`
   - `./scripts/agent-llm-mm.sh serve`
+  - `./scripts/run-self-revision-demo.sh`
 
 ## 2. 进入项目目录
 
@@ -50,7 +51,7 @@ database_url = "sqlite:///Users/<you>/Library/Application%20Support/agent-llm-mm
 如果你想绕过脚本，也可以：
 
 ```zsh
-cargo run --quiet -- doctor
+cargo run --quiet --bin agent_llm_mm -- doctor
 ```
 
 预期输出为 JSON，至少包含：
@@ -69,7 +70,7 @@ cargo run --quiet -- doctor
 或：
 
 ```zsh
-cargo run --quiet -- serve
+cargo run --quiet --bin agent_llm_mm -- serve
 ```
 
 服务启动后会占用当前终端并等待 `stdio` JSON-RPC 输入，这是正常现象。
@@ -105,7 +106,34 @@ cargo test
 ./scripts/agent-llm-mm.sh doctor
 ```
 
-## 8. 额外说明
+## 8. Self-Revision Demo Package
+
+如果要在本机快速验证 automatic self-revision MVP 的完整证据链：
+
+```zsh
+./scripts/run-self-revision-demo.sh
+```
+
+固定输出目录：
+
+```zsh
+./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
+```
+
+该脚本会构建本地二进制、启动 deterministic `openai-compatible` stub provider，并通过真实 MCP `stdio` 服务生成：
+
+- `doctor.json`
+- `snapshot-before.json`
+- `snapshot-after.json`
+- `decision-before.json`
+- `decision-after.json`
+- `timeline.json`
+- `sqlite-summary.json`
+- `report.md`
+
+这条 demo 不需要真实 API key，也不会访问外网。
+
+## 9. 额外说明
 
 - `agent-llm-mm.local.toml` 已被 `.gitignore` 忽略，不应提交。
 - 未显式设置 `database_url` 时，默认库会落到当前平台的用户数据目录，并按“本机用户共享”语义复用。

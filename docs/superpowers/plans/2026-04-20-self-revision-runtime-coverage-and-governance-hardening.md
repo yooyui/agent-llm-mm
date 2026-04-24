@@ -17,7 +17,7 @@
 - Modify: `src/interfaces/mcp/server.rs`
 - Test: `tests/mcp_stdio.rs`
 
-- [ ] **Step 1: 写失败测试，固定 `decide_with_snapshot` 的 conflict 自动触发边界**
+- [x] **Step 1: 写失败测试，固定 `decide_with_snapshot` 的 conflict 自动触发边界**
 
 ```rust
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -71,12 +71,12 @@ async fn decide_with_snapshot_can_trigger_conflict_auto_reflection_without_break
 }
 ```
 
-- [ ] **Step 2: 运行红测，确认当前 DTO / runtime 还没接 `decide_with_snapshot` 的 auto-reflection**
+- [x] **Step 2: 运行红测，确认当前 DTO / runtime 还没接 `decide_with_snapshot` 的 auto-reflection**
 
 Run: `cargo test --test mcp_stdio decide_with_snapshot_can_trigger_conflict_auto_reflection_without_breaking_decision_flow -v`
 Expected: FAIL with unknown `auto_reflect_namespace` / `trigger_hints` field or missing runtime behavior
 
-- [ ] **Step 3: 给 `DecideWithSnapshotParams` 增加显式 runtime coverage 字段**
+- [x] **Step 3: 给 `DecideWithSnapshotParams` 增加显式 runtime coverage 字段**
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -108,7 +108,7 @@ impl AutoReflectInput {
 }
 ```
 
-- [ ] **Step 4: 在 stdio runtime 的 `decide_with_snapshot` 路径里做 best-effort conflict 自动触发**
+- [x] **Step 4: 在 stdio runtime 的 `decide_with_snapshot` 路径里做 best-effort conflict 自动触发**
 
 ```rust
 async fn decide_with_snapshot(
@@ -136,12 +136,12 @@ async fn decide_with_snapshot(
 }
 ```
 
-- [ ] **Step 5: 运行绿测，确认 `decide_with_snapshot` 的 runtime coverage 不破坏原结果形状**
+- [x] **Step 5: 运行绿测，确认 `decide_with_snapshot` 的 runtime coverage 不破坏原结果形状**
 
 Run: `cargo test --test mcp_stdio decide_with_snapshot_can_trigger_conflict_auto_reflection_without_breaking_decision_flow -v`
 Expected: PASS
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add src/interfaces/mcp/dto.rs src/interfaces/mcp/server.rs tests/mcp_stdio.rs
@@ -155,7 +155,7 @@ git commit -m "feat: wire conflict auto-reflection into decide_with_snapshot"
 - Modify: `src/interfaces/mcp/server.rs`
 - Test: `tests/mcp_stdio.rs`
 
-- [ ] **Step 1: 写失败测试，固定 `build_self_snapshot` 的 periodic 自动触发边界**
+- [x] **Step 1: 写失败测试，固定 `build_self_snapshot` 的 periodic 自动触发边界**
 
 ```rust
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -215,12 +215,12 @@ async fn build_self_snapshot_can_trigger_periodic_auto_reflection_once_for_expli
 }
 ```
 
-- [ ] **Step 2: 运行红测，确认当前 `build_self_snapshot` 还没有 periodic runtime 接线**
+- [x] **Step 2: 运行红测，确认当前 `build_self_snapshot` 还没有 periodic runtime 接线**
 
 Run: `cargo test --test mcp_stdio build_self_snapshot_can_trigger_periodic_auto_reflection_once_for_explicit_namespace -v`
 Expected: FAIL with unknown `auto_reflect_namespace` field or missing auto-reflection behavior
 
-- [ ] **Step 3: 给 `BuildSelfSnapshotParams` 增加显式 periodic namespace 字段**
+- [x] **Step 3: 给 `BuildSelfSnapshotParams` 增加显式 periodic namespace 字段**
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -248,7 +248,7 @@ impl AutoReflectInput {
 }
 ```
 
-- [ ] **Step 4: 在 stdio runtime 的 `build_self_snapshot` 路径里做 best-effort periodic 自动触发**
+- [x] **Step 4: 在 stdio runtime 的 `build_self_snapshot` 路径里做 best-effort periodic 自动触发**
 
 ```rust
 async fn build_self_snapshot(
@@ -276,12 +276,12 @@ async fn build_self_snapshot(
 }
 ```
 
-- [ ] **Step 5: 运行绿测，确认 periodic 路径只在显式 namespace 下触发一次**
+- [x] **Step 5: 运行绿测，确认 periodic 路径只在显式 namespace 下触发一次**
 
 Run: `cargo test --test mcp_stdio build_self_snapshot_can_trigger_periodic_auto_reflection_once_for_explicit_namespace -v`
 Expected: PASS
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add src/interfaces/mcp/dto.rs src/interfaces/mcp/server.rs tests/mcp_stdio.rs
@@ -298,7 +298,7 @@ git commit -m "feat: wire periodic auto-reflection into build_self_snapshot"
 - Modify: `tests/failure_modes.rs`
 - Modify: `tests/bootstrap.rs`
 
-- [ ] **Step 1: 写失败测试，固定 auto-reflection 的诊断字段和静态能力报告**
+- [x] **Step 1: 写失败测试，固定 auto-reflection 的诊断字段和静态能力报告**
 
 ```rust
 #[tokio::test]
@@ -339,12 +339,12 @@ async fn doctor_reports_self_revision_runtime_coverage() {
 }
 ```
 
-- [ ] **Step 2: 运行红测，确认当前诊断结果和 `doctor` 报告还不够细**
+- [x] **Step 2: 运行红测，确认当前诊断结果和 `doctor` 报告还不够细**
 
 Run: `cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_for_suppressed_trigger -v && cargo test --test bootstrap doctor_reports_self_revision_runtime_coverage -v`
 Expected: FAIL with missing fields like `trigger_key` / `suppression_reason` / `auto_reflection_runtime_hooks`
 
-- [ ] **Step 3: 扩展 `AutoReflectResult`，把 suppression/rejection/handled 诊断结构化**
+- [x] **Step 3: 扩展 `AutoReflectResult`，把 suppression/rejection/handled 诊断结构化**
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -361,7 +361,7 @@ pub struct AutoReflectResult {
 }
 ```
 
-- [ ] **Step 4: 在 server 的 best-effort runtime 路径里写出结构化诊断日志**
+- [x] **Step 4: 在 server 的 best-effort runtime 路径里写出结构化诊断日志**
 
 ```rust
 match auto_reflect_if_needed::execute(
@@ -386,7 +386,7 @@ match auto_reflect_if_needed::execute(
 }
 ```
 
-- [ ] **Step 5: 扩展 `DoctorReport`，把 runtime coverage 说清楚**
+- [x] **Step 5: 扩展 `DoctorReport`，把 runtime coverage 说清楚**
 
 ```rust
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -402,12 +402,12 @@ pub struct DoctorReport {
 }
 ```
 
-- [ ] **Step 6: 运行绿测，确认诊断字段和静态能力报告稳定**
+- [x] **Step 6: 运行绿测，确认诊断字段和静态能力报告稳定**
 
 Run: `cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_for_suppressed_trigger -v && cargo test --test bootstrap doctor_reports_self_revision_runtime_coverage -v`
 Expected: PASS
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add src/application/auto_reflect_if_needed.rs src/interfaces/mcp/server.rs src/support/doctor.rs tests/application_use_cases.rs tests/failure_modes.rs tests/bootstrap.rs
@@ -424,7 +424,7 @@ git commit -m "feat: add self-revision runtime diagnostics"
 - Modify: `tests/application_use_cases.rs`
 - Modify: `tests/failure_modes.rs`
 
-- [ ] **Step 1: 写失败测试，固定 proposal 里的 evidence / policy 元数据和服务端校验**
+- [x] **Step 1: 写失败测试，固定 proposal 里的 evidence / policy 元数据和服务端校验**
 
 ```rust
 #[tokio::test]
@@ -471,12 +471,12 @@ async fn auto_reflection_rejects_model_proposed_evidence_outside_trigger_window(
 }
 ```
 
-- [ ] **Step 2: 运行红测，确认当前 proposal 契约还不表达 evidence / policy 元数据**
+- [x] **Step 2: 运行红测，确认当前 proposal 契约还不表达 evidence / policy 元数据**
 
 Run: `cargo test --test openai_compatible_model openai_compatible_model_parses_self_revision_evidence_policy -v && cargo test --test failure_modes auto_reflection_rejects_model_proposed_evidence_outside_trigger_window -v`
 Expected: FAIL with missing `proposed_evidence_event_ids` / `confidence` / validation behavior
 
-- [ ] **Step 3: 扩展 `SelfRevisionProposal` 的第一阶段 evidence / policy 字段**
+- [x] **Step 3: 扩展 `SelfRevisionProposal` 的第一阶段 evidence / policy 字段**
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -494,7 +494,7 @@ pub struct SelfRevisionProposal {
 }
 ```
 
-- [ ] **Step 4: 在协调器里只接受“trigger window ∩ proposal evidence candidates”的交集**
+- [x] **Step 4: 在协调器里只接受“trigger window ∩ proposal evidence candidates”的交集**
 
 ```rust
 fn resolve_governed_evidence_window(
@@ -522,12 +522,12 @@ fn resolve_governed_evidence_window(
 }
 ```
 
-- [ ] **Step 5: 运行绿测，确认 deeper-update 的第一阶段契约稳定**
+- [x] **Step 5: 运行绿测，确认 deeper-update 的第一阶段契约稳定**
 
 Run: `cargo test --test openai_compatible_model openai_compatible_model_parses_self_revision_evidence_policy -v && cargo test --test failure_modes auto_reflection_rejects_model_proposed_evidence_outside_trigger_window -v`
 Expected: PASS
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add src/domain/self_revision.rs src/adapters/model/openai_compatible.rs src/application/auto_reflect_if_needed.rs tests/openai_compatible_model.rs tests/application_use_cases.rs tests/failure_modes.rs
@@ -544,7 +544,7 @@ git commit -m "feat: tighten self-revision evidence policy contract"
 - Modify: `docs/local-mcp-integration-2026-03-26.md`
 - Modify: `docs/document-map.md`
 
-- [ ] **Step 1: 写失败文档检查清单，明确要同步的新边界**
+- [x] **Step 1: 写失败文档检查清单，明确要同步的新边界**
 
 ```text
 - 当前 MCP-wired automatic paths: ingest->failure, decide->conflict, build_self_snapshot->periodic
@@ -554,7 +554,7 @@ git commit -m "feat: tighten self-revision evidence policy contract"
 - 仍然没有后台 daemon 或完整自治系统
 ```
 
-- [ ] **Step 2: 更新 README / project-status / roadmap 的能力边界与后续路线**
+- [x] **Step 2: 更新 README / project-status / roadmap 的能力边界与后续路线**
 
 ```md
 当前版本已经把 automatic self-revision 从 ingest-only failure 路径，
@@ -563,7 +563,7 @@ git commit -m "feat: tighten self-revision evidence policy contract"
 但它仍然是本地 `stdio` memory demo，不是完整自治代理系统。
 ```
 
-- [ ] **Step 3: 更新 testing-guide 与 local integration 文档的定向验证命令**
+- [x] **Step 3: 更新 testing-guide 与 local integration 文档的定向验证命令**
 
 ```zsh
 cargo test --test mcp_stdio decide_with_snapshot_can_trigger_conflict_auto_reflection_without_breaking_decision_flow -v
@@ -572,7 +572,7 @@ cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_f
 cargo test --test openai_compatible_model openai_compatible_model_parses_self_revision_evidence_policy -v
 ```
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add README.md docs/project-status.md docs/roadmap.md docs/testing-guide-2026-03-24.md docs/local-mcp-integration-2026-03-26.md docs/document-map.md
@@ -593,17 +593,17 @@ git commit -m "docs: update self-revision runtime coverage and diagnostics"
 - Review: `README.md`
 - Review: `docs/project-status.md`
 
-- [ ] **Step 1: 运行全量测试**
+- [x] **Step 1: 运行全量测试**
 
 Run: `cargo test`
 Expected: PASS with all existing and new tests green
 
-- [ ] **Step 2: 运行预检，确认 runtime 仍可启动**
+- [x] **Step 2: 运行预检，确认 runtime 仍可启动**
 
 Run: `./scripts/agent-llm-mm.sh doctor`
 Expected: JSON output with `status = ok`
 
-- [ ] **Step 3: 复核需求覆盖**
+- [x] **Step 3: 复核需求覆盖**
 
 ```text
 - conflict MCP runtime coverage
@@ -615,7 +615,7 @@ Expected: JSON output with `status = ok`
 - docs updated to MVP/demo positioning
 ```
 
-- [ ] **Step 4: 仅保留真实剩余风险**
+- [x] **Step 4: 仅保留真实剩余风险**
 
 ```text
 - evidence weighting / relation / ranking 仍是第一阶段契约，不是完整 policy engine

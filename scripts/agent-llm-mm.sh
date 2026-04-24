@@ -26,4 +26,4 @@ if [[ -n "$CONFIG_PATH" ]]; then
   export AGENT_LLM_MM_CONFIG="${config_dir}/${config_file}"
 fi
 
-exec cargo run --quiet -- "$MODE"
+exec cargo run --quiet --bin agent_llm_mm -- "$MODE"

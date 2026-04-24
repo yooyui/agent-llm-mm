@@ -16,9 +16,10 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：适合以“公开技术 demo / MVP”身份发布到 GitHub，不应包装成完整产品
-- 最新 fresh 验证：`2026-04-20`
-  - `cargo test -q` 全量通过，共 127 个测试
+- 最新 fresh 验证：`2026-04-24`
+  - `cargo test` 全量通过，共 131 个测试
   - `doctor` 预检返回 `status = ok`
+  - self-revision demo package 可一键生成本地证据链
 
 ## 先看这些
 
@@ -69,6 +70,11 @@
   - 这些 automatic path 仍是 best-effort runtime hook，不代表“所有请求都会自动反思”
   - 通过治理后的 proposal 会被转译回现有 `run_reflection` 持久化路径；没有新增独立 MCP tool
   - 直接调用 `run_reflection` 不会递归触发 auto-reflection
+- self-revision demo package
+  - 提供零外网依赖的一键 demo：`./scripts/run-self-revision-demo.sh`
+  - demo runner 会启动本地 deterministic `openai-compatible` stub provider，并通过真实 MCP `stdio` 服务跑 canonical scenario
+  - 输出 `doctor.json`、snapshot before / after、decision before / after、timeline、SQLite summary 和 Markdown report
+  - 该 demo 只证明当前 MVP 边界内的可重复链路，不新增 MCP tool、daemon 或产品化运行形态
 - `namespace` 最小闭环
   - `self`
   - `world`
@@ -135,6 +141,14 @@
 - macOS：见 [docs/development-macos.md](docs/development-macos.md)
 - Windows：见 [docs/development-windows.md](docs/development-windows.md)
 
+如果想快速验证当前 automatic self-revision MVP 的真实效果，可以直接运行：
+
+```zsh
+./scripts/run-self-revision-demo.sh
+```
+
+该命令会启动本地 demo stub provider、跑完整 canonical scenario，并把 artifact 输出到 `target/reports/self-revision-demo/...`。
+
 ## 文档导航
 
 ### 面向 GitHub 协作
@@ -152,8 +166,11 @@
 
 - [本机 MCP 接入说明](docs/local-mcp-integration-2026-03-26.md)
 - [测试指南](docs/testing-guide-2026-03-24.md)
+- [Self-Revision Demo Guide](docs/self-revision-demo-guide-2026-04-24.md)
+- [Self-Revision Demo Report](docs/reports/self-revision-demo-2026-04-24.md)
 - [Codex MCP 配置样例](examples/codex-mcp-config.toml)
 - [Provider 配置样例](examples/agent-llm-mm.example.toml)
+- [Self-revision demo 配置样例](examples/agent-llm-mm.demo.example.toml)
 
 ### 原始资料与历史快照
 

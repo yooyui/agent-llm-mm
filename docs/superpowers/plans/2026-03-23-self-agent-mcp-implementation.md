@@ -93,7 +93,7 @@
 - Create: `src/support/tracing.rs`
 - Test: `tests/bootstrap.rs`
 
-- [ ] **Step 1: Write the failing bootstrap test**
+- [x] **Step 1: Write the failing bootstrap test**
 
 ```rust
 use agent_llm_mm::support::config::{AppConfig, TransportKind};
@@ -105,12 +105,12 @@ fn default_config_uses_stdio_transport() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --test bootstrap`
 Expected: FAIL with crate/module resolution errors because Rust crate and support modules do not exist yet.
 
-- [ ] **Step 3: Initialize the crate and minimal runtime shell**
+- [x] **Step 3: Initialize the crate and minimal runtime shell**
 
 ```toml
 [package]
@@ -159,7 +159,7 @@ impl Default for AppConfig {
 }
 ```
 
-- [ ] **Step 4: Run bootstrap checks**
+- [x] **Step 4: Run bootstrap checks**
 
 Run: `cargo test --test bootstrap`
 Expected: PASS
@@ -167,7 +167,7 @@ Expected: PASS
 Run: `cargo check`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Cargo.toml .gitignore src/lib.rs src/main.rs src/error.rs src/support/mod.rs src/support/config.rs src/support/tracing.rs tests/bootstrap.rs
@@ -188,7 +188,7 @@ git commit -m "chore: bootstrap rust mcp crate"
 - Create: `src/domain/reflection.rs`
 - Test: `tests/domain_invariants.rs`
 
-- [ ] **Step 1: Write the failing domain invariant tests**
+- [x] **Step 1: Write the failing domain invariant tests**
 
 ```rust
 use agent_llm_mm::domain::{
@@ -209,12 +209,12 @@ fn identity_core_updates_are_not_allowed_from_ingest_mode() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --test domain_invariants`
 Expected: FAIL with missing domain modules and missing validation functions.
 
-- [ ] **Step 3: Implement immutable domain objects and invariant helpers**
+- [x] **Step 3: Implement immutable domain objects and invariant helpers**
 
 ```rust
 // src/domain/types.rs
@@ -255,7 +255,7 @@ pub fn allow_direct_ingest_update(mode: Mode) -> bool {
 }
 ```
 
-- [ ] **Step 4: Run domain invariant tests**
+- [x] **Step 4: Run domain invariant tests**
 
 Run: `cargo test --test domain_invariants`
 Expected: PASS
@@ -263,7 +263,7 @@ Expected: PASS
 Run: `cargo test domain:: --lib`
 Expected: PASS for current domain unit tests
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/domain/mod.rs src/domain/types.rs src/domain/event.rs src/domain/claim.rs src/domain/evidence_link.rs src/domain/identity_core.rs src/domain/commitment.rs src/domain/episode.rs src/domain/reflection.rs tests/domain_invariants.rs
@@ -280,7 +280,7 @@ git commit -m "feat: add core domain models and invariants"
 - Create: `src/domain/rules/conflict.rs`
 - Test: `tests/domain_snapshot.rs`
 
-- [ ] **Step 1: Write the failing snapshot and gate tests**
+- [x] **Step 1: Write the failing snapshot and gate tests**
 
 ```rust
 use agent_llm_mm::domain::{
@@ -301,12 +301,12 @@ fn hard_commitment_blocks_conflicting_action() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --test domain_snapshot`
 Expected: FAIL with missing snapshot types and rule functions.
 
-- [ ] **Step 3: Implement pure snapshot and gate functions**
+- [x] **Step 3: Implement pure snapshot and gate functions**
 
 ```rust
 // src/domain/snapshot.rs
@@ -352,12 +352,12 @@ pub fn gate_decision(action: &str, commitments: &[String]) -> GateResult {
 }
 ```
 
-- [ ] **Step 4: Run snapshot and gate tests**
+- [x] **Step 4: Run snapshot and gate tests**
 
 Run: `cargo test --test domain_snapshot`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/domain/snapshot.rs src/domain/rules/mod.rs src/domain/rules/snapshot_builder.rs src/domain/rules/commitment_gate.rs src/domain/rules/conflict.rs tests/domain_snapshot.rs
@@ -384,7 +384,7 @@ git commit -m "feat: add snapshot assembly and commitment gate"
 - Create: `src/application/run_reflection.rs`
 - Test: `tests/application_use_cases.rs`
 
-- [ ] **Step 1: Write the failing application tests with in-memory fakes**
+- [x] **Step 1: Write the failing application tests with in-memory fakes**
 
 ```rust
 #[tokio::test]
@@ -404,12 +404,12 @@ async fn reflection_supersedes_old_claim_instead_of_deleting_it() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --test application_use_cases`
 Expected: FAIL with missing ports, use case modules, and async orchestration functions.
 
-- [ ] **Step 3: Implement trait-based ports and orchestration functions**
+- [x] **Step 3: Implement trait-based ports and orchestration functions**
 
 ```rust
 // src/ports/event_store.rs
@@ -435,12 +435,12 @@ where
 }
 ```
 
-- [ ] **Step 4: Run the application tests**
+- [x] **Step 4: Run the application tests**
 
 Run: `cargo test --test application_use_cases`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/ports/mod.rs src/ports/event_store.rs src/ports/claim_store.rs src/ports/identity_store.rs src/ports/commitment_store.rs src/ports/episode_store.rs src/ports/reflection_store.rs src/ports/model_port.rs src/ports/clock.rs src/ports/id_generator.rs src/application/mod.rs src/application/ingest_interaction.rs src/application/build_self_snapshot.rs src/application/decide_with_snapshot.rs src/application/run_reflection.rs tests/application_use_cases.rs
@@ -456,7 +456,7 @@ git commit -m "feat: add application use cases and ports"
 - Create: `src/adapters/sqlite/store.rs`
 - Test: `tests/sqlite_store.rs`
 
-- [ ] **Step 1: Write the failing SQLite adapter tests**
+- [x] **Step 1: Write the failing SQLite adapter tests**
 
 ```rust
 #[tokio::test]
@@ -476,12 +476,12 @@ async fn sqlite_round_trips_claim_with_evidence() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --test sqlite_store`
 Expected: FAIL with missing SQLite store and schema bootstrap code.
 
-- [ ] **Step 3: Implement schema bootstrap and store methods**
+- [x] **Step 3: Implement schema bootstrap and store methods**
 
 ```rust
 // src/adapters/sqlite/schema.rs
@@ -532,12 +532,12 @@ impl SqliteStore {
 }
 ```
 
-- [ ] **Step 4: Run the SQLite adapter tests**
+- [x] **Step 4: Run the SQLite adapter tests**
 
 Run: `cargo test --test sqlite_store`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/adapters/mod.rs src/adapters/sqlite/mod.rs src/adapters/sqlite/schema.rs src/adapters/sqlite/store.rs tests/sqlite_store.rs
@@ -553,7 +553,7 @@ git commit -m "feat: add sqlite storage adapter"
 - Modify: `src/application/decide_with_snapshot.rs`
 - Modify: `src/ports/model_port.rs`
 
-- [ ] **Step 1: Write the failing decision tests**
+- [x] **Step 1: Write the failing decision tests**
 
 ```rust
 #[tokio::test]
@@ -572,12 +572,12 @@ async fn mock_model_receives_snapshot_context_when_gate_passes() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --test decision_flow`
 Expected: FAIL with missing model adapter behavior and incomplete decision use case.
 
-- [ ] **Step 3: Implement model port and mock adapter**
+- [x] **Step 3: Implement model port and mock adapter**
 
 ```rust
 // src/ports/model_port.rs
@@ -606,12 +606,12 @@ impl ModelPort for MockModel {
 }
 ```
 
-- [ ] **Step 4: Run the decision flow tests**
+- [x] **Step 4: Run the decision flow tests**
 
 Run: `cargo test --test decision_flow`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/adapters/model/mod.rs src/adapters/model/mock.rs src/application/decide_with_snapshot.rs src/ports/model_port.rs tests/decision_flow.rs
@@ -628,7 +628,7 @@ git commit -m "feat: add mock model decision flow"
 - Modify: `src/main.rs`
 - Test: `tests/mcp_stdio.rs`
 
-- [ ] **Step 1: Write the failing MCP stdio integration test**
+- [x] **Step 1: Write the failing MCP stdio integration test**
 
 ```rust
 #[tokio::test]
@@ -643,12 +643,12 @@ async fn server_exposes_expected_tools_over_stdio() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --test mcp_stdio`
 Expected: FAIL with missing RMCP server implementation and no stdio bootstrap.
 
-- [ ] **Step 3: Implement RMCP server and tool DTO mapping**
+- [x] **Step 3: Implement RMCP server and tool DTO mapping**
 
 ```rust
 // src/interfaces/mcp/server.rs
@@ -687,12 +687,12 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-- [ ] **Step 4: Run MCP integration test**
+- [x] **Step 4: Run MCP integration test**
 
 Run: `cargo test --test mcp_stdio -- --nocapture`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/interfaces/mod.rs src/interfaces/mcp/mod.rs src/interfaces/mcp/dto.rs src/interfaces/mcp/server.rs src/main.rs tests/mcp_stdio.rs
@@ -708,7 +708,7 @@ git commit -m "feat: expose self-agent tools over mcp stdio"
 - Modify: `src/domain/rules/reflection_policy.rs`
 - Modify: `src/application/run_reflection.rs`
 
-- [ ] **Step 1: Write the failing failure-mode regression tests**
+- [x] **Step 1: Write the failing failure-mode regression tests**
 
 ```rust
 #[tokio::test]
@@ -733,12 +733,12 @@ async fn snapshot_budget_prevents_recent_event_hijack() {
 }
 ```
 
-- [ ] **Step 2: Run the regression tests to verify they fail**
+- [x] **Step 2: Run the regression tests to verify they fail**
 
 Run: `cargo test --test failure_modes`
 Expected: FAIL because reflection policy and snapshot budgeting are not strict enough yet.
 
-- [ ] **Step 3: Tighten reflection policy and finish end-to-end invariants**
+- [x] **Step 3: Tighten reflection policy and finish end-to-end invariants**
 
 ```rust
 // src/domain/rules/reflection_policy.rs
@@ -758,7 +758,7 @@ if matches!(decision, ReflectionDecision::MarkDisputed) {
 }
 ```
 
-- [ ] **Step 4: Run full verification**
+- [x] **Step 4: Run full verification**
 
 Run: `cargo fmt --check`
 Expected: PASS
@@ -769,7 +769,7 @@ Expected: PASS
 Run: `cargo test`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/failure_modes.rs tests/application_use_cases.rs tests/mcp_stdio.rs src/domain/rules/reflection_policy.rs src/application/run_reflection.rs

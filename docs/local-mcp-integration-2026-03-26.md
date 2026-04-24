@@ -1,4 +1,4 @@
-# 本机 MCP 接入说明（2026-03-26，按 2026-04-19 fresh 验证更新）
+# 本机 MCP 接入说明（2026-03-26，按 2026-04-24 fresh 验证更新）
 
 ## 1. 目标
 
@@ -14,7 +14,7 @@
 
 macOS 下优先入口是 `scripts/agent-llm-mm.sh`。它提供 `doctor` / `serve` 两种封装，并贴合当前 zsh / bash 环境。
 
-如果你想完全绕过脚本，也可直接运行 `cargo run --quiet -- <serve|doctor>`。
+如果你想完全绕过脚本，也可直接运行 `cargo run --quiet --bin agent_llm_mm -- <serve|doctor>`。
 
 原因：
 
@@ -72,10 +72,11 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 - 存在后台 daemon / 定时自治进程
 - 所有 MCP 请求都会自动反思
 
-截至 `2026-04-20`，fresh 验证还包括：
+截至 `2026-04-24`，fresh 验证还包括：
 
-- `cargo test` 全量通过，127 个测试通过
+- `cargo test` 全量通过，131 个测试通过
 - 其中 `application_use_cases` 20、`failure_modes` 27、`mcp_stdio` 26、`sqlite_store` 17
+- self-revision demo package wrapper 可生成本地 artifact report
 
 ## 4. 启动服务
 
@@ -118,7 +119,7 @@ args = ["serve"]
 
 ```toml
 command = "cargo"
-args = ["run", "--quiet", "--", "serve"]
+args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 ```
 
 ## 6. 当前能力状态

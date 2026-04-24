@@ -87,70 +87,46 @@ pub struct AutoReflectResult {
 }
 
 impl AutoReflectResult {
-    fn new(
-        triggered: bool,
-        trigger_type: Option<TriggerType>,
-        reflection_id: Option<String>,
-        ledger_status: Option<TriggerLedgerStatus>,
-        reason: Option<String>,
-        trigger_key: Option<String>,
-        evidence_event_ids: Vec<String>,
-        cooldown_until: Option<chrono::DateTime<Utc>>,
-        suppression_reason: Option<String>,
-    ) -> Self {
+    fn skipped(input: &AutoReflectInput, reason: impl Into<String>) -> Self {
         Self {
-            triggered,
-            trigger_type,
-            reflection_id,
-            ledger_status,
-            reason,
-            trigger_key,
-            evidence_event_ids,
-            cooldown_until,
-            suppression_reason,
+            triggered: false,
+            trigger_type: Some(input.trigger_type),
+            reflection_id: None,
+            ledger_status: None,
+            reason: Some(reason.into()),
+            trigger_key: Some(input.trigger_key()),
+            evidence_event_ids: Vec::new(),
+            cooldown_until: None,
+            suppression_reason: None,
         }
     }
 
-    fn skipped(input: &AutoReflectInput, reason: impl Into<String>) -> Self {
-        Self::new(
-            false,
-            Some(input.trigger_type),
-            None,
-            None,
-            Some(reason.into()),
-            Some(input.trigger_key()),
-            Vec::new(),
-            None,
-            None,
-        )
-    }
-
     fn not_triggered(candidate: &TriggerCandidate) -> Self {
-        Self::new(
-            false,
-            Some(candidate.trigger_type),
-            None,
-            None,
-            None,
-            Some(candidate.trigger_key.clone()),
-            candidate.evidence_event_ids.clone(),
-            None,
-            None,
-        )
+        Self {
+            triggered: false,
+            trigger_type: Some(candidate.trigger_type),
+            reflection_id: None,
+            ledger_status: None,
+            reason: None,
+            trigger_key: Some(candidate.trigger_key.clone()),
+            evidence_event_ids: candidate.evidence_event_ids.clone(),
+            cooldown_until: None,
+            suppression_reason: None,
+        }
     }
 
     fn rejected(candidate: &TriggerCandidate, reason: impl Into<String>) -> Self {
-        Self::new(
-            false,
-            Some(candidate.trigger_type),
-            None,
-            Some(TriggerLedgerStatus::Rejected),
-            Some(reason.into()),
-            Some(candidate.trigger_key.clone()),
-            candidate.evidence_event_ids.clone(),
-            None,
-            None,
-        )
+        Self {
+            triggered: false,
+            trigger_type: Some(candidate.trigger_type),
+            reflection_id: None,
+            ledger_status: Some(TriggerLedgerStatus::Rejected),
+            reason: Some(reason.into()),
+            trigger_key: Some(candidate.trigger_key.clone()),
+            evidence_event_ids: candidate.evidence_event_ids.clone(),
+            cooldown_until: None,
+            suppression_reason: None,
+        }
     }
 
     fn suppressed(
@@ -158,17 +134,17 @@ impl AutoReflectResult {
         entry: &StoredTriggerLedgerEntry,
         suppression_reason: impl Into<String>,
     ) -> Self {
-        Self::new(
-            false,
-            Some(candidate.trigger_type),
-            entry.reflection_id.clone(),
-            Some(entry.status),
-            None,
-            Some(entry.trigger_key.clone()),
-            candidate.evidence_event_ids.clone(),
-            entry.cooldown_until,
-            Some(suppression_reason.into()),
-        )
+        Self {
+            triggered: false,
+            trigger_type: Some(candidate.trigger_type),
+            reflection_id: entry.reflection_id.clone(),
+            ledger_status: Some(entry.status),
+            reason: None,
+            trigger_key: Some(entry.trigger_key.clone()),
+            evidence_event_ids: candidate.evidence_event_ids.clone(),
+            cooldown_until: entry.cooldown_until,
+            suppression_reason: Some(suppression_reason.into()),
+        }
     }
 
     fn handled(
@@ -177,17 +153,17 @@ impl AutoReflectResult {
         reflection_id: String,
         cooldown_until: Option<chrono::DateTime<Utc>>,
     ) -> Self {
-        Self::new(
-            true,
-            Some(candidate.trigger_type),
-            Some(reflection_id),
-            Some(TriggerLedgerStatus::Handled),
-            None,
-            Some(candidate.trigger_key.clone()),
+        Self {
+            triggered: true,
+            trigger_type: Some(candidate.trigger_type),
+            reflection_id: Some(reflection_id),
+            ledger_status: Some(TriggerLedgerStatus::Handled),
+            reason: None,
+            trigger_key: Some(candidate.trigger_key.clone()),
             evidence_event_ids,
             cooldown_until,
-            None,
-        )
+            suppression_reason: None,
+        }
     }
 }
 
@@ -276,15 +252,19 @@ where
         return Ok(AutoReflectResult::rejected(&candidate, proposal.rationale));
     }
 
-    let governed_evidence_event_ids =
-        match resolve_governed_evidence_window(deps, &candidate.evidence_event_ids, &proposal).await
-        {
-            Ok(governed_evidence_event_ids) => governed_evidence_event_ids,
-            Err(error) => {
-                record_rejected_trigger(deps, &candidate, None).await?;
-                return Err(error);
-            }
-        };
+    let governed_evidence_event_ids = match resolve_governed_evidence_window(
+        deps,
+        &candidate.evidence_event_ids,
+        &proposal,
+    )
+    .await
+    {
+        Ok(governed_evidence_event_ids) => governed_evidence_event_ids,
+        Err(error) => {
+            record_rejected_trigger(deps, &candidate, None).await?;
+            return Err(error);
+        }
+    };
 
     let validated =
         match validate_self_revision(deps, &candidate, &proposal, &governed_evidence_event_ids)
@@ -339,8 +319,7 @@ where
             .await?
         }
     };
-    let episode_watermark =
-        Some(dedupe_strings(deps.list_episode_references().await?).len() as u64);
+    let episode_watermark = dedupe_strings(deps.list_episode_references().await?).len() as u64;
     let should_consider = match input.trigger_type {
         TriggerType::Failure => {
             has_any_hint(&input.trigger_hints, &["failure", "rollback"])
@@ -349,7 +328,7 @@ where
         TriggerType::Conflict => {
             has_any_hint(&input.trigger_hints, &["conflict", "rollback", "identity"])
         }
-        TriggerType::Periodic => episode_watermark.unwrap_or(0) > 0,
+        TriggerType::Periodic => episode_watermark > 0,
     };
 
     Ok(TriggerCandidate {
@@ -359,7 +338,7 @@ where
         trigger_key: canonical_trigger_key(&input.namespace, input.trigger_type),
         evidence_event_ids,
         should_consider,
-        episode_watermark,
+        episode_watermark: Some(episode_watermark),
     })
 }
 
@@ -387,7 +366,9 @@ where
         }));
     }
 
-    let latest_handled = deps.latest_handled_trigger_entry(&candidate.trigger_key).await?;
+    let latest_handled = deps
+        .latest_handled_trigger_entry(&candidate.trigger_key)
+        .await?;
 
     if !candidate.evidence_event_ids.is_empty()
         && latest_handled
@@ -903,28 +884,27 @@ async fn resolve_governed_evidence_window<D>(
 where
     D: EventStore + Sync,
 {
-    let query_constrained_candidate_ids = if let Some(proposed_evidence_query) =
-        proposal.proposed_evidence_query.clone()
-    {
-        let query_limit = proposed_evidence_query.limit;
-        let proposed_query_event_ids = dedupe_strings(
-            deps.query_evidence_event_ids_unbounded(EvidenceQuery {
-                owner: proposed_evidence_query.owner,
-                kind: proposed_evidence_query.kind,
-                limit: None,
-            })
-            .await?,
-        );
-        let filtered_candidate_ids = candidate_evidence_event_ids
-            .iter()
-            .filter(|event_id| proposed_query_event_ids.contains(event_id))
-            .cloned()
-            .collect::<Vec<_>>();
+    let query_constrained_candidate_ids =
+        if let Some(proposed_evidence_query) = proposal.proposed_evidence_query.clone() {
+            let query_limit = proposed_evidence_query.limit;
+            let proposed_query_event_ids = dedupe_strings(
+                deps.query_evidence_event_ids_unbounded(EvidenceQuery {
+                    owner: proposed_evidence_query.owner,
+                    kind: proposed_evidence_query.kind,
+                    limit: None,
+                })
+                .await?,
+            );
+            let filtered_candidate_ids = candidate_evidence_event_ids
+                .iter()
+                .filter(|event_id| proposed_query_event_ids.contains(event_id))
+                .cloned()
+                .collect::<Vec<_>>();
 
-        Some((filtered_candidate_ids, query_limit))
-    } else {
-        None
-    };
+            Some((filtered_candidate_ids, query_limit))
+        } else {
+            None
+        };
 
     if proposal.proposed_evidence_event_ids.is_empty() {
         let Some((filtered_candidate_ids, query_limit)) = query_constrained_candidate_ids else {
@@ -953,19 +933,17 @@ where
         ));
     }
 
-    if let Some((eligible_query_event_ids, _)) = query_constrained_candidate_ids {
-        if proposed_evidence_event_ids
+    if let Some((eligible_query_event_ids, _)) = query_constrained_candidate_ids
+        && proposed_evidence_event_ids
             .iter()
             .any(|event_id| !eligible_query_event_ids.contains(event_id))
-        {
-            return Err(AppError::InvalidParams(
-                "model proposed evidence ids do not satisfy the proposed evidence query within the current trigger window".to_string(),
-            ));
-        }
+    {
+        return Err(AppError::InvalidParams(
+            "model proposed evidence ids do not satisfy the proposed evidence query within the current trigger window".to_string(),
+        ));
     }
 
-    let governed_evidence_event_ids =
-        dedupe_strings(proposed_evidence_event_ids.iter().cloned().collect());
+    let governed_evidence_event_ids = dedupe_strings(proposed_evidence_event_ids.to_vec());
 
     Ok(governed_evidence_event_ids)
 }

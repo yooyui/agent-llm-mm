@@ -286,7 +286,7 @@ timeout_ms = 30000
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ingest_interaction_can_trigger_conflict_auto_reflection_when_explicit_conflict_hints_present()
-{
+ {
     let stub = test_support::StubServer::spawn(
         200,
         json!({

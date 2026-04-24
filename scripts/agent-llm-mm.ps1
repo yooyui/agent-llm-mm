@@ -16,7 +16,7 @@ try {
         $env:AGENT_LLM_MM_CONFIG = $resolvedConfigPath
     }
 
-    & cargo run --quiet -- $Mode
+    & cargo run --quiet --bin agent_llm_mm -- $Mode
     exit $LASTEXITCODE
 }
 finally {

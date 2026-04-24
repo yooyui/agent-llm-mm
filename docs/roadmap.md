@@ -6,6 +6,8 @@
 
 另一项当前已落地但必须谨慎表述的能力是：仓库已经具备 trigger-ledger-backed automatic self-revision MVP。不过，这个能力当前仍是本地 `stdio` demo 里的受限自动修订链路，不是完整自治系统。
 
+2026-04-24 已补齐 self-revision demo package：它能零外网依赖地跑出 doctor、snapshot before / after、decision before / after、timeline、SQLite summary 和 report，用来证明当前 MVP 的可重复证据链。它不改变上述保守边界。
+
 ## 近期
 
 ### 1. 收口 release gate 文档
@@ -14,10 +16,12 @@
 
 - 把现有测试说明进一步整理成更接近发布门槛的操作手册
 - 明确最小验证集和建议验证集
+- 把 self-revision demo package 固定为自动修订能力的发布前可读证据
 
 原因：
 
 - 当前已有测试基础
+- 当前已有可重复 demo artifact，可以作为协作者理解 automatic self-revision MVP 的最短路径
 - 但公开协作时，还需要更稳定的“提交前 / 发布前”规则
 
 ### 2. 扩大 automatic self-revision 的 MCP runtime coverage
@@ -30,6 +34,7 @@
   - `decide_with_snapshot -> conflict`
   - `build_self_snapshot -> periodic`
 - 在不新增旁路持久化接口的前提下，优先验证这些 hook 的 opt-in 条件、best-effort 失败语义和排查路径，而不是继续扩大到“所有入口自动反思”
+- demo package 当前用于证明其中的显式 conflict path；它不是扩大 hook 覆盖面的实现本身
 
 重点边界：
 

@@ -208,11 +208,14 @@ impl AutoReflectInput {
 // Ingest only upgrades to the conflict hook for explicit conflict/identity hints.
 // Rollback-only hints stay on the existing failure path.
 fn ingest_trigger_type_from_hints(trigger_hints: &[String]) -> TriggerType {
-    trigger_hints
+    if trigger_hints
         .iter()
         .any(|hint| matches!(hint.to_ascii_lowercase().as_str(), "conflict" | "identity"))
-        .then_some(TriggerType::Conflict)
-        .unwrap_or(TriggerType::Failure)
+    {
+        TriggerType::Conflict
+    } else {
+        TriggerType::Failure
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

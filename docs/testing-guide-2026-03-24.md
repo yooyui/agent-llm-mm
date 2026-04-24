@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-04-19 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-04-24 fresh 验证更新）
 
 ## 1. 目标
 
@@ -24,20 +24,22 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-04-20`，`cargo test` 全量通过，摘要如下：
+截至 `2026-04-24`，`cargo test` 全量通过，摘要如下：
 
 - `application_use_cases`: 20 passed
-- `bootstrap`: 13 passed
+- `bootstrap`: 14 passed
 - `decision_flow`: 2 passed
 - `domain_invariants`: 4 passed
 - `domain_snapshot`: 6 passed
+- `demo_openai_compatible_stub`: 1 passed
 - `failure_modes`: 27 passed
 - `mcp_stdio`: 26 passed
 - `openai_compatible_model`: 7 passed
 - `provider_config`: 5 passed
+- `self_revision_demo_runner`: 2 passed
 - `sqlite_store`: 17 passed
 
-合计：127 个测试通过。
+合计：131 个测试通过。
 
 ---
 
@@ -81,8 +83,9 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 2. `cargo clippy --all-targets --all-features -- -D warnings`
 3. `cargo test`
 4. `./scripts/agent-llm-mm.sh doctor`
-5. `cargo run --quiet -- doctor`
+5. `cargo run --quiet --bin agent_llm_mm -- doctor`
 6. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
+7. 如果改动涉及 demo package，再补跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest`
 
 如果只想快速回归某个变更，再执行对应的定向测试。
 
@@ -139,7 +142,7 @@ cargo test
 ```
 
 ```zsh
-cargo run --quiet -- doctor
+cargo run --quiet --bin agent_llm_mm -- doctor
 ```
 
 预期输出为 JSON，至少包含：
@@ -375,6 +378,42 @@ cargo test --test provider_config -v
 - 不要把这组测试解读成“所有 MCP 入口都会自动反思”
 - 当前 auto-reflection 仍通过已有 `run_reflection` 写入 identity / commitments，不存在新的 durable write 通道
 
+### 6.9 self-revision demo package
+
+如果改动涉及下面任一部分，需要补跑 demo package 定向验证：
+
+- `src/bin/demo_openai_compatible_stub.rs`
+- `src/bin/run_self_revision_demo.rs`
+- `scripts/run-self-revision-demo.sh`
+- `examples/agent-llm-mm.demo.example.toml`
+- automatic self-revision runtime hook / provider / MCP `stdio` 相关代码
+
+推荐命令：
+
+```zsh
+cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner --test openai_compatible_model --test mcp_stdio -v
+./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
+```
+
+通过后，`target/reports/self-revision-demo/latest` 下至少应有：
+
+- `doctor.json`
+- `snapshot-before.json`
+- `snapshot-after.json`
+- `decision-before.json`
+- `decision-after.json`
+- `timeline.json`
+- `sqlite-summary.json`
+- `report.md`
+
+重点确认：
+
+- negative conflict 场景不会增加 handled conflict ledger
+- positive conflict 场景会增加 handled conflict ledger
+- after snapshot 会出现 revised commitment
+- before / after decision action 会发生变化
+- `doctor.json` 仍声明 durable write path 是 `run_reflection`
+
 ---
 
 ## 7. 手工 Smoke Test
@@ -502,6 +541,22 @@ cargo test --test mcp_stdio build_self_snapshot_can_trigger_periodic_auto_reflec
 - 已成功的 `decide_with_snapshot` / `build_self_snapshot` 也不应因为 best-effort auto-reflection 失败而变成 MCP error
 - direct `run_reflection` 只执行显式请求，不会再触发一轮自动修订
 - 这组验证只覆盖当前 4 条已接线 hook；不代表所有 MCP entry point 都会自动反思
+
+### 7.6 手工验证 self-revision demo package
+
+如果你想看一套可读 report，而不是逐条跑 MCP `stdio` 测试：
+
+```zsh
+./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
+```
+
+然后打开：
+
+```text
+target/reports/self-revision-demo/latest/report.md
+```
+
+这条路径使用本地 deterministic provider，不需要真实 API key，也不会访问外网。
 
 ---
 
@@ -636,6 +691,13 @@ cargo test --test mcp_stdio build_self_snapshot_can_trigger_periodic_auto_reflec
 cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_for_suppressed_trigger -v
 ```
 
+### 改 self-revision demo package
+
+```zsh
+cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner --test openai_compatible_model --test mcp_stdio -v
+./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
+```
+
 ### 改 `src/support/config.rs`
 
 ```zsh
@@ -661,7 +723,7 @@ cargo test
 
 ## 11. 当前结论
 
-截至 `2026-04-19`，推荐把下面四条当作提交前基线：
+截至 `2026-04-24`，推荐把下面四条当作提交前基线：
 
 ```zsh
 cargo fmt --check

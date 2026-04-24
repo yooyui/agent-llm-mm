@@ -1,0 +1,14 @@
+# Demo-only config template for `scripts/run-self-revision-demo.sh`.
+# The runner writes a concrete copy with a temporary database path and stub base URL.
+
+transport = "stdio"
+database_url = "sqlite:///absolute/path/to/demo.sqlite"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "http://127.0.0.1:8787"
+api_key = "demo-local-key"
+model = "demo-local"
+timeout_ms = 30000

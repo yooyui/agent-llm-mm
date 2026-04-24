@@ -464,7 +464,7 @@ async fn auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_q
 
 #[tokio::test]
 async fn auto_reflection_keeps_explicit_ids_authoritative_when_query_limit_only_matches_outside_window()
-{
+ {
     let deps = test_support::deps_for_failure_modes();
     deps.seed_events(vec![
         StoredEvent::new(
@@ -716,7 +716,7 @@ async fn auto_reflection_suppresses_unchanged_failure_window_after_cooldown_when
 
 #[tokio::test]
 async fn auto_reflection_preserves_handled_baseline_across_cooldown_suppression_for_unchanged_failure_window()
-{
+ {
     let deps = test_support::deps_for_failure_modes();
     deps.seed_failure_window(vec![
         (
@@ -837,7 +837,7 @@ async fn auto_reflection_ignores_proposed_evidence_query_for_widening_when_ids_a
 
 #[tokio::test]
 async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger_window_when_ids_are_empty()
-{
+ {
     let deps = test_support::deps_for_failure_modes();
     deps.seed_events(vec![
         StoredEvent::new(
@@ -929,7 +929,10 @@ async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger
     .unwrap();
 
     assert!(result.triggered);
-    assert_eq!(result.evidence_event_ids, vec!["evt-conflict-2".to_string()]);
+    assert_eq!(
+        result.evidence_event_ids,
+        vec!["evt-conflict-2".to_string()]
+    );
     let reflection = deps
         .latest_reflection()
         .expect("query-intersected auto-reflection should persist a reflection");
@@ -954,7 +957,7 @@ async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger
 
 #[tokio::test]
 async fn auto_reflection_preserves_handled_reflection_id_when_unchanged_suppression_follows_rejected_attempt()
-{
+ {
     let deps = test_support::deps_for_failure_modes();
     deps.seed_failure_window(vec![
         (
@@ -994,9 +997,11 @@ async fn auto_reflection_preserves_handled_reflection_id_when_unchanged_suppress
             "third rollback after violating a different hard commitment",
         ),
     ]);
-    deps.set_self_revision_proposal(agent_llm_mm::domain::self_revision::SelfRevisionProposal::no_revision(
-        "mock model did not detect a valid Failure revision".to_string(),
-    ));
+    deps.set_self_revision_proposal(
+        agent_llm_mm::domain::self_revision::SelfRevisionProposal::no_revision(
+            "mock model did not detect a valid Failure revision".to_string(),
+        ),
+    );
 
     let rejected = auto_reflect_if_needed::execute(
         &deps,
@@ -1036,7 +1041,10 @@ async fn auto_reflection_preserves_handled_reflection_id_when_unchanged_suppress
     assert_eq!(rejected.ledger_status, Some(TriggerLedgerStatus::Rejected));
 
     assert!(!suppressed.triggered);
-    assert_eq!(suppressed.ledger_status, Some(TriggerLedgerStatus::Suppressed));
+    assert_eq!(
+        suppressed.ledger_status,
+        Some(TriggerLedgerStatus::Suppressed)
+    );
     assert_eq!(
         suppressed.suppression_reason.as_deref(),
         Some("evidence_window_unchanged")

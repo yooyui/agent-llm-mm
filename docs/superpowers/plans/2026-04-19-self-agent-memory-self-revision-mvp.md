@@ -21,7 +21,7 @@
 - Test: `tests/openai_compatible_model.rs`
 - Test: `tests/application_use_cases.rs`
 
-- [ ] **Step 1: 写失败测试，固定 self-revision proposal 的最小契约**
+- [x] **Step 1: 写失败测试，固定 self-revision proposal 的最小契约**
 
 ```rust
 #[tokio::test]
@@ -50,13 +50,13 @@ async fn mock_model_returns_no_revision_when_snapshot_has_no_signals() {
 }
 ```
 
-- [ ] **Step 2: 运行红测，确认现有 `ModelPort` 还不支持 self-revision proposal**
+- [x] **Step 2: 运行红测，确认现有 `ModelPort` 还不支持 self-revision proposal**
 
 Run: `cargo test --test application_use_cases mock_model_returns_no_revision_when_snapshot_has_no_signals -v`
 
 Expected: FAIL with compile errors for missing `SelfRevisionRequest` / `propose_self_revision`
 
-- [ ] **Step 3: 实现领域契约与模型端口扩展**
+- [x] **Step 3: 实现领域契约与模型端口扩展**
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -92,7 +92,7 @@ pub trait ModelPort {
 }
 ```
 
-- [ ] **Step 4: 为 mock / openai-compatible 适配器补最小 proposal 行为**
+- [x] **Step 4: 为 mock / openai-compatible 适配器补最小 proposal 行为**
 
 ```rust
 #[async_trait]
@@ -108,7 +108,7 @@ impl ModelPort for MockModel {
 }
 ```
 
-- [ ] **Step 5: 运行绿测，确认 proposal 契约与适配器都稳定**
+- [x] **Step 5: 运行绿测，确认 proposal 契约与适配器都稳定**
 
 Run: `cargo test --test application_use_cases --test openai_compatible_model -v`
 
@@ -123,7 +123,7 @@ Expected: PASS with new self-revision proposal tests included
 - Modify: `src/adapters/sqlite/store.rs`
 - Test: `tests/sqlite_store.rs`
 
-- [ ] **Step 1: 写失败测试，固定 ledger 的判重与 periodic 水位行为**
+- [x] **Step 1: 写失败测试，固定 ledger 的判重与 periodic 水位行为**
 
 ```rust
 #[tokio::test]
@@ -155,13 +155,13 @@ async fn sqlite_trigger_ledger_records_namespace_periodic_watermark_and_cooldown
 }
 ```
 
-- [ ] **Step 2: 运行红测，确认当前 schema/store 不含 ledger**
+- [x] **Step 2: 运行红测，确认当前 schema/store 不含 ledger**
 
 Run: `cargo test --test sqlite_store sqlite_trigger_ledger_records_namespace_periodic_watermark_and_cooldown -v`
 
 Expected: FAIL with missing schema / trait / method errors
 
-- [ ] **Step 3: 新增持久化表与存储端口**
+- [x] **Step 3: 新增持久化表与存储端口**
 
 ```sql
 CREATE TABLE IF NOT EXISTS reflection_trigger_ledger (
@@ -189,7 +189,7 @@ pub trait TriggerLedgerStore {
 }
 ```
 
-- [ ] **Step 4: 实现 SQLite 读写与 legacy bootstrap 兼容**
+- [x] **Step 4: 实现 SQLite 读写与 legacy bootstrap 兼容**
 
 ```rust
 async fn insert_trigger_ledger_entry<'e, E>(
@@ -223,7 +223,7 @@ where
 }
 ```
 
-- [ ] **Step 5: 运行绿测，确认 ledger 迁移、落盘和读取通过**
+- [x] **Step 5: 运行绿测，确认 ledger 迁移、落盘和读取通过**
 
 Run: `cargo test --test sqlite_store -v`
 
@@ -240,7 +240,7 @@ Expected: PASS including new ledger store coverage
 - Modify: `tests/application_use_cases.rs`
 - Modify: `tests/failure_modes.rs`
 
-- [ ] **Step 1: 写失败测试，固定 conflict / failure / periodic 的最小闭环**
+- [x] **Step 1: 写失败测试，固定 conflict / failure / periodic 的最小闭环**
 
 ```rust
 #[tokio::test]
@@ -268,13 +268,13 @@ async fn auto_reflection_runs_once_for_repeated_failure_and_records_handled_ledg
 }
 ```
 
-- [ ] **Step 2: 运行红测，确认协调器、trigger 评估和 proposal 校验尚不存在**
+- [x] **Step 2: 运行红测，确认协调器、trigger 评估和 proposal 校验尚不存在**
 
 Run: `cargo test --test application_use_cases auto_reflection_runs_once_for_repeated_failure_and_records_handled_ledger -v`
 
 Expected: FAIL with missing `auto_reflect_if_needed` module and supporting types
 
-- [ ] **Step 3: 实现自动触发评估、证据收集和 ledger 去重**
+- [x] **Step 3: 实现自动触发评估、证据收集和 ledger 去重**
 
 ```rust
 pub async fn execute<D>(deps: &D, input: AutoReflectInput) -> Result<AutoReflectResult, AppError>
@@ -317,7 +317,7 @@ where
 }
 ```
 
-- [ ] **Step 4: 把“受治理的全 patch”转译成现有 `run_reflection` 输入**
+- [x] **Step 4: 把“受治理的全 patch”转译成现有 `run_reflection` 输入**
 
 ```rust
 let reflection_input = ReflectionInput::new(
@@ -331,7 +331,7 @@ let reflection_input = ReflectionInput::new(
 .with_commitment_updates(validated_commitments);
 ```
 
-- [ ] **Step 5: 加入 identity 慢更新三重制动器**
+- [x] **Step 5: 加入 identity 慢更新三重制动器**
 
 ```rust
 fn validate_identity_patch(
@@ -347,7 +347,7 @@ fn validate_identity_patch(
 }
 ```
 
-- [ ] **Step 6: 运行绿测，确认自动反思路径通过且失败模式被锁住**
+- [x] **Step 6: 运行绿测，确认自动反思路径通过且失败模式被锁住**
 
 Run: `cargo test --test application_use_cases --test failure_modes -v`
 
@@ -362,7 +362,7 @@ Expected: PASS with new auto-reflection and rejection-path regressions
 - Modify: `tests/mcp_stdio.rs`
 - Modify: `tests/bootstrap.rs`
 
-- [ ] **Step 1: 写失败测试，固定 MCP 入口上的自动触发与防递归行为**
+- [x] **Step 1: 写失败测试，固定 MCP 入口上的自动触发与防递归行为**
 
 ```rust
 #[tokio::test]
@@ -400,13 +400,13 @@ async fn ingest_interaction_auto_reflects_once_and_does_not_recurse_inside_run_r
 }
 ```
 
-- [ ] **Step 2: 运行红测，确认 DTO 与 MCP runtime 尚未支持 trigger hints / auto reflection**
+- [x] **Step 2: 运行红测，确认 DTO 与 MCP runtime 尚未支持 trigger hints / auto reflection**
 
 Run: `cargo test --test mcp_stdio ingest_interaction_auto_reflects_once_and_does_not_recurse_inside_run_reflection -v`
 
 Expected: FAIL with unknown `trigger_hints` field or missing auto-reflection behavior
 
-- [ ] **Step 3: 给 DTO 增加可选 trigger hints 与内部 recursion guard**
+- [x] **Step 3: 给 DTO 增加可选 trigger hints 与内部 recursion guard**
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -419,7 +419,7 @@ pub struct IngestInteractionParams {
 }
 ```
 
-- [ ] **Step 4: 在 MCP runtime 中统一串入自动反思检查**
+- [x] **Step 4: 在 MCP runtime 中统一串入自动反思检查**
 
 ```rust
 let auto_reflect_result = auto_reflect_if_needed::execute(
@@ -430,7 +430,7 @@ let auto_reflect_result = auto_reflect_if_needed::execute(
 .map_err(app_error_to_mcp)?;
 ```
 
-- [ ] **Step 5: 运行绿测，确认 stdio 工具链和 bootstrap 仍可工作**
+- [x] **Step 5: 运行绿测，确认 stdio 工具链和 bootstrap 仍可工作**
 
 Run: `cargo test --test mcp_stdio --test bootstrap -v`
 
@@ -446,7 +446,7 @@ Expected: PASS and stdio tool list remains stable
 - Modify: `docs/local-mcp-integration-2026-03-26.md`
 - Modify: `docs/document-map.md`
 
-- [ ] **Step 1: 先写文档期望，明确新增的是“自动 self-revision MVP”，不是完整自治系统**
+- [x] **Step 1: 先写文档期望，明确新增的是“自动 self-revision MVP”，不是完整自治系统**
 
 ```md
 - 已实现：trigger-ledger backed automatic self-revision MVP
@@ -454,7 +454,7 @@ Expected: PASS and stdio tool list remains stable
 - 未实现：richer evidence weighting, full multi-layer memory, autonomous daemon behavior
 ```
 
-- [ ] **Step 2: 更新 README / project-status / roadmap 的能力边界**
+- [x] **Step 2: 更新 README / project-status / roadmap 的能力边界**
 
 ```md
 当前版本可在 MCP 请求进入时自动检测 `conflict / failure / periodic` 触发，
@@ -462,7 +462,7 @@ Expected: PASS and stdio tool list remains stable
 但它仍然是本地 `stdio` memory demo，不是完整自治代理系统。
 ```
 
-- [ ] **Step 3: 更新 testing-guide 与 local integration 文档**
+- [x] **Step 3: 更新 testing-guide 与 local integration 文档**
 
 Run:
 
@@ -486,19 +486,19 @@ Expected: 文档中的命令、字段和行为描述与实现一致
 - Review: `README.md`
 - Review: `docs/project-status.md`
 
-- [ ] **Step 1: 运行全量测试**
+- [x] **Step 1: 运行全量测试**
 
 Run: `cargo test`
 
 Expected: PASS with all existing and新增 tests green
 
-- [ ] **Step 2: 运行预检，确认 runtime 仍然可启动**
+- [x] **Step 2: 运行预检，确认 runtime 仍然可启动**
 
 Run: `./scripts/agent-llm-mm.sh doctor`
 
 Expected: JSON output with `status = ok`
 
-- [ ] **Step 3: 复核需求覆盖**
+- [x] **Step 3: 复核需求覆盖**
 
 ```text
 - automatic conflict/failure/periodic trigger
@@ -509,7 +509,7 @@ Expected: JSON output with `status = ok`
 - docs updated to MVP/demo positioning
 ```
 
-- [ ] **Step 4: 仅保留真实剩余风险**
+- [x] **Step 4: 仅保留真实剩余风险**
 
 ```text
 - summary 文本规则与模型补位的误触发边界仍是 MVP 级别

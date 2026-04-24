@@ -104,9 +104,11 @@ impl Server {
         )
         .await
         {
-            Ok(diagnostics) => {
-                log_auto_reflection_success(runtime_hook, &diagnostics, Some(result.event_id.as_str()))
-            }
+            Ok(diagnostics) => log_auto_reflection_success(
+                runtime_hook,
+                &diagnostics,
+                Some(result.event_id.as_str()),
+            ),
             Err(error) => {
                 warn!(
                     runtime_hook,
@@ -170,31 +172,31 @@ impl Server {
         let result = decide_with_snapshot::execute(&self.runtime, params.into())
             .await
             .map_err(app_error_to_mcp)?;
-        if !result.blocked {
-            if let Some(auto_reflect_input) = auto_reflect_input {
-                let auto_reflect_trigger_type = auto_reflect_input.trigger_type;
-                let auto_reflect_trigger_key = auto_reflect_input.trigger_key();
-                match auto_reflect_if_needed::execute(
-                    &self.runtime,
-                    auto_reflect_input.with_recursion_guard(RecursionGuard::Allow),
-                )
-                .await
-                {
-                    Ok(diagnostics) => log_auto_reflection_success(
-                        runtime_hook_for("decide_with_snapshot", auto_reflect_trigger_type),
-                        &diagnostics,
-                        None,
-                    ),
-                    Err(error) => {
-                        warn!(
-                            runtime_hook =
-                                runtime_hook_for("decide_with_snapshot", auto_reflect_trigger_type),
-                            trigger_type = ?auto_reflect_trigger_type,
-                            trigger_key = %auto_reflect_trigger_key,
-                            error = %error,
-                            "best-effort conflict auto-reflection failed after successful decide_with_snapshot"
-                        );
-                    }
+        if !result.blocked
+            && let Some(auto_reflect_input) = auto_reflect_input
+        {
+            let auto_reflect_trigger_type = auto_reflect_input.trigger_type;
+            let auto_reflect_trigger_key = auto_reflect_input.trigger_key();
+            match auto_reflect_if_needed::execute(
+                &self.runtime,
+                auto_reflect_input.with_recursion_guard(RecursionGuard::Allow),
+            )
+            .await
+            {
+                Ok(diagnostics) => log_auto_reflection_success(
+                    runtime_hook_for("decide_with_snapshot", auto_reflect_trigger_type),
+                    &diagnostics,
+                    None,
+                ),
+                Err(error) => {
+                    warn!(
+                        runtime_hook =
+                            runtime_hook_for("decide_with_snapshot", auto_reflect_trigger_type),
+                        trigger_type = ?auto_reflect_trigger_type,
+                        trigger_key = %auto_reflect_trigger_key,
+                        error = %error,
+                        "best-effort conflict auto-reflection failed after successful decide_with_snapshot"
+                    );
                 }
             }
         }

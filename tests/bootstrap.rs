@@ -7,6 +7,7 @@ use agent_llm_mm::{
 };
 use std::{
     collections::HashMap,
+    fs,
     path::Path,
     sync::{Mutex, OnceLock},
     time::Duration,
@@ -152,6 +153,22 @@ fn cli_rejects_unknown_subcommand() {
         .expect_err("unknown command should fail");
 
     assert!(error.to_string().contains("unsupported command"));
+}
+
+#[test]
+fn shell_entry_pins_main_binary_when_auxiliary_bins_exist() {
+    let script = fs::read_to_string("scripts/agent-llm-mm.sh").expect("script should be readable");
+    let powershell = fs::read_to_string("scripts/agent-llm-mm.ps1")
+        .expect("PowerShell script should be readable");
+
+    assert!(
+        script.contains("cargo run --quiet --bin agent_llm_mm --"),
+        "script must select the main binary explicitly when auxiliary src/bin targets exist"
+    );
+    assert!(
+        powershell.contains("cargo run --quiet --bin agent_llm_mm --"),
+        "PowerShell script must select the main binary explicitly when auxiliary src/bin targets exist"
+    );
 }
 
 #[tokio::test]

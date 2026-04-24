@@ -84,6 +84,14 @@
 
 这代表“自动 self-revision MVP”已经存在，但它仍然是受限、保守、局部接线的 demo 能力。
 
+### 8. self-revision demo package
+
+- 已新增 deterministic `openai-compatible` stub provider binary
+- 已新增 demo runner binary，复用真实 MCP `stdio` 服务和现有 4 个 MCP tool 跑 canonical scenario
+- 已新增 macOS shell wrapper：`./scripts/run-self-revision-demo.sh`
+- 运行后会生成 `doctor.json`、snapshot before / after、decision before / after、timeline、SQLite summary 和 Markdown report
+- 该 demo 只证明当前 MVP 的可重复证据链，不新增 MCP tool、daemon、Web UI 或新的 durable write path
+
 ## 部分实现
 
 ### 1. `decide_with_snapshot`
@@ -156,25 +164,30 @@
 
 ## 当前验证状态
 
-截至 `2026-04-20`，已 fresh 运行：
+截至 `2026-04-24`，已 fresh 运行：
 
 - `cargo test`
-- `./scripts/agent-llm-mm.sh doctor` 或 `cargo run --quiet -- doctor`
+- `./scripts/agent-llm-mm.sh doctor` 或 `cargo run --quiet --bin agent_llm_mm -- doctor`
+- `cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner --test openai_compatible_model --test mcp_stdio -v`
+- `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest`
 
 结果：
 
 - `application_use_cases`: 20
-- `bootstrap`: 13
+- `bootstrap`: 14
 - `decision_flow`: 2
 - `domain_invariants`: 4
 - `domain_snapshot`: 6
+- `demo_openai_compatible_stub`: 1
 - `failure_modes`: 27
 - `mcp_stdio`: 26
 - `openai_compatible_model`: 7
 - `provider_config`: 5
+- `self_revision_demo_runner`: 2
 - `sqlite_store`: 17
-- 合计：127 个测试通过
+- 合计：131 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
+- self-revision demo package 生成 8 个本地 artifact，并证明 before / after decision shift
 
 ## 对外描述建议
 
