@@ -4,7 +4,7 @@ use anyhow::Result;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{StatusCode, header},
     response::{
         Html, IntoResponse,
         sse::{Event, Sse},
@@ -20,7 +20,8 @@ use crate::support::config::DashboardConfig;
 
 use super::{
     DashboardRuntimeInfo, EventQuery, OperationKind, OperationRecorder, OperationStatus,
-    assets::DASHBOARD_HTML, build_summary, project_event_detail,
+    assets::{DASHBOARD_HTML, MEMORY_CHAN_HERO_PNG, MEMORY_CHAN_SIDEBAR_PNG},
+    build_summary, project_event_detail,
 };
 
 #[derive(Clone)]
@@ -86,6 +87,8 @@ pub async fn start_dashboard_service(
 fn router(state: DashboardState, base_path: &str, sse_enabled: bool) -> Router {
     let mut routes = Router::new()
         .route("/", get(index))
+        .route("/assets/memory-chan-hero.png", get(memory_chan_hero))
+        .route("/assets/memory-chan-sidebar.png", get(memory_chan_sidebar))
         .route("/api/summary", get(summary))
         .route("/api/events", get(events))
         .route("/api/events/{id}", get(event_detail))
@@ -114,6 +117,17 @@ fn normalized_base_path(base_path: &str) -> String {
 
 async fn index() -> Html<&'static str> {
     Html(DASHBOARD_HTML)
+}
+
+async fn memory_chan_hero() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "image/png")], MEMORY_CHAN_HERO_PNG)
+}
+
+async fn memory_chan_sidebar() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "image/png")],
+        MEMORY_CHAN_SIDEBAR_PNG,
+    )
 }
 
 async fn summary(State(state): State<Arc<DashboardState>>) -> Json<super::DashboardSummary> {

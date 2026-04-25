@@ -66,8 +66,25 @@ async fn dashboard_serves_html_summary_events_detail_and_health() {
         .text()
         .await
         .expect("html body");
-    assert!(html.contains("Memory-chan Live Desk"));
-    assert!(html.contains("production dashboard"));
+    assert!(html.contains("Memory-chan Live Cockpit"));
+    assert!(html.contains("assets/memory-chan-hero.png"));
+    assert!(html.contains("assets/memory-chan-sidebar.png"));
+
+    let hero = client
+        .get(format!("{base_url}/assets/memory-chan-hero.png"))
+        .send()
+        .await
+        .expect("hero asset response");
+    assert_eq!(
+        hero.headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .expect("hero content type"),
+        "image/png"
+    );
+    assert!(
+        hero.bytes().await.expect("hero bytes").len() > 1000,
+        "hero asset should be bundled"
+    );
 
     let summary: serde_json::Value = client
         .get(format!("{base_url}/api/summary"))
@@ -135,4 +152,11 @@ async fn dashboard_honors_configured_base_path() {
 
     assert!(base_url.ends_with("/agent-llm-mm"));
     assert_eq!(summary["total_events"], 1);
+
+    let sidebar = Client::new()
+        .get(format!("{base_url}/assets/memory-chan-sidebar.png"))
+        .send()
+        .await
+        .expect("sidebar asset response");
+    assert_eq!(sidebar.status(), reqwest::StatusCode::OK);
 }
