@@ -241,7 +241,7 @@ enum RuntimeModel {
 
 impl Runtime {
     async fn bootstrap(config: &AppConfig) -> Result<Self, AppError> {
-        config.validate_model_config().map_err(AppError::Message)?;
+        config.validate().map_err(AppError::Message)?;
 
         let store = SqliteStore::bootstrap(&config.database_url).await?;
         let runtime = Self {

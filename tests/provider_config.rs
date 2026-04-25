@@ -131,6 +131,7 @@ async fn doctor_fails_when_openai_provider_config_is_missing_api_key() {
             model: "gpt-4o-mini".to_string(),
             timeout_ms: 30_000,
         }),
+        dashboard: Default::default(),
     };
 
     let error = run_doctor(config).await.expect_err("doctor should fail");
