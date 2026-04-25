@@ -133,7 +133,26 @@ cargo test
 
 这条 demo 不需要真实 API key，也不会访问外网。
 
-## 9. 额外说明
+## 9. Dashboard 面板
+
+在 `agent-llm-mm.local.toml` 中启用：
+
+```toml
+[dashboard]
+enabled = true
+host = "127.0.0.1"
+port = 8787
+```
+
+然后启动：
+
+```zsh
+./scripts/agent-llm-mm.sh serve
+```
+
+浏览器访问 `http://127.0.0.1:8787/`。该面板只读，不会调用 `run_reflection` 或修改 SQLite。若需要挂在反向代理路径下，可设置 `base_path = "/agent-llm-mm"`。
+
+## 10. 额外说明
 
 - `agent-llm-mm.local.toml` 已被 `.gitignore` 忽略，不应提交。
 - 未显式设置 `database_url` 时，默认库会落到当前平台的用户数据目录，并按“本机用户共享”语义复用。

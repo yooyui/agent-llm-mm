@@ -16,8 +16,8 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：适合以“公开技术 demo / MVP”身份发布到 GitHub，不应包装成完整产品
-- 最新 fresh 验证：`2026-04-24`
-  - `cargo test` 全量通过，共 131 个测试
+- 最新 fresh 验证：`2026-04-25`
+  - `cargo test` 全量通过，共 143 个测试
   - `doctor` 预检返回 `status = ok`
   - self-revision demo package 可一键生成本地证据链
 
@@ -75,6 +75,12 @@
   - demo runner 会启动本地 deterministic `openai-compatible` stub provider，并通过真实 MCP `stdio` 服务跑 canonical scenario
   - 输出 `doctor.json`、snapshot before / after、decision before / after、timeline、SQLite summary 和 Markdown report
   - 该 demo 只证明当前 MVP 边界内的可重复链路，不新增 MCP tool、daemon 或产品化运行形态
+- production dashboard service
+  - 可通过 `[dashboard]` 配置启停
+  - 随 `serve` 启动本机 HTTP 只读观测面板
+  - 展示 MCP tool 调用、runtime operation 和 auto-reflection 事件
+  - 保留 decision / snapshot 投影字段用于后续扩展
+  - 不改变 MCP tool 列表，不污染 MCP `stdout`
 - `namespace` 最小闭环
   - `self`
   - `world`
@@ -182,7 +188,7 @@
 
 ## 接入注意事项
 
-- 这是 `stdio` MCP 服务，不会输出 Web 地址或启动 HTTP 端口。
+- 默认形态仍是 `stdio` MCP 服务；只有显式设置 `[dashboard].enabled = true` 时，才会额外启动只读 HTTP dashboard。
 - 正式使用时请通过 `agent-llm-mm.local.toml` 或 `AGENT_LLM_MM_CONFIG` 提供 provider 配置。
 - 建议为正式数据、手工测试数据和实验数据使用不同 SQLite 文件。
 - 未显式配置 `database_url` 时，默认库会落到当前平台的用户数据目录，并按“本机用户共享”语义复用。
