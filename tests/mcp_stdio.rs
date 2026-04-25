@@ -1716,6 +1716,78 @@ timeout_ms = 30000
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dashboard_enabled_does_not_corrupt_mcp_stdout_and_records_tool_event() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
+    let port = listener.local_addr().expect("local addr").port();
+    drop(listener);
+    let config = r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[dashboard]
+enabled = true
+host = "127.0.0.1"
+port = __DASHBOARD_PORT__
+event_capacity = 50
+required = true
+"#
+    .replace("__DASHBOARD_PORT__", &port.to_string());
+    let mut client = test_support::spawn_stdio_client_with_config(config)
+        .await
+        .expect("client");
+
+    let tools = client.list_all_tools().await.expect("list tools");
+    assert_eq!(tools.len(), 4);
+
+    let health: serde_json::Value = reqwest::get(format!("http://127.0.0.1:{port}/api/health"))
+        .await
+        .expect("dashboard health response")
+        .json()
+        .await
+        .expect("dashboard health json");
+    assert_eq!(health["status"], "ok");
+
+    let response = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "Dashboard should record this MCP operation."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:dashboard-stdio-smoke"
+            }),
+        )
+        .await
+        .expect("ingest response");
+
+    assert!(
+        response.get("result").is_some(),
+        "dashboard logs must not corrupt MCP stdout: {response:?}"
+    );
+
+    let events: serde_json::Value =
+        reqwest::get(format!("http://127.0.0.1:{port}/api/events?limit=10"))
+            .await
+            .expect("dashboard events response")
+            .json()
+            .await
+            .expect("dashboard events json");
+    let event_operations = events
+        .as_array()
+        .expect("events array")
+        .iter()
+        .filter_map(|event| event.get("operation").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    assert!(
+        event_operations.contains(&"ingest_interaction"),
+        "dashboard should record the MCP tool operation: {events:?}"
+    );
+}
+
 #[tokio::test]
 async fn invalid_namespace_is_reported_as_invalid_params_over_stdio() {
     let mut client = test_support::spawn_stdio_client().await.unwrap();
