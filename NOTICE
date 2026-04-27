@@ -2,7 +2,7 @@ agent_llm_mm
 Copyright 2026 yooyui
 
 Author and maintainer: yooyui
-GitHub: https://github.com/yooyui
+Repository: https://github.com/yooyui/agent-llm-mm
 
 This repository was developed through iterative implementation and discussion with OpenAI Codex.
 Thanks to OpenAI for the tooling and research ecosystem that made this workflow possible.
