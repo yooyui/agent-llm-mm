@@ -66,7 +66,7 @@ async fn dashboard_serves_html_summary_events_detail_and_health() {
         .text()
         .await
         .expect("html body");
-    assert!(html.contains("Memory-chan Live Cockpit"));
+    assert!(html.contains("Memory-chan Live Desk"));
     assert!(html.contains("assets/memory-chan-hero.png"));
     assert!(html.contains("assets/memory-chan-sidebar.png"));
 
@@ -159,4 +159,18 @@ async fn dashboard_honors_configured_base_path() {
         .await
         .expect("sidebar asset response");
     assert_eq!(sidebar.status(), reqwest::StatusCode::OK);
+}
+
+#[test]
+fn dashboard_html_preserves_readable_visual_contract() {
+    let html = agent_llm_mm::interfaces::dashboard::assets::DASHBOARD_HTML;
+
+    assert!(html.contains("Memory-chan Live Desk"));
+    assert!(html.contains("<span><b>live</b> desk</span>"));
+    assert!(html.contains("repeat(auto-fit, minmax(190px, 1fr))"));
+    assert!(html.contains("repeat(auto-fit, minmax(156px, 1fr))"));
+    assert!(html.contains(".event-id"));
+    assert!(html.contains("text-overflow: ellipsis"));
+    assert!(html.contains("object-fit: contain"));
+    assert!(html.contains("grid-template-columns: minmax(0, 1fr);"));
 }

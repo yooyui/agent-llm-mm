@@ -6,7 +6,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Memory-chan Live Cockpit</title>
+  <title>Memory-chan Live Desk</title>
   <style>
     :root {
       color-scheme: light;
@@ -479,9 +479,9 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
     .sidebar-sticker img {
       display: block;
       width: 100%;
-      height: 138px;
-      object-fit: cover;
-      object-position: 50% 28%;
+      height: 186px;
+      object-fit: contain;
+      object-position: 50% 100%;
       border-radius: 16px;
       mix-blend-mode: multiply;
     }
@@ -524,8 +524,8 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
     .topbar {
       position: relative;
       display: grid;
-      grid-template-columns: minmax(0, 830px) auto;
-      gap: 18px;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 12px;
       align-items: center;
       padding: 0 24px 18px 32px;
     }
@@ -544,9 +544,11 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
 
     .live-strip {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       min-height: 55px;
-      overflow: hidden;
+      gap: 0;
+      overflow: visible;
       border: 1px solid var(--line);
       border-radius: 15px;
       background: rgba(255, 255, 255, .86);
@@ -593,7 +595,8 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
 
     .top-pills {
       display: flex;
-      justify-content: flex-end;
+      flex-wrap: wrap;
+      justify-content: flex-start;
       gap: 14px;
       min-width: 0;
     }
@@ -788,7 +791,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
 
     .metrics {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: 14px;
       margin-bottom: 12px;
     }
@@ -796,7 +799,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
     .metric {
       position: relative;
       display: grid;
-      grid-template-columns: 62px 1fr 84px;
+      grid-template-columns: 54px minmax(0, 1fr) 76px;
       align-items: center;
       min-height: 98px;
       overflow: hidden;
@@ -857,7 +860,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
       display: block;
       color: var(--muted);
       font-size: 13px;
-      line-height: 1;
+      line-height: 1.15;
     }
 
     .metric strong {
@@ -940,8 +943,8 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
 
     .steps {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 48px;
+      grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+      gap: 12px;
     }
 
     .step {
@@ -965,6 +968,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
     }
 
     .step-glint {
+      display: none;
       position: absolute;
       right: -31px;
       top: 47px;
@@ -982,6 +986,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
 
     .step:not(:last-child)::after {
       content: "";
+      display: none;
       position: absolute;
       top: 53px;
       right: -50px;
@@ -1030,6 +1035,14 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
       white-space: nowrap;
     }
 
+    .event-id {
+      display: block;
+      width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .chip.warn { color: #a46712; background: rgba(255, 200, 90, .20); }
     .chip.purple { color: #704fc0; background: rgba(155, 119, 238, .16); }
     .chip.blue { color: #1d6db8; background: rgba(44, 153, 238, .14); }
@@ -1059,7 +1072,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
 
     .row {
       display: grid;
-      grid-template-columns: 22px 128px 190px 160px minmax(0, 1fr) 145px;
+      grid-template-columns: 22px minmax(86px, .7fr) minmax(130px, 1fr) minmax(96px, .75fr) minmax(180px, 1.4fr) minmax(84px, .7fr);
       gap: 12px;
       align-items: center;
       min-height: 51px;
@@ -1067,6 +1080,17 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
       border-top: 1px solid rgba(64, 86, 126, .11);
       color: #2d3d58;
       font-size: 13px;
+    }
+
+    .row > div {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .row > div:nth-child(5) {
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
 
     .row.header {
@@ -1355,11 +1379,11 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
 
     @media (max-width: 1500px) {
       .workspace { padding-top: 14px; }
-      .topbar, .main-grid { grid-template-columns: 1fr; }
+      .topbar, .main-grid { grid-template-columns: minmax(0, 1fr); }
       .top-pills { justify-content: flex-start; flex-wrap: wrap; }
       .hero-title strong { font-size: 44px; }
       .hero-title span { font-size: 30px; }
-      .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+      .steps { grid-template-columns: repeat(auto-fit, minmax(156px, 1fr)); gap: 12px; }
       .step::after { display: none; }
       .row { grid-template-columns: 22px 90px 160px 120px minmax(0, 1fr); }
       .row div:nth-child(6) { display: none; }
@@ -1382,7 +1406,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
       .hero-note { left: 24px; bottom: 18px; }
       .metrics { grid-template-columns: 1fr; }
       .metric { grid-template-columns: 54px 1fr 80px; }
-      .steps { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: minmax(0, 1fr); }
       .step-glint { display: none; }
       .row { grid-template-columns: 18px 76px minmax(0, 1fr) 84px; }
       .row div:nth-child(4), .row div:nth-child(5) { display: none; }
@@ -1400,7 +1424,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
         <div class="brand-mark" aria-hidden="true"></div>
         <div>
           <strong>agent-llm-mm</strong>
-          <span><b>live</b> cockpit</span>
+          <span><b>live</b> desk</span>
         </div>
       </div>
       <ul class="views">
@@ -1445,7 +1469,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
         <img src="assets/memory-chan-hero.png" alt="" />
         <div class="hero-title">
           <strong>Memory-chan</strong>
-          <span>Live Cockpit</span>
+          <span>Live Desk</span>
         </div>
         <div class="hero-note">Observing · Reflecting · Evolving</div>
         <span class="hero-deco one" aria-hidden="true"></span>
@@ -1575,7 +1599,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
     function selectEvent(event) {
       document.getElementById("live-operation").textContent = event.operation;
       document.getElementById("selected-operation").innerHTML = `
-        <div class="kv"><span>id</span><span><span class="tag mono">${escapeHtml(event.id)}</span></span></div>
+        <div class="kv"><span>id</span><span><span class="tag mono event-id" title="${escapeHtml(event.id)}">${escapeHtml(event.id)}</span></span></div>
         <div class="kv"><span>namespace</span><span><span class="tag">${escapeHtml(event.namespace || "-")}</span></span></div>
         <div class="kv"><span>trigger</span><span><span class="tag chip warn">${escapeHtml(event.kind)}</span></span></div>
         <div class="kv"><span>write path</span><span><span class="tag chip blue">${escapeHtml(event.operation)}</span></span></div>

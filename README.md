@@ -78,7 +78,7 @@
 - production dashboard service
   - 可通过 `[dashboard]` 配置启停
   - 随 `serve` 启动本机 HTTP 只读观测面板
-  - 以 `Memory-chan Live Cockpit` 清新活力二次元风格展示 MCP tool 调用、runtime operation 和 auto-reflection 事件
+  - 以 `Memory-chan Live Desk` 清新活力二次元风格展示 MCP tool 调用、runtime operation 和 auto-reflection 事件
   - 面板内嵌生成图物料：`src/interfaces/dashboard/static/memory_chan_hero.png` 与 `src/interfaces/dashboard/static/memory_chan_sidebar.png`
   - 保留 decision / snapshot 投影字段用于后续扩展
   - 不改变 MCP tool 列表，不污染 MCP `stdout`
