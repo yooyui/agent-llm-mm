@@ -174,3 +174,22 @@ fn dashboard_html_preserves_readable_visual_contract() {
     assert!(html.contains("object-fit: contain"));
     assert!(html.contains("grid-template-columns: minmax(0, 1fr);"));
 }
+
+#[test]
+fn dashboard_html_preserves_mobile_layout_contract() {
+    let html = agent_llm_mm::interfaces::dashboard::assets::DASHBOARD_HTML;
+
+    assert!(html.contains("@media (max-width: 760px)"));
+    assert!(html.contains(".live-strip { display: grid; grid-template-columns: 1fr;"));
+    assert!(html.contains(".strip-item { border-left: 0; padding: 4px 0;"));
+    assert!(
+        html.contains(
+            ".top-pills { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));"
+        )
+    );
+    assert!(html.contains(".hero::before {"));
+    assert!(html.contains("clip-path: none;"));
+    assert!(html.contains("linear-gradient(90deg, rgba(232, 250, 255, .96)"));
+    assert!(html.contains(".hero img { object-position: 18% 50%; }"));
+    assert!(html.contains(".hero-deco { display: none; }"));
+}
