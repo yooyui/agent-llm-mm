@@ -152,6 +152,13 @@ port = 8787
 
 浏览器访问 `http://127.0.0.1:8787/`。该面板只读，不会调用 `run_reflection` 或修改 SQLite。若需要挂在反向代理路径下，可设置 `base_path = "/agent-llm-mm"`。
 
+当前面板标题为 `Memory-chan Live Cockpit`，内嵌两份生成图物料：
+
+- `src/interfaces/dashboard/static/memory_chan_hero.png`
+- `src/interfaces/dashboard/static/memory_chan_sidebar.png`
+
+这些物料只用于 dashboard 本机观测页面，归属与声明见仓库根目录 [NOTICE](../NOTICE)。
+
 ## 10. 额外说明
 
 - `agent-llm-mm.local.toml` 已被 `.gitignore` 忽略，不应提交。

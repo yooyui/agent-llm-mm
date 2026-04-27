@@ -78,7 +78,8 @@
 - production dashboard service
   - 可通过 `[dashboard]` 配置启停
   - 随 `serve` 启动本机 HTTP 只读观测面板
-  - 展示 MCP tool 调用、runtime operation 和 auto-reflection 事件
+  - 以 `Memory-chan Live Cockpit` 清新活力二次元风格展示 MCP tool 调用、runtime operation 和 auto-reflection 事件
+  - 面板内嵌生成图物料：`src/interfaces/dashboard/static/memory_chan_hero.png` 与 `src/interfaces/dashboard/static/memory_chan_sidebar.png`
   - 保留 decision / snapshot 投影字段用于后续扩展
   - 不改变 MCP tool 列表，不污染 MCP `stdout`
 - `namespace` 最小闭环
@@ -189,6 +190,7 @@
 ## 接入注意事项
 
 - 默认形态仍是 `stdio` MCP 服务；只有显式设置 `[dashboard].enabled = true` 时，才会额外启动只读 HTTP dashboard。
+- dashboard 的生成图物料和项目归属声明见 [NOTICE](NOTICE)；这些物料只用于本项目的本机观测面板。
 - 正式使用时请通过 `agent-llm-mm.local.toml` 或 `AGENT_LLM_MM_CONFIG` 提供 provider 配置。
 - 建议为正式数据、手工测试数据和实验数据使用不同 SQLite 文件。
 - 未显式配置 `database_url` 时，默认库会落到当前平台的用户数据目录，并按“本机用户共享”语义复用。

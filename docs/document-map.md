@@ -26,7 +26,7 @@
 - [development-windows.md](development-windows.md)
   - Windows 环境准备、配置、预检、启动和验证
 - [project-status.md](project-status.md)
-  - 当前实现边界、已实现 / 部分实现 / 未实现，重点包含当前 4 条 MCP-wired automatic path、structured diagnostics，以及 `run_reflection` durable write path 的保守范围
+  - 当前实现边界、已实现 / 部分实现 / 未实现，重点包含当前 4 条 MCP-wired automatic path、structured diagnostics、dashboard 只读观测面板，以及 `run_reflection` durable write path 的保守范围
 - [self-revision-demo-guide-2026-04-24.md](self-revision-demo-guide-2026-04-24.md)
   - 零外网依赖的一键 self-revision demo package 运行指南与 artifact 说明
 - [progress-tracker.md](progress-tracker.md)
@@ -35,6 +35,8 @@
   - 当前 demo 是否适合发布到 GitHub
 - [roadmap.md](roadmap.md)
   - 近期 / 中期 / 后期规划，明确哪些是 MVP 延伸，哪些不在近期承诺内
+- [../NOTICE](../NOTICE)
+  - 项目版权、独立项目声明，以及 dashboard 生成图物料的归属说明
 
 ## 4. 建议先读
 

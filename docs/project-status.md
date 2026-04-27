@@ -96,6 +96,8 @@
 
 - 已支持通过 `[dashboard]` 配置随 `serve` 启动只读 HTTP 面板
 - 面板展示运行时 operation 事件，并保持 MCP `stdio` 输出不被污染
+- 当前 UI 为 `Memory-chan Live Cockpit`，使用内嵌生成图物料与 CSS 装饰复刻清新活力二次元观测面板
+- 生成图物料位于 `src/interfaces/dashboard/static/`，版权/归属说明已记录在 `NOTICE`
 - 当前事件记录为 bounded in-memory recorder，不是 durable operation-log database
 
 ## 部分实现
@@ -170,8 +172,11 @@
 
 ## 当前验证状态
 
-截至 `2026-04-25`，已 fresh 运行：
+截至 `2026-04-27`，已 fresh 运行：
 
+- `cargo fmt --check`
+- `git diff --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo test`
 - `./scripts/agent-llm-mm.sh doctor` 或 `cargo run --quiet --bin agent_llm_mm -- doctor`
 - `cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner --test openai_compatible_model --test mcp_stdio -v`

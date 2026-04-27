@@ -14,7 +14,7 @@ The repository can still be described conservatively as a Rust MCP `stdio` memor
 - Keep MCP `stdio` protocol output clean. Dashboard URLs, warnings, and logs must not be written to `stdout`.
 - Make the dashboard read-only. It can inspect runtime evidence, but it cannot call `run_reflection`, mutate SQLite, or edit provider configuration.
 - Use a function-oriented service design: pure functions for event normalization, filtering, summary projection, and detail projection; side-effecting functions only at the HTTP, recorder, and runtime boundary.
-- Preserve the approved visual direction: cute, fresh, lively anime style with the `Memory-chan Live Desk` concept.
+- Preserve the approved visual direction: cute, fresh, lively anime style with the `Memory-chan Live Cockpit` concept.
 - Keep runtime coupling narrow. MCP tool handlers should record operation events through a small observer interface and should not depend on HTML or HTTP details.
 
 ## 3. Non-Goals
@@ -232,8 +232,9 @@ All endpoints are read-only.
 
 Use the approved v3 direction:
 
-- Product concept: `Memory-chan Live Desk`.
+- Product concept: `Memory-chan Live Cockpit`.
 - Tone: cute, fresh, energetic anime dashboard.
+- Static art assets: generated project-specific hero/sidebar PNGs embedded under `src/interfaces/dashboard/static/`; ownership notes are recorded in `NOTICE`.
 - Layout:
   - Top: chibi assistant, live ribbon, current operation bubbles, runtime pills.
   - Left: live channels.
@@ -329,7 +330,7 @@ Implementation should use TDD.
 
 ### HTTP Tests
 
-- `GET /` returns HTML containing `Memory-chan Live Desk`.
+- `GET /` returns HTML containing `Memory-chan Live Cockpit`.
 - `GET /api/summary` returns JSON summary.
 - `GET /api/events` returns recent events.
 - `GET /api/health` returns healthy state.
@@ -349,6 +350,7 @@ Update:
 - `docs/development-macos.md`
 - `docs/testing-guide-2026-03-24.md`
 - `examples/agent-llm-mm.example.toml`
+- `NOTICE`
 
 Update `examples/codex-mcp-config.toml` only if the MCP registration flow changes. The initial dashboard service should not require a Codex MCP config change.
 

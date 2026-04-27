@@ -586,6 +586,13 @@ cargo test --test mcp_stdio dashboard_enabled_does_not_corrupt_mcp_stdout_and_re
 
 dashboard HTTP 测试会监听本机端口，受限沙箱中可能需要在允许本地监听的环境运行。该面板只读，不会调用 `run_reflection` 或修改 SQLite。
 
+如果改动涉及 dashboard 视觉或静态物料，还需要确认：
+
+- `GET /` 包含 `Memory-chan Live Cockpit`
+- `GET /assets/memory-chan-hero.png` 返回 `content-type: image/png`
+- `GET /assets/memory-chan-sidebar.png` 返回 `content-type: image/png`
+- 生成图物料的仓库归属说明已经同步到 `NOTICE`
+
 ---
 
 ## 8. 迁移验证

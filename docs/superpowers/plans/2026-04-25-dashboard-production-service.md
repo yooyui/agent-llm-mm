@@ -41,7 +41,7 @@ Expected baseline: 131 tests pass when run outside the sandbox because existing 
 - Create `src/interfaces/dashboard/projection.rs`
   - Summary, event filtering, and detail projection functions.
 - Create `src/interfaces/dashboard/assets.rs`
-  - Embedded HTML/CSS/JS for `Memory-chan Live Desk`.
+  - Embedded HTML/CSS/JS for `Memory-chan Live Cockpit`.
 - Create `src/interfaces/dashboard/http.rs`
   - `axum` routes and dashboard server lifecycle.
 - Modify `src/support/config.rs`
@@ -816,7 +816,7 @@ async fn dashboard_serves_html_summary_events_and_health() {
         .text()
         .await
         .expect("html body");
-    assert!(html.contains("Memory-chan Live Desk"));
+    assert!(html.contains("Memory-chan Live Cockpit"));
 
     let summary: serde_json::Value = client
         .get(format!("{base_url}/api/summary"))
@@ -883,7 +883,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Memory-chan Live Desk</title>
+  <title>Memory-chan Live Cockpit</title>
   <style>
     :root { color-scheme: light; --ink:#2a3146; --muted:#68758a; --pink:#ff8fb3; --sky:#78c7ff; --aqua:#5fe0cf; --lemon:#ffe37a; }
     * { box-sizing: border-box; }
@@ -935,7 +935,7 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
   <div class="shell">
     <div class="stage">
       <div class="top">
-        <div class="brand"><div class="chibi"></div><div><strong>Memory-chan Live Desk</strong><span>agent-llm-mm operation diary</span></div></div>
+        <div class="brand"><div class="chibi"></div><div><strong>Memory-chan Live Cockpit</strong><span>agent-llm-mm operation diary</span></div></div>
         <div class="ribbon"><span class="live">LIVE</span><span class="bubble" id="live-operation">waiting for events</span><span class="bubble">read-only observability</span></div>
         <div class="pills"><span class="pill">stdio MCP</span><span class="pill">production dashboard</span><span class="pill">stdout protected</span></div>
       </div>
@@ -1451,6 +1451,18 @@ In `docs/project-status.md`, add the dashboard service to implemented or partial
 - 当前事件记录为 bounded in-memory recorder，不是 durable operation-log database
 ```
 
+- [ ] **Step 3a: Update asset notice**
+
+In `NOTICE`, record the dashboard generated image assets:
+
+```text
+src/interfaces/dashboard/static/memory_chan_hero.png
+src/interfaces/dashboard/static/memory_chan_sidebar.png
+```
+
+The notice should state that these are project-specific generated assets for
+`Memory-chan Live Cockpit`, not third-party stock artwork.
+
 - [ ] **Step 4: Update macOS development guide**
 
 In `docs/development-macos.md`, add a short dashboard section:
@@ -1583,10 +1595,10 @@ In another terminal or test command, verify:
 
 ```zsh
 curl -s http://127.0.0.1:8787/api/health
-curl -s http://127.0.0.1:8787/ | rg "Memory-chan Live Desk"
+curl -s http://127.0.0.1:8787/ | rg "Memory-chan Live Cockpit"
 ```
 
-Expected: health returns `{"status":"ok","read_only":true}` and HTML contains `Memory-chan Live Desk`.
+Expected: health returns `{"status":"ok","read_only":true}` and HTML contains `Memory-chan Live Cockpit`.
 
 - [ ] **Step 6: Git status**
 
