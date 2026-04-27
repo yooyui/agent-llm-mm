@@ -1398,12 +1398,20 @@ pub const DASHBOARD_HTML: &str = r#"<!doctype html>
       .float-decor { display: none; }
       .workspace { padding: 10px; }
       .topbar { padding: 0 0 10px; }
-      .live-strip { overflow-x: auto; }
-      .hero { height: 190px; }
-      .hero-title { left: 24px; top: 26px; }
-      .hero-title strong { font-size: 34px; -webkit-text-stroke-width: 1px; }
+      .live-strip { display: grid; grid-template-columns: 1fr; gap: 2px; padding: 8px 14px; overflow: visible; }
+      .strip-item { border-left: 0; padding: 4px 0; min-height: 27px; }
+      .top-pills { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .top-pills .pill { width: 100%; min-height: 38px; padding: 0 12px; }
+      .top-pills .pill.danger { grid-column: 1 / -1; }
+      .hero { height: 206px; }
+      .hero::before { inset: 0 auto 0 0; z-index: 1; width: 76%; height: 100%; clip-path: none; background: linear-gradient(90deg, rgba(232, 250, 255, .96), rgba(232, 250, 255, .82) 46%, rgba(232, 250, 255, .10) 100%); filter: none; }
+      .hero::after { display: none; }
+      .hero img { object-position: 18% 50%; }
+      .hero-deco { display: none; }
+      .hero-title { z-index: 4; left: 22px; top: 28px; max-width: 242px; }
+      .hero-title strong { font-size: 32px; -webkit-text-stroke-width: 1px; }
       .hero-title span { font-size: 24px; }
-      .hero-note { left: 24px; bottom: 18px; }
+      .hero-note { z-index: 4; left: 22px; bottom: 18px; max-width: calc(100% - 44px); padding: 0 18px; }
       .metrics { grid-template-columns: 1fr; }
       .metric { grid-template-columns: 54px 1fr 80px; }
       .steps { grid-template-columns: minmax(0, 1fr); }
