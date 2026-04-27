@@ -8,6 +8,8 @@
 
 2026-04-24 已补齐 self-revision demo package：它能零外网依赖地跑出 doctor、snapshot before / after、decision before / after、timeline、SQLite summary 和 report，用来证明当前 MVP 的可重复证据链。它不改变上述保守边界。
 
+2026-04-27 已补齐可配置的本机只读 dashboard：它随 `serve` 在 `[dashboard].enabled = true` 时启动，展示 `Memory-chan Live Desk` 运行面板、runtime operation 事件和静态生成图物料。它仍是本机观测面板，不是远程管理后台、写入界面或 durable operation-log database。
+
 ## 近期
 
 ### 1. 收口 release gate 文档
@@ -133,6 +135,6 @@
 
 - 远程 HTTP 服务
 - 多租户或多 Agent 编排
-- 可视化管理后台
+- 远程、可写或多租户可视化管理后台
 - 持续后台自治运行或完整 daemon 化自我治理
 - 把仓库包装成“生产级完整自我机制产品”

@@ -184,6 +184,7 @@ async fn doctor_bootstraps_configured_sqlite_database_and_returns_report() {
         database_url: database_url.clone(),
         model_provider: ModelProviderKind::Mock,
         model_config: ModelConfig::Mock,
+        dashboard: Default::default(),
     };
 
     let report = run_doctor(config).await.expect("doctor should pass");
@@ -215,6 +216,43 @@ async fn doctor_reports_self_revision_runtime_coverage() {
         ]
     );
     assert_eq!(report.self_revision_write_path, "run_reflection");
+}
+
+#[tokio::test]
+async fn doctor_reports_dashboard_config_without_starting_dashboard() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = format!(
+        "sqlite://{}",
+        temp_dir
+            .path()
+            .join("doctor-dashboard.sqlite")
+            .to_string_lossy()
+            .replace('\\', "/")
+    );
+    let config = AppConfig {
+        transport: TransportKind::Stdio,
+        database_url,
+        model_provider: ModelProviderKind::Mock,
+        model_config: ModelConfig::Mock,
+        dashboard: agent_llm_mm::support::config::DashboardConfig {
+            enabled: true,
+            host: "127.0.0.1".to_string(),
+            port: 8787,
+            base_path: "/agent-llm-mm".to_string(),
+            event_capacity: 2000,
+            sse_enabled: true,
+            open_browser: false,
+            required: true,
+        },
+    };
+
+    let report = run_doctor(config).await.expect("doctor should pass");
+
+    assert!(report.dashboard_enabled);
+    assert_eq!(report.dashboard_host, "127.0.0.1");
+    assert_eq!(report.dashboard_port, 8787);
+    assert_eq!(report.dashboard_base_path, "/agent-llm-mm");
+    assert!(report.dashboard_required);
 }
 
 #[tokio::test]
@@ -251,6 +289,7 @@ async fn doctor_creates_missing_parent_directories_for_file_backed_sqlite_databa
         database_url: database_url.clone(),
         model_provider: ModelProviderKind::Mock,
         model_config: ModelConfig::Mock,
+        dashboard: Default::default(),
     };
 
     let report = run_doctor(config).await.expect("doctor should pass");
@@ -269,6 +308,7 @@ async fn serve_command_fails_fast_for_malformed_database_url() {
         database_url: "not-a-sqlite-url".to_string(),
         model_provider: ModelProviderKind::Mock,
         model_config: ModelConfig::Mock,
+        dashboard: Default::default(),
     };
 
     let result = run_command(AppCommand::Serve, config).await;

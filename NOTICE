@@ -2,10 +2,25 @@ agent_llm_mm
 Copyright 2026 yooyui
 
 Author and maintainer: yooyui
-GitHub: https://github.com/yooyui
+Repository: https://github.com/yooyui/agent-llm-mm
 
 This repository was developed through iterative implementation and discussion with OpenAI Codex.
 Thanks to OpenAI for the tooling and research ecosystem that made this workflow possible.
 
 OpenAI and Codex are referenced solely as tools used in the development workflow.
 This repository is an independent project and is not endorsed by or affiliated with OpenAI.
+
+Dashboard visual assets
+-----------------------
+
+The dashboard includes project-specific generated image assets:
+
+- src/interfaces/dashboard/static/memory_chan_hero.png
+- src/interfaces/dashboard/static/memory_chan_sidebar.png
+
+These images were generated for this repository's "Memory-chan Live Desk"
+dashboard design and are not third-party stock artwork. "Memory-chan" is a
+fictional project UI mascot for this repository. The assets are included with
+the repository for use in the local read-only dashboard panel and follow the
+repository's Apache-2.0 licensing notice unless a downstream distribution
+chooses to replace or remove them.

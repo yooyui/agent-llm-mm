@@ -92,6 +92,14 @@
 - 运行后会生成 `doctor.json`、snapshot before / after、decision before / after、timeline、SQLite summary 和 Markdown report
 - 该 demo 只证明当前 MVP 的可重复证据链，不新增 MCP tool、daemon、Web UI 或新的 durable write path
 
+### 9. Production dashboard service
+
+- 已支持通过 `[dashboard]` 配置随 `serve` 启动只读 HTTP 面板
+- 面板展示运行时 operation 事件，并保持 MCP `stdio` 输出不被污染
+- 当前 UI 为 `Memory-chan Live Desk`，使用内嵌生成图物料与 CSS 装饰复刻清新活力二次元观测面板
+- 生成图物料位于 `src/interfaces/dashboard/static/`，版权/归属说明已记录在 `NOTICE`
+- 当前事件记录为 bounded in-memory recorder，不是 durable operation-log database
+
 ## 部分实现
 
 ### 1. `decide_with_snapshot`
@@ -164,8 +172,11 @@
 
 ## 当前验证状态
 
-截至 `2026-04-24`，已 fresh 运行：
+截至 `2026-04-27`，已 fresh 运行：
 
+- `cargo fmt --check`
+- `git diff --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo test`
 - `./scripts/agent-llm-mm.sh doctor` 或 `cargo run --quiet --bin agent_llm_mm -- doctor`
 - `cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner --test openai_compatible_model --test mcp_stdio -v`
@@ -174,18 +185,22 @@
 结果：
 
 - `application_use_cases`: 20
-- `bootstrap`: 14
+- `bootstrap`: 15
+- `dashboard_config`: 4
+- `dashboard_http`: 2
+- `dashboard_projection`: 2
+- `dashboard_recorder`: 2
 - `decision_flow`: 2
 - `domain_invariants`: 4
 - `domain_snapshot`: 6
 - `demo_openai_compatible_stub`: 1
 - `failure_modes`: 27
-- `mcp_stdio`: 26
+- `mcp_stdio`: 27
 - `openai_compatible_model`: 7
 - `provider_config`: 5
 - `self_revision_demo_runner`: 2
 - `sqlite_store`: 17
-- 合计：131 个测试通过
+- 合计：143 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 8 个本地 artifact，并证明 before / after decision shift
 

@@ -234,6 +234,7 @@ Use the approved v3 direction:
 
 - Product concept: `Memory-chan Live Desk`.
 - Tone: cute, fresh, energetic anime dashboard.
+- Static art assets: generated project-specific hero/sidebar PNGs embedded under `src/interfaces/dashboard/static/`; ownership notes are recorded in `NOTICE`.
 - Layout:
   - Top: chibi assistant, live ribbon, current operation bubbles, runtime pills.
   - Left: live channels.
@@ -349,6 +350,7 @@ Update:
 - `docs/development-macos.md`
 - `docs/testing-guide-2026-03-24.md`
 - `examples/agent-llm-mm.example.toml`
+- `NOTICE`
 
 Update `examples/codex-mcp-config.toml` only if the MCP registration flow changes. The initial dashboard service should not require a Codex MCP config change.
 

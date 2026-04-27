@@ -40,11 +40,51 @@ pub enum ModelConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DashboardConfig {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+    pub base_path: String,
+    pub event_capacity: usize,
+    pub sse_enabled: bool,
+    pub open_browser: bool,
+    pub required: bool,
+}
+
+impl Default for DashboardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: "127.0.0.1".to_string(),
+            port: 8787,
+            base_path: "/".to_string(),
+            event_capacity: 2000,
+            sse_enabled: true,
+            open_browser: false,
+            required: false,
+        }
+    }
+}
+
+impl DashboardConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.event_capacity == 0 {
+            return Err("dashboard.event_capacity must be greater than 0".to_string());
+        }
+        if !self.base_path.starts_with('/') {
+            return Err("dashboard.base_path must start with /".to_string());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppConfig {
     pub transport: TransportKind,
     pub database_url: String,
     pub model_provider: ModelProviderKind,
     pub model_config: ModelConfig,
+    pub dashboard: DashboardConfig,
 }
 
 impl Default for AppConfig {
@@ -54,6 +94,7 @@ impl Default for AppConfig {
             database_url: default_database_url(),
             model_provider: ModelProviderKind::Mock,
             model_config: ModelConfig::Mock,
+            dashboard: DashboardConfig::default(),
         }
     }
 }
@@ -94,6 +135,32 @@ impl AppConfig {
         if let Some(database_url) = file_config.database_url {
             config.database_url = database_url;
         }
+        if let Some(dashboard) = file_config.dashboard {
+            if let Some(enabled) = dashboard.enabled {
+                config.dashboard.enabled = enabled;
+            }
+            if let Some(host) = dashboard.host {
+                config.dashboard.host = host;
+            }
+            if let Some(port) = dashboard.port {
+                config.dashboard.port = port;
+            }
+            if let Some(base_path) = dashboard.base_path {
+                config.dashboard.base_path = base_path;
+            }
+            if let Some(event_capacity) = dashboard.event_capacity {
+                config.dashboard.event_capacity = event_capacity;
+            }
+            if let Some(sse_enabled) = dashboard.sse_enabled {
+                config.dashboard.sse_enabled = sse_enabled;
+            }
+            if let Some(open_browser) = dashboard.open_browser {
+                config.dashboard.open_browser = open_browser;
+            }
+            if let Some(required) = dashboard.required {
+                config.dashboard.required = required;
+            }
+        }
         if let Some(model) = file_config.model {
             let provider = model.provider.unwrap_or(ModelProviderKind::Mock);
             config.model_provider = provider;
@@ -112,6 +179,12 @@ impl AppConfig {
         }
 
         Ok(config)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        self.validate_model_config()?;
+        self.dashboard.validate()?;
+        Ok(())
     }
 
     pub fn validate_model_config(&self) -> Result<(), String> {
@@ -203,7 +276,20 @@ fn default_database_base_dir() -> Option<PathBuf> {
 struct FileConfig {
     transport: Option<TransportKind>,
     database_url: Option<String>,
+    dashboard: Option<FileDashboardConfig>,
     model: Option<FileModelConfig>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct FileDashboardConfig {
+    enabled: Option<bool>,
+    host: Option<String>,
+    port: Option<u16>,
+    base_path: Option<String>,
+    event_capacity: Option<usize>,
+    sse_enabled: Option<bool>,
+    open_browser: Option<bool>,
+    required: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Default)]

@@ -27,14 +27,18 @@ use crate::{
     domain::identity_core::IdentityCore,
     domain::self_revision::{SelfRevisionProposal, SelfRevisionRequest, TriggerType},
     error::AppError,
+    interfaces::dashboard::{
+        DashboardHandle, DashboardObserver, DashboardRuntimeInfo, OperationRecorder,
+        OperationStatus, start_dashboard_service,
+    },
     ports::{
         ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
         IdGenerator, IdentityStore, IngestTransaction, IngestTransactionRunner, ModelDecision,
         ModelDecisionRequest, ModelPort, ReflectionStore, ReflectionTransaction,
         ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
-        StoredTriggerLedgerEntry, TriggerLedgerStore,
+        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
-    support::config::{AppConfig, ModelConfig},
+    support::config::{AppConfig, ModelConfig, ModelProviderKind, TransportKind},
 };
 
 use super::dto::{
@@ -55,14 +59,61 @@ pub async fn run_stdio_server() -> Result<()> {
 }
 
 pub async fn run_stdio_server_with_config(config: AppConfig) -> Result<()> {
-    let server = Server::from_config(config).await?;
+    let (dashboard_observer, _dashboard_handle) = start_configured_dashboard(&config).await?;
+    let server = Server::from_config(config, dashboard_observer).await?;
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
 }
 
 pub async fn validate_stdio_runtime(config: &AppConfig) -> Result<(), AppError> {
-    Runtime::bootstrap(config).await.map(|_| ())
+    Runtime::bootstrap(config, DashboardObserver::disabled())
+        .await
+        .map(|_| ())
+}
+
+async fn start_configured_dashboard(
+    config: &AppConfig,
+) -> Result<(DashboardObserver, Option<DashboardHandle>)> {
+    if !config.dashboard.enabled {
+        return Ok((DashboardObserver::disabled(), None));
+    }
+
+    let recorder = OperationRecorder::new(config.dashboard.event_capacity);
+    let runtime = DashboardRuntimeInfo {
+        service_name: "agent-llm-mm".to_string(),
+        transport: transport_label(config.transport).to_string(),
+        provider: provider_label(config.model_provider).to_string(),
+        dashboard_enabled: true,
+        read_only: true,
+    };
+
+    match start_dashboard_service(config.dashboard.clone(), recorder.clone(), runtime).await {
+        Ok(handle) => {
+            let observer = DashboardObserver::enabled(recorder);
+            observer.record_dashboard_started(&handle.base_url());
+            info!(dashboard_url = %handle.base_url(), "dashboard service started");
+            Ok((observer, Some(handle)))
+        }
+        Err(error) if config.dashboard.required => Err(error),
+        Err(error) => {
+            warn!(error = %error, "dashboard service failed to start; continuing without dashboard");
+            Ok((DashboardObserver::disabled(), None))
+        }
+    }
+}
+
+fn transport_label(transport: TransportKind) -> &'static str {
+    match transport {
+        TransportKind::Stdio => "stdio",
+    }
+}
+
+fn provider_label(provider: ModelProviderKind) -> &'static str {
+    match provider {
+        ModelProviderKind::Mock => "mock",
+        ModelProviderKind::OpenAiCompatible => "openai-compatible",
+    }
 }
 
 #[derive(Clone)]
@@ -72,8 +123,11 @@ pub struct Server {
 }
 
 impl Server {
-    async fn from_config(config: AppConfig) -> Result<Self, AppError> {
-        let runtime = Runtime::bootstrap(&config).await?;
+    async fn from_config(
+        config: AppConfig,
+        dashboard: DashboardObserver,
+    ) -> Result<Self, AppError> {
+        let runtime = Runtime::bootstrap(&config, dashboard).await?;
         Ok(Self {
             runtime,
             tool_router: Self::tool_router(),
@@ -88,16 +142,31 @@ impl Server {
         &self,
         Parameters(params): Parameters<IngestInteractionParams>,
     ) -> Result<CallToolResult, McpError> {
-        let auto_reflect_input =
-            AutoReflectInput::from_ingest(&params).map_err(app_error_to_mcp)?;
+        let auto_reflect_input = AutoReflectInput::from_ingest(&params).map_err(|error| {
+            record_app_error_to_mcp(&self.runtime.dashboard, "ingest_interaction", None, error)
+        })?;
+        let dashboard_namespace = Some(auto_reflect_input.namespace.as_str().to_string());
         let runtime_hook = runtime_hook_for("ingest_interaction", auto_reflect_input.trigger_type);
         let auto_reflect_trigger_type = auto_reflect_input.trigger_type;
         let auto_reflect_trigger_key = auto_reflect_input.trigger_key();
-        let input =
-            IngestInput::try_from(params).map_err(|error| app_error_to_mcp(error.into()))?;
+        let input = IngestInput::try_from(params).map_err(|error| {
+            record_app_error_to_mcp(
+                &self.runtime.dashboard,
+                "ingest_interaction",
+                dashboard_namespace.clone(),
+                AppError::from(error),
+            )
+        })?;
         let result = ingest_interaction::execute(&self.runtime, input)
             .await
-            .map_err(app_error_to_mcp)?;
+            .map_err(|error| {
+                record_app_error_to_mcp(
+                    &self.runtime.dashboard,
+                    "ingest_interaction",
+                    dashboard_namespace.clone(),
+                    error,
+                )
+            })?;
         match auto_reflect_if_needed::execute(
             &self.runtime,
             auto_reflect_input.with_recursion_guard(RecursionGuard::Allow),
@@ -108,6 +177,8 @@ impl Server {
                 runtime_hook,
                 &diagnostics,
                 Some(result.event_id.as_str()),
+                &self.runtime.dashboard,
+                dashboard_namespace.clone(),
             ),
             Err(error) => {
                 warn!(
@@ -120,6 +191,12 @@ impl Server {
                 );
             }
         }
+        self.runtime.dashboard.record_tool_ok(
+            "ingest_interaction",
+            dashboard_namespace,
+            format!("ingest stored event {}", result.event_id),
+            &result,
+        );
         structured(result)
     }
 
@@ -129,8 +206,17 @@ impl Server {
         Parameters(params): Parameters<BuildSelfSnapshotParams>,
     ) -> Result<CallToolResult, McpError> {
         let auto_reflect_input =
-            AutoReflectInput::from_build_snapshot(&params).map_err(app_error_to_mcp)?;
+            AutoReflectInput::from_build_snapshot(&params).map_err(|error| {
+                record_app_error_to_mcp(
+                    &self.runtime.dashboard,
+                    "build_self_snapshot",
+                    params.auto_reflect_namespace.clone(),
+                    error,
+                )
+            })?;
+        let dashboard_namespace = params.auto_reflect_namespace.clone();
         if let Some(auto_reflect_input) = auto_reflect_input {
+            let auto_reflect_namespace = Some(auto_reflect_input.namespace.as_str().to_string());
             let auto_reflect_trigger_type = auto_reflect_input.trigger_type;
             let auto_reflect_trigger_key = auto_reflect_input.trigger_key();
             match auto_reflect_if_needed::execute(
@@ -143,6 +229,8 @@ impl Server {
                     runtime_hook_for("build_self_snapshot", auto_reflect_trigger_type),
                     &diagnostics,
                     None,
+                    &self.runtime.dashboard,
+                    auto_reflect_namespace,
                 ),
                 Err(error) => {
                     warn!(
@@ -158,7 +246,23 @@ impl Server {
         }
         let result = build_self_snapshot::execute(&self.runtime, params.into())
             .await
-            .map_err(app_error_to_mcp)?;
+            .map_err(|error| {
+                record_app_error_to_mcp(
+                    &self.runtime.dashboard,
+                    "build_self_snapshot",
+                    dashboard_namespace.clone(),
+                    error,
+                )
+            })?;
+        self.runtime.dashboard.record_tool_ok(
+            "build_self_snapshot",
+            dashboard_namespace,
+            format!(
+                "snapshot built with {} evidence links",
+                result.snapshot.evidence.len()
+            ),
+            &result,
+        );
         structured(result)
     }
 
@@ -167,14 +271,29 @@ impl Server {
         &self,
         Parameters(params): Parameters<DecideWithSnapshotParams>,
     ) -> Result<CallToolResult, McpError> {
-        let auto_reflect_input =
-            AutoReflectInput::from_decide(&params).map_err(app_error_to_mcp)?;
+        let auto_reflect_input = AutoReflectInput::from_decide(&params).map_err(|error| {
+            record_app_error_to_mcp(
+                &self.runtime.dashboard,
+                "decide_with_snapshot",
+                params.auto_reflect_namespace.clone(),
+                error,
+            )
+        })?;
+        let dashboard_namespace = params.auto_reflect_namespace.clone();
         let result = decide_with_snapshot::execute(&self.runtime, params.into())
             .await
-            .map_err(app_error_to_mcp)?;
+            .map_err(|error| {
+                record_app_error_to_mcp(
+                    &self.runtime.dashboard,
+                    "decide_with_snapshot",
+                    dashboard_namespace.clone(),
+                    error,
+                )
+            })?;
         if !result.blocked
             && let Some(auto_reflect_input) = auto_reflect_input
         {
+            let auto_reflect_namespace = Some(auto_reflect_input.namespace.as_str().to_string());
             let auto_reflect_trigger_type = auto_reflect_input.trigger_type;
             let auto_reflect_trigger_key = auto_reflect_input.trigger_key();
             match auto_reflect_if_needed::execute(
@@ -187,6 +306,8 @@ impl Server {
                     runtime_hook_for("decide_with_snapshot", auto_reflect_trigger_type),
                     &diagnostics,
                     None,
+                    &self.runtime.dashboard,
+                    auto_reflect_namespace,
                 ),
                 Err(error) => {
                     warn!(
@@ -200,6 +321,17 @@ impl Server {
                 }
             }
         }
+        let summary = if result.blocked {
+            "decision blocked by commitment gate".to_string()
+        } else {
+            "decision returned model action".to_string()
+        };
+        self.runtime.dashboard.record_tool_ok(
+            "decide_with_snapshot",
+            dashboard_namespace,
+            summary,
+            &result,
+        );
         structured(result)
     }
 
@@ -208,10 +340,20 @@ impl Server {
         &self,
         Parameters(params): Parameters<RunReflectionParams>,
     ) -> Result<CallToolResult, McpError> {
-        let input = ReflectionInput::try_from(params).map_err(app_error_to_mcp)?;
+        let input = ReflectionInput::try_from(params).map_err(|error| {
+            record_app_error_to_mcp(&self.runtime.dashboard, "run_reflection", None, error)
+        })?;
         let result = run_reflection::execute(&self.runtime, input)
             .await
-            .map_err(app_error_to_mcp)?;
+            .map_err(|error| {
+                record_app_error_to_mcp(&self.runtime.dashboard, "run_reflection", None, error)
+            })?;
+        self.runtime.dashboard.record_tool_ok(
+            "run_reflection",
+            None,
+            format!("reflection recorded {}", result.reflection_id),
+            &result,
+        );
         structured(result)
     }
 }
@@ -231,6 +373,7 @@ impl ServerHandler for Server {
 struct Runtime {
     store: SqliteStore,
     model: RuntimeModel,
+    dashboard: DashboardObserver,
 }
 
 #[derive(Clone)]
@@ -240,13 +383,14 @@ enum RuntimeModel {
 }
 
 impl Runtime {
-    async fn bootstrap(config: &AppConfig) -> Result<Self, AppError> {
-        config.validate_model_config().map_err(AppError::Message)?;
+    async fn bootstrap(config: &AppConfig, dashboard: DashboardObserver) -> Result<Self, AppError> {
+        config.validate().map_err(AppError::Message)?;
 
         let store = SqliteStore::bootstrap(&config.database_url).await?;
         let runtime = Self {
             store,
             model: build_runtime_model(config)?,
+            dashboard,
         };
         runtime.ensure_default_identity().await?;
         Ok(runtime)
@@ -455,10 +599,24 @@ fn app_error_to_mcp(error: AppError) -> McpError {
     }
 }
 
+fn record_app_error_to_mcp(
+    dashboard: &DashboardObserver,
+    operation: &str,
+    namespace: Option<String>,
+    error: AppError,
+) -> McpError {
+    let summary = format!("{operation} failed");
+    let message = error.to_string();
+    dashboard.record_tool_failed(operation, namespace, summary, message);
+    app_error_to_mcp(error)
+}
+
 fn log_auto_reflection_success(
     runtime_hook: &'static str,
     result: &auto_reflect_if_needed::AutoReflectResult,
     event_id: Option<&str>,
+    dashboard: &DashboardObserver,
+    namespace: Option<String>,
 ) {
     info!(
         runtime_hook,
@@ -474,6 +632,13 @@ fn log_auto_reflection_success(
         evidence_event_ids = ?result.evidence_event_ids,
         "best-effort auto-reflection completed"
     );
+    dashboard.record_auto_reflection(
+        runtime_hook,
+        namespace,
+        auto_reflection_status(result),
+        auto_reflection_summary(result),
+        result,
+    );
 }
 
 fn runtime_hook_for(source: &'static str, trigger_type: TriggerType) -> &'static str {
@@ -484,6 +649,30 @@ fn runtime_hook_for(source: &'static str, trigger_type: TriggerType) -> &'static
         ("build_self_snapshot", TriggerType::Periodic) => AUTO_REFLECTION_RUNTIME_HOOKS[3],
         _ => "auto_reflection:unknown",
     }
+}
+
+fn auto_reflection_status(result: &auto_reflect_if_needed::AutoReflectResult) -> OperationStatus {
+    match result.ledger_status {
+        Some(TriggerLedgerStatus::Handled) => OperationStatus::Handled,
+        Some(TriggerLedgerStatus::Rejected) => OperationStatus::Rejected,
+        Some(TriggerLedgerStatus::Suppressed) => OperationStatus::Suppressed,
+        Some(TriggerLedgerStatus::Pending) => OperationStatus::Started,
+        None if result.triggered => OperationStatus::Handled,
+        None => OperationStatus::Ok,
+    }
+}
+
+fn auto_reflection_summary(result: &auto_reflect_if_needed::AutoReflectResult) -> String {
+    if let Some(reflection_id) = result.reflection_id.as_deref() {
+        return format!("auto-reflection linked reflection {reflection_id}");
+    }
+    if let Some(reason) = result.suppression_reason.as_deref() {
+        return format!("auto-reflection suppressed: {reason}");
+    }
+    if let Some(reason) = result.reason.as_deref() {
+        return format!("auto-reflection checked: {reason}");
+    }
+    "auto-reflection checked runtime evidence".to_string()
 }
 
 fn structured<T>(value: T) -> Result<CallToolResult, McpError>

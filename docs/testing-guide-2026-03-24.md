@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-04-24 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-04-25 fresh 验证更新）
 
 ## 1. 目标
 
@@ -24,22 +24,26 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-04-24`，`cargo test` 全量通过，摘要如下：
+截至 `2026-04-25`，`cargo test` 全量通过，摘要如下：
 
 - `application_use_cases`: 20 passed
-- `bootstrap`: 14 passed
+- `bootstrap`: 15 passed
+- `dashboard_config`: 4 passed
+- `dashboard_http`: 2 passed
+- `dashboard_projection`: 2 passed
+- `dashboard_recorder`: 2 passed
 - `decision_flow`: 2 passed
 - `domain_invariants`: 4 passed
 - `domain_snapshot`: 6 passed
 - `demo_openai_compatible_stub`: 1 passed
 - `failure_modes`: 27 passed
-- `mcp_stdio`: 26 passed
+- `mcp_stdio`: 27 passed
 - `openai_compatible_model`: 7 passed
 - `provider_config`: 5 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_store`: 17 passed
 
-合计：131 个测试通过。
+合计：143 个测试通过。
 
 ---
 
@@ -557,6 +561,38 @@ target/reports/self-revision-demo/latest/report.md
 ```
 
 这条路径使用本地 deterministic provider，不需要真实 API key，也不会访问外网。
+
+### 7.7 手工验证 dashboard 面板
+
+如果你要手工查看只读 dashboard：
+
+```zsh
+cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
+./scripts/agent-llm-mm.sh serve
+```
+
+然后访问：
+
+```text
+http://127.0.0.1:8787/
+```
+
+如果改动涉及 dashboard，至少补跑：
+
+```zsh
+cargo test --test dashboard_config --test dashboard_recorder --test dashboard_projection --test dashboard_http
+cargo test --test mcp_stdio dashboard_enabled_does_not_corrupt_mcp_stdout_and_records_tool_event -v
+```
+
+dashboard HTTP 测试会监听本机端口，受限沙箱中可能需要在允许本地监听的环境运行。该面板只读，不会调用 `run_reflection` 或修改 SQLite。
+
+如果改动涉及 dashboard 视觉或静态物料，还需要确认：
+
+- `GET /` 包含 `Memory-chan Live Desk`
+- 静态 HTML visual contract 覆盖动态 ID 省略、指标卡/operation chain 自适应网格、侧栏贴纸 `contain` 显示和移动端无横向溢出
+- `GET /assets/memory-chan-hero.png` 返回 `content-type: image/png`
+- `GET /assets/memory-chan-sidebar.png` 返回 `content-type: image/png`
+- 生成图物料的仓库归属说明已经同步到 `NOTICE`
 
 ---
 
