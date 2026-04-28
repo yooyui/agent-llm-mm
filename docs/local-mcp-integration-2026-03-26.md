@@ -1,4 +1,4 @@
-# 本机 MCP 接入说明（2026-03-26，按 2026-04-27 fresh 验证更新）
+# 本机 MCP 接入说明（2026-03-26，按 2026-04-28 fresh 验证更新）
 
 ## 1. 目标
 
@@ -72,10 +72,10 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 - 存在后台 daemon / 定时自治进程
 - 所有 MCP 请求都会自动反思
 
-截至 `2026-04-27`，fresh 验证还包括：
+截至 `2026-04-28`，fresh 验证还包括：
 
-- `cargo test` 全量通过，145 个测试通过
-- 其中 `application_use_cases` 20、`failure_modes` 27、`mcp_stdio` 27、`sqlite_store` 17、`dashboard_http` 4
+- `cargo test` 全量通过，151 个测试通过
+- 其中 `application_use_cases` 22、`failure_modes` 29、`mcp_stdio` 27、`sqlite_store` 19、`dashboard_http` 4
 - self-revision demo package wrapper 可生成本地 artifact report
 
 ## 4. 启动服务
@@ -160,7 +160,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
   - `ingest_interaction -> conflict` 仍要求显式 `trigger_hints` 包含 `conflict` 或 `identity`
 - `decide_with_snapshot` / `build_self_snapshot` 当前仍要求显式传 `auto_reflect_namespace`
 - `decide_with_snapshot` 还要求显式传 conflict-compatible `trigger_hints`，否则不会因为“库里已有 evidence”而自动进入 conflict self-revision
-  - proposal 首阶段已可携带 `proposed_evidence_event_ids`、`proposed_evidence_query`、`confidence`；其中 query 在 explicit ids 为空时可对当前 trigger window 做 bounded narrowing，并在有交集时只按当前窗口内候选应用 `limit`，若没有交集则回退到 full trigger window；在 explicit ids 非空时也会约束这些 ids 必须满足当前窗口内的 query 过滤条件，但这仍不是 richer widening / ranking engine
+  - proposal 首阶段已可携带 `proposed_evidence_event_ids`、`proposed_evidence_query`、`confidence`；其中 query 在 explicit ids 为空时可对当前 trigger window 做 bounded narrowing，并在有交集时只按当前窗口内候选应用 `limit`，若没有交集则拒绝处理而不是绕过 query；在 explicit ids 非空时也会约束这些 ids 必须满足当前窗口内的 query 过滤条件，但这仍不是 richer widening / ranking engine
   - best-effort auto-reflection 现在会返回 structured trigger / rejection / suppression / cooldown diagnostics，供日志与测试复用
   - proposal 会经过服务端治理，再转译到既有 `run_reflection`
   - 没有新增单独 MCP tool；identity / commitments 的 durable write path 仍是 `run_reflection`

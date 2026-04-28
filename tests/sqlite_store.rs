@@ -88,6 +88,7 @@ async fn sqlite_query_evidence_event_ids_is_recent_first_and_filtered() {
     let results = context
         .store
         .query_evidence_event_ids(EvidenceQuery {
+            namespace: None,
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
@@ -101,6 +102,54 @@ async fn sqlite_query_evidence_event_ids_is_recent_first_and_filtered() {
     );
 }
 
+#[tokio::test]
+async fn sqlite_query_evidence_event_ids_filters_by_namespace_before_limit() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+
+    for (event_id, namespace, offset_seconds) in [
+        ("evt-project-a-old", Namespace::for_project("a"), 10),
+        ("evt-project-b-new", Namespace::for_project("b"), 30),
+        ("evt-project-a-new", Namespace::for_project("a"), 20),
+        ("evt-project-a-newest", Namespace::for_project("a"), 40),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                now + chrono::Duration::seconds(offset_seconds),
+                Event::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    EventKind::Observation,
+                    event_id,
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+
+    let results = context
+        .store
+        .query_evidence_event_ids(EvidenceQuery {
+            namespace: Some(Namespace::for_project("a")),
+            owner: Some(Owner::World),
+            kind: Some(EventKind::Observation),
+            limit: Some(2),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        results,
+        vec![
+            "evt-project-a-newest".to_string(),
+            "evt-project-a-new".to_string()
+        ]
+    );
+}
+
 #[cfg(target_pointer_width = "64")]
 #[tokio::test]
 async fn sqlite_query_evidence_event_ids_rejects_limit_above_i64_max() {
@@ -110,6 +159,7 @@ async fn sqlite_query_evidence_event_ids_rejects_limit_above_i64_max() {
     let result = context
         .store
         .query_evidence_event_ids(EvidenceQuery {
+            namespace: None,
             owner: None,
             kind: None,
             limit: Some(excessive_limit),
@@ -143,6 +193,7 @@ async fn sqlite_query_evidence_event_ids_unbounded_ignores_default_limit() {
     let bounded_results = context
         .store
         .query_evidence_event_ids(EvidenceQuery {
+            namespace: None,
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: None,
@@ -152,6 +203,7 @@ async fn sqlite_query_evidence_event_ids_unbounded_ignores_default_limit() {
     let unbounded_results = context
         .store
         .query_evidence_event_ids_unbounded(EvidenceQuery {
+            namespace: None,
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: None,
@@ -275,6 +327,85 @@ async fn sqlite_bootstrap_backfills_namespace_for_legacy_claim_rows() {
         legacy_invalid_insert.is_err(),
         "legacy migrations should restore the same namespace check constraint as fresh databases"
     );
+}
+
+#[tokio::test]
+async fn sqlite_bootstrap_backfills_namespace_for_legacy_event_rows() {
+    let context = test_support::new_legacy_event_store().await;
+
+    let namespace = sqlx::query_scalar::<_, String>(
+        "SELECT namespace FROM events WHERE event_id = 'legacy-world-event'",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    let namespace_not_null = sqlx::query_scalar::<_, i64>(
+        r#"SELECT "notnull" FROM pragma_table_info('events') WHERE name = 'namespace'"#,
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    let legacy_invalid_insert = sqlx::query(
+        r#"
+        INSERT INTO events (event_id, recorded_at, owner, namespace, kind, summary)
+        VALUES ('legacy-invalid-event-check', '2026-03-23T10:00:00+00:00', 'self', 'project/agent-llm-mm', 'action', 'invalid namespace')
+        "#,
+    )
+    .execute(&context.pool)
+    .await;
+
+    assert_eq!(namespace, "world");
+    assert_eq!(namespace_not_null, 1);
+    assert!(
+        legacy_invalid_insert.is_err(),
+        "legacy event migration should restore the same owner/namespace check constraint as fresh databases"
+    );
+
+    let evidence_link_event_fk = sqlx::query_scalar::<_, String>(
+        r#"SELECT "table" FROM pragma_foreign_key_list('evidence_links') WHERE "from" = 'event_id'"#,
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    let episode_event_fk = sqlx::query_scalar::<_, String>(
+        r#"SELECT "table" FROM pragma_foreign_key_list('episode_events') WHERE "from" = 'event_id'"#,
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    assert_eq!(evidence_link_event_fk, "events");
+    assert_eq!(episode_event_fk, "events");
+
+    sqlx::query(
+        r#"
+        INSERT INTO events (event_id, recorded_at, owner, namespace, kind, summary)
+        VALUES ('legacy-new-event', '2026-03-23T10:01:00+00:00', 'world', 'world', 'observation', 'post-migration event')
+        "#,
+    )
+    .execute(&context.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"
+        INSERT INTO claims (claim_id, owner, namespace, subject, predicate, object, mode, status)
+        VALUES ('legacy-new-claim', 'self', 'self', 'self.role', 'is', 'architect', 'observed', 'active')
+        "#,
+    )
+    .execute(&context.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO evidence_links (claim_id, event_id) VALUES ('legacy-new-claim', 'legacy-new-event')",
+    )
+    .execute(&context.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO episode_events (episode_reference, event_id) VALUES ('legacy-episode', 'legacy-new-event')",
+    )
+    .execute(&context.pool)
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -1020,6 +1151,47 @@ mod test_support {
             r#"
             INSERT INTO claims (claim_id, owner, subject, predicate, object, mode, status)
             VALUES ('legacy-claim', 'user', 'user.preference', 'likes', 'concise', 'observed', 'active')
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        drop(pool);
+
+        let store = SqliteStore::bootstrap(&database_url).await.unwrap();
+        let pool = SqlitePool::connect(&database_url).await.unwrap();
+
+        TestContext { store, pool }
+    }
+
+    pub async fn new_legacy_event_store() -> TestContext {
+        let path = std::env::temp_dir().join(format!(
+            "agent-llm-mm-legacy-event-{}.sqlite",
+            uuid::Uuid::new_v4()
+        ));
+        let database_url = format!("sqlite://{}", path.to_string_lossy().replace('\\', "/"));
+        std::fs::File::create(&path).unwrap();
+        let pool = SqlitePool::connect(&database_url).await.unwrap();
+
+        sqlx::query(
+            r#"
+            CREATE TABLE events (
+                event_id TEXT PRIMARY KEY,
+                recorded_at TEXT NOT NULL,
+                owner TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                summary TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            INSERT INTO events (event_id, recorded_at, owner, kind, summary)
+            VALUES ('legacy-world-event', '2026-03-23T10:00:00+00:00', 'world', 'observation', 'legacy event')
             "#,
         )
         .execute(&pool)

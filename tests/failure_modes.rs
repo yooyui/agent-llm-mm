@@ -483,6 +483,7 @@ async fn auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_q
         test_support::commitment_only_auto_reflection_proposal_with_policy(
             vec!["evt-conflict-3".to_string()],
             Some(EvidenceQuery {
+                namespace: None,
                 owner: Some(Owner::World),
                 kind: Some(EventKind::Observation),
                 limit: Some(5),
@@ -550,6 +551,7 @@ async fn auto_reflection_keeps_explicit_ids_authoritative_when_query_limit_only_
         test_support::commitment_only_auto_reflection_proposal_with_policy(
             vec!["evt-failure-2".to_string()],
             Some(EvidenceQuery {
+                namespace: None,
                 owner: None,
                 kind: None,
                 limit: Some(1),
@@ -624,6 +626,7 @@ async fn auto_reflection_applies_query_limit_within_current_trigger_window_when_
         test_support::commitment_only_auto_reflection_proposal_with_policy(
             Vec::new(),
             Some(EvidenceQuery {
+                namespace: None,
                 owner: None,
                 kind: None,
                 limit: Some(1),
@@ -849,7 +852,7 @@ async fn auto_reflection_preserves_handled_baseline_across_cooldown_suppression_
 }
 
 #[tokio::test]
-async fn auto_reflection_ignores_proposed_evidence_query_for_widening_when_ids_are_empty() {
+async fn auto_reflection_rejects_empty_proposed_evidence_query_instead_of_widening() {
     let deps = test_support::deps_for_failure_modes();
     deps.seed_failure_window(vec![
         (
@@ -865,6 +868,7 @@ async fn auto_reflection_ignores_proposed_evidence_query_for_widening_when_ids_a
         test_support::commitment_only_auto_reflection_proposal_with_policy(
             Vec::new(),
             Some(EvidenceQuery {
+                namespace: None,
                 owner: Some(Owner::World),
                 kind: Some(EventKind::Observation),
                 limit: Some(5),
@@ -879,21 +883,128 @@ async fn auto_reflection_ignores_proposed_evidence_query_for_widening_when_ids_a
             vec!["failure".to_string(), "rollback".to_string()],
         ),
     )
-    .await
-    .unwrap();
+    .await;
 
-    assert!(result.triggered);
+    assert!(matches!(
+        result,
+        Err(AppError::InvalidParams(message))
+            if message.contains("proposed evidence query did not match the current trigger window")
+    ));
     assert_eq!(
-        result.evidence_event_ids,
-        vec!["evt-failure-2".to_string(), "evt-failure-1".to_string()]
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
     );
-    let reflection = deps
-        .latest_reflection()
-        .expect("handled auto-reflection should persist a reflection");
+    assert!(deps.latest_reflection().is_none());
+}
+
+#[tokio::test]
+async fn auto_reflection_rejects_namespace_filter_with_no_trigger_window_intersection() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_events(vec![
+        StoredEvent::new(
+            "evt-conflict-1".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("agent-llm-mm"),
+                EventKind::Observation,
+                "current conflicting observation inside the trigger window",
+            )
+            .unwrap(),
+        ),
+        StoredEvent::new(
+            "evt-conflict-2".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("agent-llm-mm"),
+                EventKind::Observation,
+                "second current conflicting observation inside the trigger window",
+            )
+            .unwrap(),
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            Vec::new(),
+            Some(EvidenceQuery {
+                namespace: Some(Namespace::for_project("other")),
+                owner: Some(Owner::World),
+                kind: Some(EventKind::Observation),
+                limit: Some(5),
+            }),
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["conflict".to_string(), "commitment".to_string()],
+        ),
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(AppError::InvalidParams(message))
+            if message.contains("proposed evidence query did not match the current trigger window")
+    ));
     assert_eq!(
-        reflection.supporting_evidence_event_ids,
-        vec!["evt-failure-2".to_string(), "evt-failure-1".to_string()]
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
     );
+    assert!(deps.latest_reflection().is_none());
+}
+
+#[tokio::test]
+async fn auto_reflection_rejects_noop_proposal_when_query_has_no_trigger_window_intersection() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_events(vec![StoredEvent::new(
+        "evt-conflict-1".to_string(),
+        chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+            .unwrap()
+            .with_timezone(&Utc),
+        Event::new_with_namespace(
+            Owner::World,
+            Namespace::for_project("agent-llm-mm"),
+            EventKind::Observation,
+            "current conflicting observation inside the trigger window",
+        )
+        .unwrap(),
+    )]);
+    deps.set_self_revision_proposal(test_support::noop_auto_reflection_proposal_with_policy(
+        Some(EvidenceQuery {
+            namespace: Some(Namespace::for_project("other")),
+            owner: Some(Owner::World),
+            kind: Some(EventKind::Observation),
+            limit: Some(5),
+        }),
+    ));
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["conflict".to_string(), "commitment".to_string()],
+        ),
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(AppError::InvalidParams(message))
+            if message.contains("proposed evidence query did not match the current trigger window")
+    ));
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
+    );
+    assert!(deps.latest_reflection().is_none());
 }
 
 #[tokio::test]
@@ -972,6 +1083,7 @@ async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger
         test_support::commitment_only_auto_reflection_proposal_with_policy(
             Vec::new(),
             Some(EvidenceQuery {
+                namespace: None,
                 owner: Some(Owner::World),
                 kind: Some(EventKind::Observation),
                 limit: Some(5),
@@ -1538,6 +1650,20 @@ mod test_support {
         }
     }
 
+    pub fn noop_auto_reflection_proposal_with_policy(
+        proposed_evidence_query: Option<EvidenceQuery>,
+    ) -> agent_llm_mm::domain::self_revision::SelfRevisionProposal {
+        agent_llm_mm::domain::self_revision::SelfRevisionProposal {
+            should_reflect: true,
+            rationale: "record-only proposal should still respect evidence query governance"
+                .to_string(),
+            machine_patch: agent_llm_mm::domain::self_revision::SelfRevisionPatch::default(),
+            proposed_evidence_event_ids: Vec::new(),
+            proposed_evidence_query,
+            confidence: Some("medium".to_string()),
+        }
+    }
+
     pub fn identity_only_auto_reflection_proposal()
     -> agent_llm_mm::domain::self_revision::SelfRevisionProposal {
         agent_llm_mm::domain::self_revision::SelfRevisionProposal {
@@ -1948,7 +2074,7 @@ impl EventStore for FailureModeDeps {
         query: EvidenceQuery,
     ) -> Result<Vec<String>, AppError> {
         let mut events = self.state.lock().unwrap().committed.events.clone();
-        filter_and_order_events(&mut events, query.owner, query.kind);
+        filter_and_order_events(&mut events, query.namespace, query.owner, query.kind);
 
         let limit = query.limit.unwrap_or(10);
         if limit == 0 {
@@ -1967,7 +2093,7 @@ impl EventStore for FailureModeDeps {
         query: EvidenceQuery,
     ) -> Result<Vec<String>, AppError> {
         let mut events = self.state.lock().unwrap().committed.events.clone();
-        filter_and_order_events(&mut events, query.owner, query.kind);
+        filter_and_order_events(&mut events, query.namespace, query.owner, query.kind);
 
         let events = if let Some(limit) = query.limit {
             events.into_iter().take(limit).collect()
@@ -1992,9 +2118,14 @@ impl EventStore for FailureModeDeps {
 
 fn filter_and_order_events(
     events: &mut Vec<StoredEvent>,
+    namespace: Option<Namespace>,
     owner: Option<Owner>,
     kind: Option<EventKind>,
 ) {
+    if let Some(namespace) = namespace {
+        events.retain(|event| event.event.namespace() == &namespace);
+    }
+
     if let Some(owner) = owner {
         events.retain(|event| event.event.owner() == owner);
     }

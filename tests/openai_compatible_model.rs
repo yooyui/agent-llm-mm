@@ -270,6 +270,7 @@ async fn openai_compatible_model_parses_self_revision_evidence_policy() {
     assert_eq!(
         proposal.proposed_evidence_query,
         Some(EvidenceQuery {
+            namespace: None,
             owner: Some(Owner::Self_),
             kind: Some(EventKind::Action),
             limit: Some(2),

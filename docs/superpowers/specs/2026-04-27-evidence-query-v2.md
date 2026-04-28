@@ -1,6 +1,6 @@
 # Evidence Query v2 Contract
 
-Status: MVP / technical demo design contract, not implemented runtime behavior
+Status: MVP / technical demo contract; namespace-aware narrowing slice implemented
 
 This document specifies the next narrow evidence-query shape for the local MCP `stdio` technical demo / MVP. It does not introduce model-based evidence ranking, relation traversal, autonomous search, or a new durable write path.
 
@@ -8,8 +8,9 @@ This document specifies the next narrow evidence-query shape for the local MCP `
 
 ## Current Baseline
 
-The current v1 query shape is intentionally small:
+The current implemented query shape is intentionally small:
 
+- `namespace`
 - `owner`
 - `kind`
 - `limit`
@@ -19,7 +20,7 @@ It is used by:
 - `replacement_evidence_query` in explicit `run_reflection`
 - `proposed_evidence_query` in governed automatic self-revision proposals
 
-The current SQLite `events` table stores `event_id`, `recorded_at`, `owner`, `kind`, and `summary`. It does not yet store an event namespace. Claims and trigger-ledger entries already have namespace concepts, but evidence-event queries must not infer event namespace from claim namespace, summaries, or owner alone.
+The current SQLite `events` table stores `event_id`, `recorded_at`, `owner`, `namespace`, `kind`, and `summary`. Legacy event rows are backfilled to an owner-derived namespace during bootstrap. Evidence-event queries must not infer event namespace from claim namespace, summaries, or owner alone.
 
 The current store methods are:
 
@@ -34,13 +35,13 @@ Current query results are plain event ids. Richer evidence semantics, relation s
 
 Evidence Query v2 may add only these fields and semantics:
 
-- explicit namespace filter
-- evidence kind filter, mapped to the existing event kind taxonomy unless a later schema migration creates a separate evidence-kind column
+- explicit namespace filter (implemented)
+- evidence kind filter, mapped to the existing event kind taxonomy unless a later schema migration creates a separate evidence-kind column (current implementation still uses `kind`)
 - bounded recency window
-- deterministic limit behavior
-- clear no-match behavior
+- deterministic limit behavior (implemented for namespace / owner / kind filtering)
+- clear no-match behavior (implemented for explicit `run_reflection` query and automatic proposal narrowing)
 
-The first implementation slice should be namespace-aware narrowing. For automatic self-revision proposals, that narrowing happens inside the existing governed trigger window. For explicit `run_reflection`, there is no trigger window, so namespace-aware lookup must be a direct store filter and an empty result must stay `invalid_params`.
+The first implementation slice is namespace-aware narrowing. For automatic self-revision proposals, that narrowing happens inside the existing governed trigger window. For explicit `run_reflection`, there is no trigger window, so namespace-aware lookup is a direct store filter and an empty result stays `invalid_params`.
 
 The goal is a clearer lookup and governance contract shared by explicit reflection evidence lookup and automatic self-revision proposal validation. It is not a reasoning engine.
 
@@ -136,11 +137,11 @@ Automatic self-revision still writes durable identity and commitment changes onl
 
 ## Namespace Migration Boundary
 
-Because current events do not persist namespace, explicit `run_reflection` namespace filters require real event namespace storage before they can be supported. Acceptable approaches include:
+Events now persist namespace, so explicit `run_reflection` namespace filters are supported by direct store filtering. The implemented approach is:
 
 - adding namespace to the event domain object and SQLite `events` table with an explicit migration
 
-Automatic self-revision proposal validation may also derive a candidate namespace from already validated runtime trigger-window context, but only for narrowing the governed in-memory candidate set. That shortcut does not support explicit `run_reflection`, because explicit `run_reflection` queries the store directly and has no trigger window.
+Automatic self-revision proposal validation still narrows an already governed trigger-window candidate set. That shortcut does not replace explicit `run_reflection` store filtering, because explicit `run_reflection` queries the store directly and has no trigger window.
 
 Unacceptable approaches:
 
@@ -149,18 +150,22 @@ Unacceptable approaches:
 - using claim namespace through `evidence_links` as the event namespace
 - widening to all events when namespace metadata is missing
 
-Legacy events must get a conservative documented namespace behavior before namespace filtering is enabled. If legacy behavior cannot be made precise in one slice, namespace-aware filtering should reject unsupported legacy rows rather than silently widening.
+Legacy events are backfilled from owner using the same conservative owner-to-namespace rule as claims: `self -> self`, `user -> user/default`, and other owners -> `world`.
 
 ## Verification Requirements
 
 Current v1 governance behavior is already covered by:
 
 - `auto_reflection_intersects_proposed_evidence_query_with_current_trigger_window_when_ids_are_empty`
-- `auto_reflection_ignores_proposed_evidence_query_for_widening_when_ids_are_empty`
+- `auto_reflection_rejects_empty_proposed_evidence_query_instead_of_widening`
 - `auto_reflection_applies_query_limit_within_current_trigger_window_when_ids_are_empty`
 - `auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_query_policy`
 - `auto_reflection_rejects_model_proposed_evidence_outside_trigger_window`
+- `auto_reflection_rejects_empty_proposed_evidence_query_instead_of_widening`
+- `auto_reflection_rejects_namespace_filter_with_no_trigger_window_intersection`
 - `reflection_rejects_identity_update_when_evidence_query_resolves_empty`
+- `sqlite_query_evidence_event_ids_filters_by_namespace_before_limit`
+- `sqlite_bootstrap_backfills_namespace_for_legacy_event_rows`
 
 Related docs:
 
@@ -168,14 +173,19 @@ Related docs:
 - `docs/local-mcp-integration-2026-03-26.md`
 - `docs/testing-guide-2026-03-24.md`
 
-The first v2 implementation slice should add tests for:
+The namespace-aware v2 implementation slice covers:
 
 - namespace filter returns only events in the requested namespace
 - namespace filter preserves newest-first deterministic order
 - `limit` is applied inside the namespace-filtered candidate set
-- explicit `run_reflection` namespace or recency no-match behavior remains `invalid_params`
+- explicit `run_reflection` namespace no-match behavior remains `invalid_params`
 - self-revision proposals cannot use namespace filters to widen beyond the trigger window
 - no-match namespace filters do not silently bypass the proposed filter
+
+Still pending from the broader v2 contract:
+
+- bounded recency window fields
+- independent evidence-kind taxonomy beyond current event kind
 
 Recommended command set for that slice:
 

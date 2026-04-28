@@ -16,8 +16,8 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：适合以“公开技术 demo / MVP”身份发布到 GitHub，不应包装成完整产品
-- 最新 fresh 验证：`2026-04-27`
-  - `cargo test` 全量通过，共 145 个测试
+- 最新 fresh 验证：`2026-04-28`
+  - `cargo test` 全量通过，共 151 个测试
   - `doctor` 预检返回 `status = ok`
   - self-revision demo package 可一键生成本地证据链
 
@@ -57,11 +57,11 @@
 - `run_reflection`
   - 以审计友好的方式 supersede 既有 claim
   - 支持显式 `replacement_evidence_event_ids`
-  - 已具备窄化的 `replacement_evidence_query` 基础能力（结构化首版），用于在反思时提供可选的证据检索起点
+  - 已具备窄化的 `replacement_evidence_query` 基础能力，支持 namespace / owner / kind / limit 过滤；空查询结果仍返回 `invalid_params`
   - 已支持带审计记录的最小 `identity_core` / `commitments` 深层修订
 - trigger-ledger-backed automatic self-revision MVP
   - 已有 `self_revision` 领域契约、`ModelPort::propose_self_revision` 端口，以及 `mock` / `openai-compatible` proposal adapter
-  - proposal 首阶段已带 `proposed_evidence_event_ids`、`proposed_evidence_query`、`confidence` 契约，用于收口证据候选与置信度；其中 `proposed_evidence_query` 在 explicit ids 为空时可作为 bounded narrowing hint，对当前 trigger window 做交集收口，并在有交集时按当前窗口内的候选顺序应用 `limit`；若没有交集则回退到 full trigger window。explicit ids 非空时，这些 ids 也必须满足 query 在当前 trigger window 内的过滤约束，但仍不是 widening/ranking engine
+  - proposal 首阶段已带 `proposed_evidence_event_ids`、`proposed_evidence_query`、`confidence` 契约，用于收口证据候选与置信度；其中 `proposed_evidence_query` 在 explicit ids 为空时可作为 bounded narrowing hint，对当前 trigger window 做交集收口，并在有交集时按当前窗口内的候选顺序应用 `limit`；若没有交集，不再改用完整 trigger window。explicit ids 非空时，这些 ids 也必须满足 query 在当前 trigger window 内的过滤约束，但仍不是 widening/ranking engine
   - 已有 trigger ledger 持久化、cooldown 去重，以及带 structured trigger / rejection / suppression / cooldown 信息的 handled/rejected/suppressed 诊断
   - 当前 MCP-wired automatic path 只有 4 条：
     - `ingest_interaction -> failure`
@@ -88,6 +88,7 @@
   - `world`
   - `user/<id>`
   - `project/<id>`
+  - event / claim / trigger ledger 均保留明确 namespace，legacy event rows 会按 owner 规则回填
 - `openai-compatible` provider
   - 通过配置文件选择 provider
   - 支持本地 `chat/completions` 风格兼容接口
@@ -134,7 +135,7 @@
 
 ### 未实现
 
-- richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只支持 `owner / kind / limit` 的结构化首版）
+- richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / limit 的窄化查询；bounded recency、独立 evidence kind、weighting / relation / ranking 仍未实现）
 - richer evidence weighting / relation / ranking
 - evidence weight / relation
 - `identity_core` / `commitments` 的 richer schema、版本化修订与更细策略

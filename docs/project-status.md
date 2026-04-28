@@ -45,6 +45,7 @@
 - domain 校验
 - SQLite 约束
 - MCP DTO 输入
+- event / claim / trigger ledger 持久化；legacy event rows 会按 owner 规则回填 namespace
 
 ### 4. 反思最小正向路径
 
@@ -52,7 +53,7 @@
 
 - 审计友好的 supersede / dispute 行为
 - 显式 `replacement_evidence_event_ids`
-- 一套窄化的结构化 `replacement_evidence_query` 首批能力（首版证据检索基础）
+- 一套窄化的结构化 `replacement_evidence_query` 首批能力，支持 namespace / owner / kind / limit 过滤，空查询结果仍返回 `invalid_params`
 - 一条最小可用的 `identity_core` / `commitments` 深层修订路径，并把 supporting evidence 与请求的更新内容写入 reflection 审计记录
 - 缺失 evidence event id 时返回 `invalid_params`
 
@@ -74,7 +75,7 @@
 - 已新增 `self_revision` 领域契约，包含 trigger type、proposal rationale 和 machine patch 最小结构
 - `ModelPort` 已支持 `propose_self_revision`
 - `mock` 与 `openai-compatible` adapter 已实现最小 proposal 行为
-- proposal 首阶段已支持 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence`；这些字段当前用于收口证据候选与置信度，其中 `proposed_evidence_query` 在 explicit ids 为空时可作为 bounded narrowing hint，对当前 trigger window 做交集收口，并在有交集时按当前窗口内的候选顺序应用 `limit`；若没有交集则回退到 full trigger window。explicit ids 非空时，这些 ids 也必须满足 query 在当前 trigger window 内的过滤约束，但不代表 richer widening / ranking engine 已落地
+- proposal 首阶段已支持 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence`；这些字段当前用于收口证据候选与置信度，其中 `proposed_evidence_query` 在 explicit ids 为空时可作为 bounded narrowing hint，对当前 trigger window 做交集收口，并在有交集时按当前窗口内的候选顺序应用 `limit`；若没有交集，不再绕过 query 改用 full trigger window。explicit ids 非空时，这些 ids 也必须满足 query 在当前 trigger window 内的过滤约束，但不代表 richer widening / ranking engine 已落地
 - 已新增 trigger ledger 持久化，能记录 handled / rejected / suppressed 结果、episode watermark 和 cooldown，并通过 structured diagnostics 暴露 trigger / rejection / suppression / cooldown 信息
 - 已新增 `auto_reflect_if_needed` 协调器，负责 trigger 判定、proposal 请求、治理校验和写入前收口
 - 当前 MCP-wired automatic path 已谨慎扩到 4 条：`ingest_interaction -> failure`、`ingest_interaction -> conflict`、`decide_with_snapshot -> conflict`、`build_self_snapshot -> periodic`
@@ -175,7 +176,7 @@ Implementation notes:
 
 ## 未实现
 
-- richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍仅有 `owner / kind / limit` 的窄化 evidence-oriented 查询基础）
+- richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / limit 的窄化 evidence-oriented 查询基础）
 - richer evidence weighting / relation / ranking
 - evidence weight / relation
 - `identity_core` 的 richer schema 与版本化形成机制
@@ -187,7 +188,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-04-27`，已 fresh 运行：
+截至 `2026-04-28`，已 fresh 运行：
 
 - `cargo fmt --check`
 - `git diff --check`
@@ -199,7 +200,7 @@ Implementation notes:
 
 结果：
 
-- `application_use_cases`: 20
+- `application_use_cases`: 22
 - `bootstrap`: 15
 - `dashboard_config`: 4
 - `dashboard_http`: 4
@@ -209,13 +210,13 @@ Implementation notes:
 - `domain_invariants`: 4
 - `domain_snapshot`: 6
 - `demo_openai_compatible_stub`: 1
-- `failure_modes`: 27
+- `failure_modes`: 29
 - `mcp_stdio`: 27
 - `openai_compatible_model`: 7
 - `provider_config`: 5
 - `self_revision_demo_runner`: 2
-- `sqlite_store`: 17
-- 合计：145 个测试通过
+- `sqlite_store`: 19
+- 合计：151 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 8 个本地 artifact，并证明 before / after decision shift
 

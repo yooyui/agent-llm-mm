@@ -1,14 +1,5 @@
 pub(super) const OWNER_NAMESPACE_SCOPE_CONSTRAINT_NAME: &str = "owner_namespace_scope";
 
-const EVENTS_TABLE_SQL: &str = r#"
-CREATE TABLE IF NOT EXISTS events (
-    event_id TEXT PRIMARY KEY,
-    recorded_at TEXT NOT NULL,
-    owner TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    summary TEXT NOT NULL
-)"#;
-
 const OWNER_NAMESPACE_SCOPE_CONSTRAINT_SQL: &str = r#"    CONSTRAINT owner_namespace_scope CHECK (
         (owner = 'self' AND namespace = 'self')
         OR (owner = 'user' AND namespace LIKE 'user/%')
@@ -94,7 +85,7 @@ pub(super) fn init_sql() -> String {
 
 {commitments_table};
 "#,
-        events_table = EVENTS_TABLE_SQL,
+        events_table = events_table_sql(true),
         claims_table = claims_table_sql(true),
         evidence_links_table = EVIDENCE_LINKS_TABLE_SQL,
         episode_events_table = EPISODE_EVENTS_TABLE_SQL,
@@ -102,6 +93,28 @@ pub(super) fn init_sql() -> String {
         reflection_trigger_ledger_table = REFLECTION_TRIGGER_LEDGER_TABLE_SQL,
         identity_claims_table = IDENTITY_CLAIMS_TABLE_SQL,
         commitments_table = COMMITMENTS_TABLE_SQL,
+    )
+}
+
+pub(super) fn events_table_sql(include_if_not_exists: bool) -> String {
+    let if_not_exists_clause = if include_if_not_exists {
+        " IF NOT EXISTS"
+    } else {
+        ""
+    };
+
+    format!(
+        r#"
+CREATE TABLE{if_not_exists_clause} events (
+    event_id TEXT PRIMARY KEY,
+    recorded_at TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    summary TEXT NOT NULL,
+{owner_namespace_scope_constraint}
+)"#,
+        owner_namespace_scope_constraint = OWNER_NAMESPACE_SCOPE_CONSTRAINT_SQL,
     )
 }
 

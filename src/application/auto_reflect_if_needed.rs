@@ -362,6 +362,7 @@ where
     let evidence_event_ids = match input.trigger_type {
         TriggerType::Failure => {
             deps.query_evidence_event_ids(EvidenceQuery {
+                namespace: None,
                 owner: Some(Owner::Self_),
                 kind: Some(crate::domain::types::EventKind::Action),
                 limit: Some(5),
@@ -370,6 +371,7 @@ where
         }
         TriggerType::Conflict | TriggerType::Periodic => {
             deps.query_evidence_event_ids(EvidenceQuery {
+                namespace: None,
                 owner: None,
                 kind: None,
                 limit: Some(5),
@@ -947,6 +949,7 @@ where
             let query_limit = proposed_evidence_query.limit;
             let proposed_query_event_ids = dedupe_strings(
                 deps.query_evidence_event_ids_unbounded(EvidenceQuery {
+                    namespace: proposed_evidence_query.namespace,
                     owner: proposed_evidence_query.owner,
                     kind: proposed_evidence_query.kind,
                     limit: None,
@@ -970,7 +973,9 @@ where
         };
 
         if filtered_candidate_ids.is_empty() {
-            return Ok(candidate_evidence_event_ids.to_vec());
+            return Err(AppError::InvalidParams(
+                "proposed evidence query did not match the current trigger window".to_string(),
+            ));
         }
 
         let governed_evidence_event_ids = if let Some(limit) = query_limit {

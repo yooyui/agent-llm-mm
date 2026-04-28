@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-04-27 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-04-28 fresh 验证更新）
 
 ## 1. 目标
 
@@ -38,14 +38,14 @@
 - `domain_invariants`: 4 passed
 - `domain_snapshot`: 6 passed
 - `demo_openai_compatible_stub`: 1 passed
-- `failure_modes`: 27 passed
+- `failure_modes`: 29 passed
 - `mcp_stdio`: 27 passed
 - `openai_compatible_model`: 7 passed
 - `provider_config`: 5 passed
 - `self_revision_demo_runner`: 2 passed
-- `sqlite_store`: 17 passed
+- `sqlite_store`: 19 passed
 
-合计：147 个测试通过。
+合计：151 个测试通过。
 
 ---
 
@@ -187,15 +187,18 @@ cargo test --test sqlite_store
 
 重点覆盖：
 
-- `claims.namespace` 持久化
+- `events.namespace` / `claims.namespace` 持久化
 - legacy schema 迁移
 - `owner <-> namespace` 数据库级 `CHECK` 约束
 - adapter 写入/读取兜底
 - owner/namespace SQL 规则是否保持单一来源
+- evidence query 是否按 namespace 先过滤、再排序和限流
 
 特别关注这些测试名：
 
 - `sqlite_store_bootstraps_all_tables`
+- `sqlite_query_evidence_event_ids_filters_by_namespace_before_limit`
+- `sqlite_bootstrap_backfills_namespace_for_legacy_event_rows`
 - `sqlite_bootstrap_backfills_namespace_for_legacy_claim_rows`
 - `sqlite_store_rejects_owner_namespace_mismatch_on_write`
 - `sqlite_database_rejects_corrupt_namespace_owner_pair_before_read`
@@ -372,7 +375,9 @@ cargo test --test failure_modes auto_reflection_applies_model_proposed_evidence_
 cargo test --test failure_modes auto_reflection_intersects_proposed_evidence_query_with_current_trigger_window_when_ids_are_empty -v
 cargo test --test failure_modes auto_reflection_applies_query_limit_within_current_trigger_window_when_ids_are_empty -v
 cargo test --test failure_modes auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_query_policy -v
-cargo test --test failure_modes auto_reflection_ignores_proposed_evidence_query_for_widening_when_ids_are_empty -v
+cargo test --test failure_modes auto_reflection_rejects_empty_proposed_evidence_query_instead_of_widening -v
+cargo test --test failure_modes auto_reflection_rejects_namespace_filter_with_no_trigger_window_intersection -v
+cargo test --test failure_modes auto_reflection_rejects_noop_proposal_when_query_has_no_trigger_window_intersection -v
 cargo test --test openai_compatible_model openai_compatible_model_parses_self_revision_evidence_policy -v
 ```
 
@@ -383,7 +388,8 @@ cargo test --test openai_compatible_model openai_compatible_model_parses_self_re
 - 当 model 同时提供 explicit ids 和 `proposed_evidence_query` 时，这些 ids 是否仍必须满足 query 在当前 trigger window 内的过滤约束
 - handled ledger 是否保留完整 evidence window，而不是只保留 model 选择的子集
 - `proposed_evidence_query` 在 explicit ids 为空时是否只会对当前 trigger window 做交集收口，并在有交集时只按当前窗口内候选应用 `limit`
-- `proposed_evidence_query` 在 explicit ids 为空且 query 无交集时是否会回退到 full trigger window
+- `proposed_evidence_query` 在 explicit ids 为空且 query 无交集时是否拒绝处理，而不是绕过 query 改用 full trigger window
+- record-only / no-op proposal 是否同样不能绕过 no-match query rejection
 - `proposed_evidence_query` 当前是否仍不会在 id 为空时自动 widening / ranking
 
 ### 6.8 automatic self-revision MVP 定向验证
@@ -814,7 +820,7 @@ cargo test
 
 ## 11. 当前结论
 
-截至 `2026-04-27`，推荐把下面五条当作普通提交前基线；发布前仍以 [Release Gate](release-gate.md) 为准：
+截至 `2026-04-28`，推荐把下面五条当作普通提交前基线；发布前仍以 [Release Gate](release-gate.md) 为准：
 
 ```zsh
 cargo fmt --check

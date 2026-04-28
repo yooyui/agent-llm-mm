@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use crate::{
     domain::{
         event::Event,
-        types::{EventKind, Owner},
+        types::{EventKind, Namespace, Owner},
     },
     error::AppError,
 };
@@ -18,6 +18,7 @@ pub struct StoredEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EvidenceQuery {
+    pub namespace: Option<Namespace>,
     pub owner: Option<Owner>,
     pub kind: Option<EventKind>,
     pub limit: Option<usize>,

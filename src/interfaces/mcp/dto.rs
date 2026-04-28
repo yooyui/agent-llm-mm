@@ -83,13 +83,24 @@ impl From<EventKindDto> for EventKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct EventDto {
     pub owner: OwnerDto,
+    #[serde(default)]
+    pub namespace: Option<String>,
     pub kind: EventKindDto,
     pub summary: String,
 }
 
-impl From<EventDto> for Event {
-    fn from(value: EventDto) -> Self {
-        Event::new(value.owner.into(), value.kind.into(), value.summary)
+impl TryFrom<EventDto> for Event {
+    type Error = crate::domain::DomainError;
+
+    fn try_from(value: EventDto) -> Result<Self, Self::Error> {
+        let owner = Owner::from(value.owner);
+        let kind = EventKind::from(value.kind);
+        let namespace = value.namespace.map(Namespace::parse).transpose()?;
+
+        match namespace {
+            Some(namespace) => Event::new_with_namespace(owner, namespace, kind, value.summary),
+            None => Ok(Event::new(owner, kind, value.summary)),
+        }
     }
 }
 
@@ -151,7 +162,7 @@ impl TryFrom<IngestInteractionParams> for IngestInput {
 
     fn try_from(value: IngestInteractionParams) -> Result<Self, Self::Error> {
         Ok(IngestInput::new(
-            value.event.into(),
+            Event::try_from(value.event)?,
             value
                 .claim_drafts
                 .into_iter()
@@ -165,6 +176,10 @@ impl TryFrom<IngestInteractionParams> for IngestInput {
 impl IngestInteractionParams {
     fn auto_reflect_namespace(&self) -> Result<Namespace, AppError> {
         if self.claim_drafts.is_empty() {
+            if let Some(namespace) = &self.event.namespace {
+                return Namespace::parse(namespace.clone()).map_err(AppError::from);
+            }
+
             return Ok(Namespace::for_owner(self.event.owner.into()));
         }
 
@@ -336,6 +351,8 @@ impl From<ReflectionIdentityUpdateDto> for ReflectionIdentityUpdate {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct EvidenceQueryDto {
     #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
     pub owner: Option<OwnerDto>,
     #[serde(default)]
     pub kind: Option<EventKindDto>,
@@ -356,6 +373,11 @@ impl TryFrom<EvidenceQueryDto> for EvidenceQuery {
         }
 
         Ok(Self {
+            namespace: value
+                .namespace
+                .map(Namespace::parse)
+                .transpose()
+                .map_err(AppError::from)?,
             owner: value.owner.map(Owner::from),
             kind: value.kind.map(EventKind::from),
             limit: value.limit,

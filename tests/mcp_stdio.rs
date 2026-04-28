@@ -714,6 +714,7 @@ timeout_ms = 30000
                 json!({
                     "event": {
                         "owner": "World",
+                        "namespace": "project/agent-llm-mm",
                         "kind": "Observation",
                         "summary": summary
                     },
@@ -874,6 +875,7 @@ timeout_ms = 30000
                 json!({
                     "event": {
                         "owner": "World",
+                        "namespace": "project/agent-llm-mm",
                         "kind": "Observation",
                         "summary": summary
                     },
@@ -1840,6 +1842,7 @@ async fn inferred_replacement_reflection_with_evidence_is_accepted_over_stdio() 
                 json!({
                     "event": {
                         "owner": "World",
+                        "namespace": "project/agent-llm-mm",
                         "kind": "Observation",
                         "summary": summary
                     },
@@ -1997,6 +2000,7 @@ async fn reflected_claim_replacement_query_is_accepted_over_stdio() {
                 json!({
                     "event": {
                         "owner": "World",
+                        "namespace": "project/agent-llm-mm",
                         "kind": "Observation",
                         "summary": summary
                     },
@@ -2055,6 +2059,7 @@ async fn reflected_claim_replacement_query_is_accepted_over_stdio() {
                     "mode": "Inferred"
                 },
                 "replacement_evidence_query": {
+                    "namespace": "project/agent-llm-mm",
                     "owner": "World",
                     "kind": "Observation",
                     "limit": 2
@@ -2128,6 +2133,7 @@ async fn reflected_claim_replacement_query_without_matches_is_invalid_params_ove
                     "mode": "Inferred"
                 },
                 "replacement_evidence_query": {
+                    "namespace": "project/missing",
                     "owner": "World",
                     "kind": "Conversation",
                     "limit": 3

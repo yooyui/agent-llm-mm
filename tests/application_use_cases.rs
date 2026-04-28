@@ -259,6 +259,7 @@ async fn reflection_rejects_identity_update_when_evidence_query_resolves_empty()
             Vec::new(),
         )
         .with_replacement_evidence_query(EvidenceQuery {
+            namespace: None,
             owner: Some(Owner::User),
             kind: Some(EventKind::Conversation),
             limit: Some(2),
@@ -585,6 +586,7 @@ async fn reflection_rejects_replacement_claim_when_query_returns_no_events() {
             Vec::new(),
         )
         .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
+            namespace: None,
             owner: Some(Owner::Self_),
             kind: Some(EventKind::Conversation),
             limit: Some(2),
@@ -946,6 +948,7 @@ mod test_support {
             Vec::new(),
         )
         .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
+            namespace: None,
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
@@ -966,6 +969,7 @@ mod test_support {
             vec!["evt-reflection-1".to_string()],
         )
         .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
+            namespace: None,
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
@@ -986,10 +990,11 @@ mod test_support {
             vec!["evt-reflection-1".to_string()],
         )
         .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
-                owner: Some(Owner::World),
-                kind: Some(EventKind::Observation),
-                limit: Some(2),
-            })
+            namespace: None,
+            owner: Some(Owner::World),
+            kind: Some(EventKind::Observation),
+            limit: Some(2),
+        })
         .with_identity_update(vec![
             "identity:self=staff_architect".to_string(),
             "identity:self=mentor".to_string(),
@@ -1016,6 +1021,7 @@ mod test_support {
             vec!["evt-reflection-1".to_string()],
         )
         .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
+            namespace: None,
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
@@ -1034,6 +1040,7 @@ mod test_support {
             vec!["evt-reflection-1".to_string()],
         )
         .with_replacement_evidence_query(agent_llm_mm::ports::event_store::EvidenceQuery {
+            namespace: None,
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
@@ -1376,7 +1383,7 @@ impl EventStore for InMemoryDeps {
             .evidence_query_trace
             .push(query.clone());
         let mut events = self.state.lock().unwrap().committed.events.clone();
-        filter_and_order_events(&mut events, query.owner, query.kind);
+        filter_and_order_events(&mut events, query.namespace, query.owner, query.kind);
 
         let limit = query.limit.unwrap_or(10);
         if limit == 0 {
@@ -1395,7 +1402,7 @@ impl EventStore for InMemoryDeps {
         query: EvidenceQuery,
     ) -> Result<Vec<String>, AppError> {
         let mut events = self.state.lock().unwrap().committed.events.clone();
-        filter_and_order_events(&mut events, query.owner, query.kind);
+        filter_and_order_events(&mut events, query.namespace, query.owner, query.kind);
 
         let events = if let Some(limit) = query.limit {
             events.into_iter().take(limit).collect()
@@ -1409,9 +1416,14 @@ impl EventStore for InMemoryDeps {
 
 fn filter_and_order_events(
     events: &mut Vec<StoredEvent>,
+    namespace: Option<Namespace>,
     owner: Option<Owner>,
     kind: Option<EventKind>,
 ) {
+    if let Some(namespace) = namespace {
+        events.retain(|event| event.event.namespace() == &namespace);
+    }
+
     if let Some(owner) = owner {
         events.retain(|event| event.event.owner() == owner);
     }

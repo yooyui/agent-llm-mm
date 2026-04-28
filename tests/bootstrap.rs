@@ -305,7 +305,7 @@ async fn doctor_creates_missing_parent_directories_for_file_backed_sqlite_databa
 async fn serve_command_fails_fast_for_malformed_database_url() {
     let config = AppConfig {
         transport: TransportKind::Stdio,
-        database_url: "not-a-sqlite-url".to_string(),
+        database_url: "postgres://not-a-sqlite-url".to_string(),
         model_provider: ModelProviderKind::Mock,
         model_config: ModelConfig::Mock,
         dashboard: Default::default(),

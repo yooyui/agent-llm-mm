@@ -84,14 +84,14 @@
 
 - 在现有 `owner / kind / limit` 查询基础上，补齐 explicit namespace、bounded recency、deterministic limit / no-match 语义
 - 补齐 evidence kind filter 边界，并保持 explicit evidence ids 只有通过服务端 validation 后才是 authoritative
-- explicit namespace filter 需要先补齐 event namespace schema / migration；不能用 owner、summary 或 claim namespace 代替 event namespace
+- explicit namespace filter 的首片已经补齐 event namespace schema / migration；不能用 owner、summary 或 claim namespace 代替 event namespace
 - explicit reflection evidence lookup 继续走直接 store filter，空查询结果仍是 `invalid_params`
 - self-revision proposal 只允许在当前 trigger window 内 bounded narrowing，空查询结果不能绕过 query 去做更宽搜索
-- 为后续 namespace-aware narrowing 的单片实现提供测试和迁移边界
+- 后续仍需补 bounded recency 与独立 evidence kind 语义
 
 原因：
 
-- 当前 `events` 还没有持久化 namespace，不能把 owner、summary 或 claim namespace 当作 evidence namespace
+- 当前已持久化 `events.namespace`，但这只是 namespace-aware narrowing 首片，不代表 richer evidence discovery 已落地
 - v2 的价值是让 evidence 查找更可审计，而不是引入 ranking、relation graph、weight scoring、cross-namespace widening 或 autonomous evidence search
 - 这一步继续保持 `run_reflection` 是 identity / commitment durable update 的唯一写路径
 

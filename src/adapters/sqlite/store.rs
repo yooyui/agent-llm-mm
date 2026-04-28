@@ -26,7 +26,7 @@ use crate::{
 };
 
 use super::schema::{
-    OWNER_NAMESPACE_SCOPE_CONSTRAINT_NAME, claims_table_sql, init_sql,
+    OWNER_NAMESPACE_SCOPE_CONSTRAINT_NAME, claims_table_sql, events_table_sql, init_sql,
     legacy_namespace_backfill_expression,
 };
 
@@ -50,6 +50,7 @@ impl SqliteStore {
         for statement in init_sql.split(';').filter(|part| !part.trim().is_empty()) {
             map_sqlite(sqlx::query(statement).execute(connection.as_mut()).await)?;
         }
+        ensure_events_namespace_column(connection.as_mut()).await?;
         ensure_claims_namespace_column(connection.as_mut()).await?;
         ensure_reflection_audit_columns(connection.as_mut()).await?;
         seed_baseline_commitments(connection.as_mut()).await?;
@@ -159,6 +160,10 @@ async fn query_evidence_event_ids_with_limit(
     let mut sql = String::from("SELECT event_id, recorded_at, owner, kind, summary FROM events");
     let mut predicates = Vec::new();
 
+    if query.namespace.is_some() {
+        predicates.push("namespace = ?");
+    }
+
     if query.owner.is_some() {
         predicates.push("owner = ?");
     }
@@ -179,6 +184,10 @@ async fn query_evidence_event_ids_with_limit(
 
     let mut rows = {
         let mut query_builder = sqlx::query(&sql);
+
+        if let Some(namespace) = query.namespace {
+            query_builder = query_builder.bind(namespace.as_str().to_string());
+        }
 
         if let Some(owner) = query.owner {
             query_builder = query_builder.bind(owner_as_str(owner));
@@ -687,13 +696,14 @@ where
     map_sqlite(
         sqlx::query(
             r#"
-            INSERT INTO events (event_id, recorded_at, owner, kind, summary)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO events (event_id, recorded_at, owner, namespace, kind, summary)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&event.event_id)
         .bind(event.recorded_at.to_rfc3339())
         .bind(owner_as_str(event.event.owner()))
+        .bind(event.event.namespace().as_str())
         .bind(event_kind_as_str(event.event.kind()))
         .bind(event.event.summary())
         .execute(executor)
@@ -957,6 +967,47 @@ async fn ensure_claims_namespace_column(
     Ok(())
 }
 
+async fn ensure_events_namespace_column(
+    connection: &mut sqlx::SqliteConnection,
+) -> Result<(), AppError> {
+    let namespace_column_exists = map_sqlite(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM pragma_table_info('events') WHERE name = 'namespace'",
+        )
+        .fetch_one(&mut *connection)
+        .await,
+    )? > 0;
+    let namespace_is_not_null = if namespace_column_exists {
+        map_sqlite(
+            sqlx::query_scalar::<_, i64>(
+                r#"SELECT "notnull" FROM pragma_table_info('events') WHERE name = 'namespace'"#,
+            )
+            .fetch_one(&mut *connection)
+            .await,
+        )? == 1
+    } else {
+        false
+    };
+    let events_has_scope_check = if namespace_column_exists {
+        map_sqlite(
+            sqlx::query_scalar::<_, String>(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'events'",
+            )
+            .fetch_one(&mut *connection)
+            .await,
+        )?
+        .contains(OWNER_NAMESPACE_SCOPE_CONSTRAINT_NAME)
+    } else {
+        false
+    };
+
+    if !namespace_column_exists || !namespace_is_not_null || !events_has_scope_check {
+        rebuild_events_table_with_namespace(connection, namespace_column_exists).await?;
+    }
+
+    Ok(())
+}
+
 async fn ensure_reflection_audit_columns(
     connection: &mut sqlx::SqliteConnection,
 ) -> Result<(), AppError> {
@@ -1018,6 +1069,11 @@ async fn rebuild_claims_table_with_namespace(
             .await,
     )?;
     map_sqlite(
+        sqlx::query("PRAGMA legacy_alter_table = ON")
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(
         sqlx::query("ALTER TABLE claims RENAME TO claims_legacy")
             .execute(&mut *connection)
             .await,
@@ -1030,6 +1086,65 @@ async fn rebuild_claims_table_with_namespace(
     map_sqlite(sqlx::query(&copy_sql).execute(&mut *connection).await)?;
     map_sqlite(
         sqlx::query("DROP TABLE claims_legacy")
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(
+        sqlx::query("PRAGMA legacy_alter_table = OFF")
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&mut *connection)
+            .await,
+    )?;
+
+    Ok(())
+}
+
+async fn rebuild_events_table_with_namespace(
+    connection: &mut sqlx::SqliteConnection,
+    legacy_table_has_namespace: bool,
+) -> Result<(), AppError> {
+    let create_events_table_sql = events_table_sql(false);
+    let namespace_expression = legacy_namespace_backfill_expression(legacy_table_has_namespace);
+    let copy_sql = format!(
+        r#"
+        INSERT INTO events (event_id, recorded_at, owner, namespace, kind, summary)
+        SELECT event_id, recorded_at, owner, {namespace_expression}, kind, summary
+        FROM events_legacy
+        "#
+    );
+
+    map_sqlite(
+        sqlx::query("PRAGMA foreign_keys = OFF")
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(
+        sqlx::query("PRAGMA legacy_alter_table = ON")
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(
+        sqlx::query("ALTER TABLE events RENAME TO events_legacy")
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(
+        sqlx::query(&create_events_table_sql)
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(sqlx::query(&copy_sql).execute(&mut *connection).await)?;
+    map_sqlite(
+        sqlx::query("DROP TABLE events_legacy")
+            .execute(&mut *connection)
+            .await,
+    )?;
+    map_sqlite(
+        sqlx::query("PRAGMA legacy_alter_table = OFF")
             .execute(&mut *connection)
             .await,
     )?;
@@ -1206,11 +1321,15 @@ fn stored_event_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<StoredEvent, A
     Ok(StoredEvent::new(
         row.get("event_id"),
         parse_timestamp(&row.get::<String, _>("recorded_at"))?,
-        Event::new(
+        Event::new_with_namespace(
             parse_owner(&row.get::<String, _>("owner"))?,
+            parse_namespace(&row.get::<String, _>("namespace"))?,
             parse_event_kind(&row.get::<String, _>("kind"))?,
             row.get::<String, _>("summary"),
-        ),
+        )
+        .map_err(|error| {
+            AppError::Message(format!("invalid stored event namespace mapping: {error:?}"))
+        })?,
     ))
 }
 
