@@ -31,7 +31,7 @@
 - `application_use_cases`: 22 passed
 - `bootstrap`: 15 passed
 - `dashboard_config`: 4 passed
-- `dashboard_http`: 4 passed
+- `dashboard_http`: 5 passed
 - `dashboard_projection`: 2 passed
 - `dashboard_recorder`: 2 passed
 - `decision_flow`: 2 passed
@@ -45,7 +45,7 @@
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_store`: 19 passed
 
-合计：151 个测试通过。
+合计：152 个测试通过。
 
 ---
 
@@ -640,7 +640,7 @@ cargo test --test dashboard_config --test dashboard_recorder --test dashboard_pr
 cargo test --test mcp_stdio dashboard_enabled_does_not_corrupt_mcp_stdout_and_records_tool_event -v
 ```
 
-dashboard HTTP 测试会监听本机端口，受限沙箱中可能需要在允许本地监听的环境运行。该面板只读，不会调用 `run_reflection` 或修改 SQLite。
+dashboard HTTP 测试会监听本机端口，受限沙箱中可能需要在允许本地监听的环境运行。该面板只读，不会调用 `run_reflection` 或修改 SQLite；`dashboard_rejects_write_methods_on_read_only_routes` 覆盖 POST / PUT / PATCH / DELETE 返回 `405 Method Not Allowed`，`dashboard_serves_html_summary_events_detail_and_health` 覆盖 HTML、JSON API、health 和 SSE 只读 GET surface。
 
 如果改动涉及 dashboard 视觉或静态物料，还需要确认：
 

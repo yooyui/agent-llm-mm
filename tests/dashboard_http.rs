@@ -6,7 +6,7 @@ use agent_llm_mm::{
     support::config::DashboardConfig,
 };
 use chrono::Utc;
-use reqwest::Client;
+use reqwest::{Client, Method, StatusCode, header};
 use serde_json::json;
 
 fn config(base_path: &str) -> DashboardConfig {
@@ -129,6 +129,20 @@ async fn dashboard_serves_html_summary_events_detail_and_health() {
     assert_eq!(health["status"], "ok");
     assert_eq!(health["read_only"], true);
 
+    let stream = client
+        .get(format!("{base_url}/api/events/stream"))
+        .send()
+        .await
+        .expect("event stream response");
+    assert_eq!(stream.status(), StatusCode::OK);
+    assert_eq!(
+        stream
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .expect("stream content type"),
+        "text/event-stream"
+    );
+
     drop(handle);
     let _ = recorder.recent(EventQuery::default());
 }
@@ -159,6 +173,39 @@ async fn dashboard_honors_configured_base_path() {
         .await
         .expect("sidebar asset response");
     assert_eq!(sidebar.status(), reqwest::StatusCode::OK);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dashboard_rejects_write_methods_on_read_only_routes() {
+    let recorder = recorder_with_event();
+    let handle = start_dashboard_service(config("/"), recorder, runtime())
+        .await
+        .expect("dashboard starts");
+    let base_url = handle.base_url();
+    let client = Client::new();
+
+    for method in [Method::POST, Method::PUT, Method::PATCH, Method::DELETE] {
+        for path in [
+            "/",
+            "/api/summary",
+            "/api/events",
+            "/api/events/op_1",
+            "/api/events/stream",
+            "/api/health",
+        ] {
+            let response = client
+                .request(method.clone(), format!("{base_url}{path}"))
+                .json(&json!({ "attempt": "write" }))
+                .send()
+                .await
+                .expect("write method response");
+            assert_eq!(
+                response.status(),
+                StatusCode::METHOD_NOT_ALLOWED,
+                "dashboard route {path} must reject {method} write method"
+            );
+        }
+    }
 }
 
 #[test]

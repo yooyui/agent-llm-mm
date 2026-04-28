@@ -74,8 +74,8 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 
 截至 `2026-04-28`，fresh 验证还包括：
 
-- `cargo test` 全量通过，151 个测试通过
-- 其中 `application_use_cases` 22、`failure_modes` 29、`mcp_stdio` 27、`sqlite_store` 19、`dashboard_http` 4
+- `cargo test` 全量通过，152 个测试通过
+- 其中 `application_use_cases` 22、`failure_modes` 29、`mcp_stdio` 27、`sqlite_store` 19、`dashboard_http` 5
 - self-revision demo package wrapper 可生成本地 artifact report
 
 ## 4. 启动服务

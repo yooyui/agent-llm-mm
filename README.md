@@ -17,7 +17,7 @@
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：适合以“公开技术 demo / MVP”身份发布到 GitHub，不应包装成完整产品
 - 最新 fresh 验证：`2026-04-28`
-  - `cargo test` 全量通过，共 151 个测试
+  - `cargo test` 全量通过，共 152 个测试
   - `doctor` 预检返回 `status = ok`
   - self-revision demo package 可一键生成本地证据链
 

@@ -111,6 +111,7 @@ Implementation notes:
 
 - 已支持通过 `[dashboard]` 配置随 `serve` 启动只读 HTTP 面板
 - 面板展示运行时 operation 事件，并保持 MCP `stdio` 输出不被污染
+- HTTP surface 只注册 GET route；写方法会返回 `405 Method Not Allowed`，dashboard route 不调用 `run_reflection`
 - 当前 UI 为 `Memory-chan Live Desk`，使用内嵌生成图物料与 CSS 装饰复刻清新活力二次元观测面板
 - 生成图物料位于 `src/interfaces/dashboard/static/`，版权/归属说明已记录在 `NOTICE`
 - 当前事件记录为 bounded in-memory recorder，不是 durable operation-log database
@@ -203,7 +204,7 @@ Implementation notes:
 - `application_use_cases`: 22
 - `bootstrap`: 15
 - `dashboard_config`: 4
-- `dashboard_http`: 4
+- `dashboard_http`: 5
 - `dashboard_projection`: 2
 - `dashboard_recorder`: 2
 - `decision_flow`: 2
@@ -216,7 +217,7 @@ Implementation notes:
 - `provider_config`: 5
 - `self_revision_demo_runner`: 2
 - `sqlite_store`: 19
-- 合计：151 个测试通过
+- 合计：152 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 8 个本地 artifact，并证明 before / after decision shift
 
