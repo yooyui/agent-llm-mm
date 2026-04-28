@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-04-25 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-04-27 fresh 验证更新）
 
 ## 1. 目标
 
@@ -24,12 +24,12 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-04-25`，`cargo test` 全量通过，摘要如下：
+截至 `2026-04-27`，`cargo test` 全量通过，摘要如下：
 
 - `application_use_cases`: 20 passed
 - `bootstrap`: 15 passed
 - `dashboard_config`: 4 passed
-- `dashboard_http`: 2 passed
+- `dashboard_http`: 4 passed
 - `dashboard_projection`: 2 passed
 - `dashboard_recorder`: 2 passed
 - `decision_flow`: 2 passed
@@ -43,7 +43,7 @@
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_store`: 17 passed
 
-合计：143 个测试通过。
+合计：145 个测试通过。
 
 ---
 

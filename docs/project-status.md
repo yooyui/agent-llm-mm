@@ -187,7 +187,7 @@
 - `application_use_cases`: 20
 - `bootstrap`: 15
 - `dashboard_config`: 4
-- `dashboard_http`: 2
+- `dashboard_http`: 4
 - `dashboard_projection`: 2
 - `dashboard_recorder`: 2
 - `decision_flow`: 2
@@ -200,7 +200,7 @@
 - `provider_config`: 5
 - `self_revision_demo_runner`: 2
 - `sqlite_store`: 17
-- 合计：143 个测试通过
+- 合计：145 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 8 个本地 artifact，并证明 before / after decision shift
 
