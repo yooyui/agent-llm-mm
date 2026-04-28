@@ -217,6 +217,79 @@ async fn reflection_preserves_baseline_commitment_when_updates_replace_commitmen
 }
 
 #[tokio::test]
+async fn reflection_rejects_identity_update_without_supporting_evidence() {
+    let deps = test_support::in_memory_deps();
+
+    let result = execute_reflection(
+        &deps,
+        ReflectionInput::new(
+            Reflection::new("Identity updates must stay evidence-backed."),
+            "claim-old",
+            None,
+            Vec::new(),
+        )
+        .with_identity_update(vec!["identity:self=principal_architect".to_string()]),
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &["identity:self=architect".to_string()]
+    );
+    assert_eq!(
+        deps.claim("claim-old")
+            .expect("original claim should remain active")
+            .status,
+        ClaimStatus::Active
+    );
+    assert!(deps.reflection("id-1").is_none());
+}
+
+#[tokio::test]
+async fn reflection_rejects_identity_update_when_evidence_query_resolves_empty() {
+    let deps = test_support::reflection_query_deps();
+
+    let result = execute_reflection(
+        &deps,
+        ReflectionInput::new(
+            Reflection::new("Identity updates must stay backed by resolved query evidence."),
+            "claim-old",
+            None,
+            Vec::new(),
+        )
+        .with_replacement_evidence_query(EvidenceQuery {
+            owner: Some(Owner::User),
+            kind: Some(EventKind::Conversation),
+            limit: Some(2),
+        })
+        .with_identity_update(vec!["identity:self=principal_architect".to_string()]),
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+    assert!(
+        deps.evidence_query_trace()
+            .iter()
+            .any(|query| query.owner == Some(Owner::User)
+                && query.kind == Some(EventKind::Conversation)
+                && query.limit == Some(2)),
+        "empty-query scenario should exercise evidence query resolution"
+    );
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &["identity:self=architect".to_string()]
+    );
+    assert_eq!(
+        deps.claim("claim-old")
+            .expect("original claim should remain active")
+            .status,
+        ClaimStatus::Active
+    );
+    assert!(deps.reflection("id-1").is_none());
+}
+
+#[tokio::test]
 async fn auto_reflection_runs_once_for_repeated_failure_and_records_handled_ledger() {
     let deps = test_support::auto_reflection_deps();
     deps.seed_failure_window(vec![
@@ -1070,6 +1143,7 @@ struct State {
     fail_point: Option<FailPoint>,
     model_calls: Vec<ModelInput>,
     self_revision_proposal: SelfRevisionProposal,
+    evidence_query_trace: Vec<EvidenceQuery>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1132,6 +1206,7 @@ impl Default for State {
             self_revision_proposal: SelfRevisionProposal::no_revision(
                 "mock model did not detect a valid Failure revision".to_string(),
             ),
+            evidence_query_trace: Vec::new(),
         }
     }
 }
@@ -1213,6 +1288,10 @@ impl InMemoryDeps {
         self.state.lock().unwrap().model_calls.last().cloned()
     }
 
+    fn evidence_query_trace(&self) -> Vec<EvidenceQuery> {
+        self.state.lock().unwrap().evidence_query_trace.clone()
+    }
+
     fn seed_failure_window(&self, summaries: Vec<&str>) {
         let mut state = self.state.lock().unwrap();
         state.committed.events = summaries
@@ -1291,6 +1370,11 @@ impl EventStore for InMemoryDeps {
         &self,
         query: EvidenceQuery,
     ) -> Result<Vec<String>, AppError> {
+        self.state
+            .lock()
+            .unwrap()
+            .evidence_query_trace
+            .push(query.clone());
         let mut events = self.state.lock().unwrap().committed.events.clone();
         filter_and_order_events(&mut events, query.owner, query.kind);
 

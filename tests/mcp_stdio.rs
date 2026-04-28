@@ -2409,11 +2409,30 @@ async fn reflection_identity_or_commitment_updates_require_evidence_over_stdio()
                 "reflection": {
                     "summary": "Identity-only updates still need resolved evidence."
                 },
-                "supersede_claim_id": superseded_claim_id,
+                "supersede_claim_id": superseded_claim_id.clone(),
                 "replacement_claim": null,
                 "identity_update": {
                     "canonical_claims": ["identity:self=principal_architect"]
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+    let error = reflection
+        .get("error")
+        .expect("identity update without evidence should return invalid params");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {
+                    "summary": "Commitment-only updates still need resolved evidence."
                 },
+                "supersede_claim_id": superseded_claim_id,
+                "replacement_claim": null,
                 "commitment_updates": [
                     {
                         "owner": "Self_",

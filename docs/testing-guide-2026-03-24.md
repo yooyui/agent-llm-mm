@@ -26,9 +26,9 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-04-27`，`cargo test` 全量通过，摘要如下：
+截至 `2026-04-28`，`cargo test` 全量通过，摘要如下：
 
-- `application_use_cases`: 20 passed
+- `application_use_cases`: 22 passed
 - `bootstrap`: 15 passed
 - `dashboard_config`: 4 passed
 - `dashboard_http`: 4 passed
@@ -45,7 +45,7 @@
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_store`: 17 passed
 
-合计：145 个测试通过。
+合计：147 个测试通过。
 
 ---
 
@@ -77,7 +77,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 - `provider`
 - provider-specific 配置
 
-如果只是跑现有自动化测试，不需要手工设置；测试本身已经为大多数场景隔离了数据库。正式接入、手工测试和实验验证仍建议各自使用不同数据库文件。
+如果只是跑现有自动化测试，不需要手工设置；测试本身已经为大多数场景隔离了数据库。若运行环境不能写入默认用户数据目录（例如受限沙箱或只读 home 目录），`doctor` 相关测试和命令会因为默认 SQLite 路径不可写而失败；此时应通过 `AGENT_LLM_MM_DATABASE_URL` 或本地 TOML 指向一个可写的 SQLite 文件。正式接入、手工测试和实验验证仍建议各自使用不同数据库文件。
 
 ---
 
@@ -222,6 +222,7 @@ cargo test --test mcp_stdio
 - `run_reflection` 的显式 evidence 输入是否允许 inferred replacement
 - `run_reflection` 的 query-based evidence 输入是否被正确校验
 - `run_reflection` 的 `identity_update` / `commitment_updates` 是否真正落盘并反映到后续 snapshot
+- `run_reflection` 的 `identity_update` / `commitment_updates` 缺少 resolved evidence 时是否返回 `invalid_params`
 - baseline commitment 是否阻断 forbidden action
 - 非法 namespace 是否返回 `-32602 invalid_params`
 
@@ -281,6 +282,8 @@ cargo test --test application_use_cases --test failure_modes
 - `reflection_accepts_inferred_replacement_with_explicit_evidence`
 - `reflection_can_update_identity_and_commitments_with_audited_supporting_evidence`
 - `reflection_preserves_baseline_commitment_when_updates_replace_commitments`
+- `reflection_rejects_identity_update_without_supporting_evidence`
+- `reflection_rejects_identity_update_when_evidence_query_resolves_empty`
 - `reflection_without_replacement_claim_disputes_old_claim_and_updates_identity`
 - `reflection_rejects_missing_replacement_evidence_event_ids`
 - `reflection_rejects_empty_identity_update_even_with_supporting_evidence`
