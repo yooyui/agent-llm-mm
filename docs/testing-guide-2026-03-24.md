@@ -329,19 +329,37 @@ cargo test --test mcp_stdio ingest_interaction_auto_reflects_once_and_does_not_r
 
 ```zsh
 cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_for_recursion_guard_skip -v
+cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_for_not_triggered_case -v
 cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_for_rejected_proposal -v
 cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_for_suppressed_trigger -v
+cargo test --test failure_modes auto_reflection_applies_model_proposed_evidence_subset_but_preserves_full_trigger_window_in_handled_ledger -v
 cargo test --test failure_modes auto_reflection_repeated_suppression_does_not_extend_existing_cooldown -v
 cargo test --test bootstrap doctor_reports_self_revision_runtime_coverage -v
 ```
 
 重点覆盖：
 
-- structured diagnostics 是否返回 `trigger_type` / `trigger_key` / `ledger_status` / `reason` / `suppression_reason` / `cooldown_until`
+- structured diagnostics 是否返回可直接检查的 summary contract：
+  - `trigger_type`: `failure` / `conflict` / `periodic`
+  - `outcome`: `handled` / `rejected` / `suppressed` / `not_triggered` / `skipped`
+  - `suppression_reason`
+  - `rejection_reason`
+  - `cooldown_boundary`
+  - `evidence_window_size`
+  - `selected_evidence_event_ids`
+  - `durable_write_path = run_reflection`
 - suppressed cooldown 是否保持已有窗口而不是在重复 suppression 时被无界延长
 - `doctor` 输出是否保守暴露 runtime hook coverage 与 `self_revision_write_path`
 - `doctor` 输出的 runtime hook list 是否仍然精确等于上面的 4 条 contract matrix，且 `self_revision_write_path = run_reflection`
 - `doctor` 输出 runtime hooks 不应被解读成新增 MCP tool、后台 daemon 或“所有请求自动反思”
+
+判读要点：
+
+- `rejected` 表示触发器已经命中并进入 proposal 路径，但模型未给出可接受 proposal；此时应检查 `rejection_reason`，而不是 `suppression_reason`。治理校验失败会记录 rejected ledger 并以错误返回，不作为成功返回的 diagnostics summary。
+- `suppressed` 表示这次触发被已有 ledger 状态压住，例如 `cooldown_active`、`evidence_window_unchanged` 或 `episode_watermark_unchanged`；此时应检查 `suppression_reason` 与 `cooldown_boundary`。
+- `not_triggered` 和 `skipped` 仍然是前台、按调用发生的诊断结果：它们说明“本次调用未进入 durable write”，不表示系统存在后台自治流程。
+- `selected_evidence_event_ids` 只表示已进入 handled durable write 的实际证据子集；`rejected`、`suppressed`、`not_triggered`、`skipped` 没有 durable write selection，应通过 `evidence_window_size` 读取本次触发窗口规模。
+- `durable_write_path = run_reflection` 只是说明一旦进入 durable write，唯一允许的落盘路径仍是 `run_reflection`；它不代表新增 MCP tool、后台 daemon、额外 hook 或独立 self-revision worker。
 
 ### 6.7 self-revision evidence policy
 

@@ -162,7 +162,7 @@ async fn openai_compatible_model_parses_self_revision_proposal_from_assistant_me
         Some("/chat/completions")
     );
     assert_eq!(request_json["model"], json!("gpt-4o-mini"));
-    assert!(user_prompt.contains("\"trigger_type\": \"Conflict\""));
+    assert!(user_prompt.contains("\"trigger_type\": \"conflict\""));
     assert!(user_prompt.contains("\"evidence_event_ids\": ["));
     assert!(user_prompt.contains("\"evt-1\""));
     assert!(user_prompt.contains("\"trigger_hints\": ["));

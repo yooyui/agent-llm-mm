@@ -25,7 +25,9 @@ use crate::{
         run_reflection::ReflectionInput,
     },
     domain::identity_core::IdentityCore,
-    domain::self_revision::{SelfRevisionProposal, SelfRevisionRequest, TriggerType},
+    domain::self_revision::{
+        SELF_REVISION_DURABLE_WRITE_PATH, SelfRevisionProposal, SelfRevisionRequest, TriggerType,
+    },
     error::AppError,
     interfaces::dashboard::{
         DashboardHandle, DashboardObserver, DashboardRuntimeInfo, OperationRecorder,
@@ -51,7 +53,7 @@ pub const AUTO_REFLECTION_RUNTIME_HOOKS: [&str; 4] = [
     "decide_with_snapshot:conflict",
     "build_self_snapshot:periodic",
 ];
-pub const SELF_REVISION_WRITE_PATH: &str = "run_reflection";
+pub const SELF_REVISION_WRITE_PATH: &str = SELF_REVISION_DURABLE_WRITE_PATH;
 
 pub async fn run_stdio_server() -> Result<()> {
     let config = AppConfig::load().map_err(anyhow::Error::msg)?;

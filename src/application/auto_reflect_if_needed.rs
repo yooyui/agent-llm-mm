@@ -8,7 +8,10 @@ use crate::{
     domain::{
         commitment::Commitment,
         reflection::Reflection,
-        self_revision::{SelfRevisionProposal, SelfRevisionRequest, TriggerType},
+        self_revision::{
+            AutoReflectDiagnosticSummary, AutoReflectOutcome, SelfRevisionProposal,
+            SelfRevisionRequest, TriggerType,
+        },
         types::{Namespace, Owner},
     },
     error::AppError,
@@ -84,24 +87,37 @@ pub struct AutoReflectResult {
     pub evidence_event_ids: Vec<String>,
     pub cooldown_until: Option<chrono::DateTime<Utc>>,
     pub suppression_reason: Option<String>,
+    pub diagnostics: AutoReflectDiagnosticSummary,
 }
 
 impl AutoReflectResult {
     fn skipped(input: &AutoReflectInput, reason: impl Into<String>) -> Self {
+        let reason = reason.into();
+        let evidence_event_ids = Vec::new();
         Self {
             triggered: false,
             trigger_type: Some(input.trigger_type),
             reflection_id: None,
             ledger_status: None,
-            reason: Some(reason.into()),
+            reason: Some(reason.clone()),
             trigger_key: Some(input.trigger_key()),
-            evidence_event_ids: Vec::new(),
+            evidence_event_ids: evidence_event_ids.clone(),
             cooldown_until: None,
             suppression_reason: None,
+            diagnostics: AutoReflectDiagnosticSummary::new(
+                input.trigger_type,
+                AutoReflectOutcome::Skipped,
+                None,
+                None,
+                None,
+                0,
+                evidence_event_ids,
+            ),
         }
     }
 
     fn not_triggered(candidate: &TriggerCandidate) -> Self {
+        let evidence_event_ids = candidate.evidence_event_ids.clone();
         Self {
             triggered: false,
             trigger_type: Some(candidate.trigger_type),
@@ -109,23 +125,43 @@ impl AutoReflectResult {
             ledger_status: None,
             reason: None,
             trigger_key: Some(candidate.trigger_key.clone()),
-            evidence_event_ids: candidate.evidence_event_ids.clone(),
+            evidence_event_ids: evidence_event_ids.clone(),
             cooldown_until: None,
             suppression_reason: None,
+            diagnostics: AutoReflectDiagnosticSummary::new(
+                candidate.trigger_type,
+                AutoReflectOutcome::NotTriggered,
+                None,
+                None,
+                None,
+                evidence_event_ids.len(),
+                Vec::new(),
+            ),
         }
     }
 
     fn rejected(candidate: &TriggerCandidate, reason: impl Into<String>) -> Self {
+        let reason = reason.into();
+        let evidence_event_ids = candidate.evidence_event_ids.clone();
         Self {
             triggered: false,
             trigger_type: Some(candidate.trigger_type),
             reflection_id: None,
             ledger_status: Some(TriggerLedgerStatus::Rejected),
-            reason: Some(reason.into()),
+            reason: Some(reason.clone()),
             trigger_key: Some(candidate.trigger_key.clone()),
-            evidence_event_ids: candidate.evidence_event_ids.clone(),
+            evidence_event_ids: evidence_event_ids.clone(),
             cooldown_until: None,
             suppression_reason: None,
+            diagnostics: AutoReflectDiagnosticSummary::new(
+                candidate.trigger_type,
+                AutoReflectOutcome::Rejected,
+                None,
+                Some(reason),
+                None,
+                evidence_event_ids.len(),
+                Vec::new(),
+            ),
         }
     }
 
@@ -134,6 +170,8 @@ impl AutoReflectResult {
         entry: &StoredTriggerLedgerEntry,
         suppression_reason: impl Into<String>,
     ) -> Self {
+        let suppression_reason = suppression_reason.into();
+        let evidence_event_ids = candidate.evidence_event_ids.clone();
         Self {
             triggered: false,
             trigger_type: Some(candidate.trigger_type),
@@ -141,9 +179,18 @@ impl AutoReflectResult {
             ledger_status: Some(entry.status),
             reason: None,
             trigger_key: Some(entry.trigger_key.clone()),
-            evidence_event_ids: candidate.evidence_event_ids.clone(),
+            evidence_event_ids: evidence_event_ids.clone(),
             cooldown_until: entry.cooldown_until,
-            suppression_reason: Some(suppression_reason.into()),
+            suppression_reason: Some(suppression_reason.clone()),
+            diagnostics: AutoReflectDiagnosticSummary::new(
+                candidate.trigger_type,
+                AutoReflectOutcome::Suppressed,
+                Some(suppression_reason),
+                None,
+                entry.cooldown_until,
+                evidence_event_ids.len(),
+                Vec::new(),
+            ),
         }
     }
 
@@ -153,6 +200,8 @@ impl AutoReflectResult {
         reflection_id: String,
         cooldown_until: Option<chrono::DateTime<Utc>>,
     ) -> Self {
+        let selected_evidence_event_ids = evidence_event_ids.clone();
+        let evidence_window_size = candidate.evidence_event_ids.len();
         Self {
             triggered: true,
             trigger_type: Some(candidate.trigger_type),
@@ -163,6 +212,15 @@ impl AutoReflectResult {
             evidence_event_ids,
             cooldown_until,
             suppression_reason: None,
+            diagnostics: AutoReflectDiagnosticSummary::new(
+                candidate.trigger_type,
+                AutoReflectOutcome::Handled,
+                None,
+                None,
+                cooldown_until,
+                evidence_window_size,
+                selected_evidence_event_ids,
+            ),
         }
     }
 }
