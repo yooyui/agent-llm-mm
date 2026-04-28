@@ -26,7 +26,7 @@
 - 当前已有可重复 demo artifact，可以作为协作者理解 automatic self-revision MVP 的最短路径
 - 但公开协作时，还需要更稳定的“提交前 / 发布前”规则
 
-### 2. 扩大 automatic self-revision 的 MCP runtime coverage
+### 2. 收口 automatic self-revision 的 MCP runtime coverage
 
 目标：
 
@@ -76,6 +76,25 @@
 - `proposed_evidence_query` 当前仍只是首阶段 evidence contract，不应被扩写成自动 widening / ranking engine
 - 这将减少后续 evidence 语义与 schema 改造的反复成本
 
+### 5. 收口 evidence-oriented query v2（窄化版）
+
+当前规格文档：`docs/superpowers/specs/2026-04-27-evidence-query-v2.md`
+
+目标：
+
+- 在现有 `owner / kind / limit` 查询基础上，补齐 explicit namespace、bounded recency、deterministic limit / no-match 语义
+- 补齐 evidence kind filter 边界，并保持 explicit evidence ids 只有通过服务端 validation 后才是 authoritative
+- explicit namespace filter 需要先补齐 event namespace schema / migration；不能用 owner、summary 或 claim namespace 代替 event namespace
+- explicit reflection evidence lookup 继续走直接 store filter，空查询结果仍是 `invalid_params`
+- self-revision proposal 只允许在当前 trigger window 内 bounded narrowing，空查询结果不能绕过 query 去做更宽搜索
+- 为后续 namespace-aware narrowing 的单片实现提供测试和迁移边界
+
+原因：
+
+- 当前 `events` 还没有持久化 namespace，不能把 owner、summary 或 claim namespace 当作 evidence namespace
+- v2 的价值是让 evidence 查找更可审计，而不是引入 ranking、relation graph、weight scoring、cross-namespace widening 或 autonomous evidence search
+- 这一步继续保持 `run_reflection` 是 identity / commitment durable update 的唯一写路径
+
 ## 中期
 
 ### 1. 扩展更多 provider 类型
@@ -98,6 +117,7 @@
 - 保留显式 `replacement_evidence_event_ids`
 - 保留现有最小 `identity_core` / `commitments` 更新能力
 - 在现有窄化查询基础上扩展 richer query 语义、更广泛 evidence 能力、更清晰的权重/关联关系与更稳定的 deep-update policy
+- 近期只承诺一个 bounded evidence query v2 slice；更丰富的 weighting / relation / ranking / cross-window evidence semantics 仍留在中期
 
 ### 3. 丰富 evidence 语义
 
