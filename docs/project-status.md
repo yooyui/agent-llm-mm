@@ -106,7 +106,7 @@ Implementation notes:
 - 运行后会生成 `doctor.json`、snapshot before / after、decision before / after、timeline、SQLite summary 和 Markdown report
 - 该 demo 只证明当前 MVP 的可重复证据链，不新增 MCP tool、daemon、Web UI 或新的 durable write path
 
-### 9. Production dashboard service
+### 9. Local read-only dashboard service
 
 - 已支持通过 `[dashboard]` 配置随 `serve` 启动只读 HTTP 面板
 - 面板展示运行时 operation 事件，并保持 MCP `stdio` 输出不被污染
@@ -147,6 +147,7 @@ Implementation notes:
 - 当前已经能通过 `run_reflection` 最小更新 `identity_core`
 - 当前已经能通过 `run_reflection` 最小更新 `commitments`
 - 反思审计会记录 supporting evidence 与请求的更新载荷
+- 当前 deeper-update 输入、evidence、baseline commitment 和审计边界已收口到 `docs/superpowers/specs/2026-04-27-reflection-deeper-update-contract.md`
 
 但它仍然只是首版收口，不是 richer schema、版本化 slow-variable 层或完整策略系统。
 

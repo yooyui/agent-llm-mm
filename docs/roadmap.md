@@ -62,6 +62,8 @@
 
 ### 4. 收口 reflection 的 deeper-update 契约
 
+当前规格文档：`docs/superpowers/specs/2026-04-27-reflection-deeper-update-contract.md`
+
 目标：
 
 - 在已支持显式 `replacement_evidence_event_ids`、结构化 `replacement_evidence_query` 和最小 `identity_core` / `commitments` 更新的基础上，继续明确输入约束、保底规则与审计边界
