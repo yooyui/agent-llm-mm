@@ -92,7 +92,7 @@ transport = "stdio"
 ```toml
 [mcp_servers.agent-llm-mm-cargo]
 command = "cargo"
-args = ["run", "--quiet", "--", "serve"]
+args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 env = { AGENT_LLM_MM_CONFIG = "/absolute/path/agent-llm-mm/agent-llm-mm.local.toml" }
 transport = "stdio"
 ```
@@ -101,10 +101,13 @@ transport = "stdio"
 
 ```zsh
 cargo fmt --check
+git diff --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ./scripts/agent-llm-mm.sh doctor
 ```
+
+发布前请按 [Release Gate](release-gate.md) 跑完整 gate；本节只是 macOS 日常验证入口。
 
 ## 8. Self-Revision Demo Package
 

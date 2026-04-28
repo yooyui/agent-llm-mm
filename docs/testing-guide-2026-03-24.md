@@ -10,6 +10,8 @@
 - `doctor` 预检
 - 手工 smoke test 的推荐方式
 
+如果目标是判断“是否可以按当前 demo / MVP 口径发布”，请同时阅读 [Release Gate](release-gate.md)。本页偏向测试与回归，`release-gate.md` 负责收口发布前的最低 gate、self-revision 证据 gate、dashboard gate 和 sandbox 失败解释口径。
+
 当前工作目录（按实际环境替换）：
 
 `~/code/agent-llm-mm`
@@ -84,14 +86,15 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 建议按下面顺序执行：
 
 1. `cargo fmt --check`
-2. `cargo clippy --all-targets --all-features -- -D warnings`
-3. `cargo test`
-4. `./scripts/agent-llm-mm.sh doctor`
-5. `cargo run --quiet --bin agent_llm_mm -- doctor`
-6. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
-7. 如果改动涉及 demo package，再补跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest`
+2. `git diff --check`
+3. `cargo clippy --all-targets --all-features -- -D warnings`
+4. `cargo test`
+5. `./scripts/agent-llm-mm.sh doctor`
+6. `cargo run --quiet --bin agent_llm_mm -- doctor`
+7. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
+8. 如果改动涉及 demo package，或要按发布口径复核证据链，再补跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest`
 
-如果只想快速回归某个变更，再执行对应的定向测试。
+如果只想快速回归某个变更，再执行对应的定向测试。若需要一份面向发布前核验的固定检查单，直接使用 [Release Gate](release-gate.md)。
 
 ---
 
@@ -108,7 +111,18 @@ cargo fmt --check
 - 命令退出码为 `0`
 - 没有 diff 输出
 
-### 5.2 静态检查
+### 5.2 补丁空白检查
+
+```zsh
+git diff --check
+```
+
+通过标准：
+
+- 命令退出码为 `0`
+- 没有 whitespace error、冲突标记或补丁格式问题
+
+### 5.3 静态检查
 
 ```zsh
 cargo clippy --all-targets --all-features -- -D warnings
@@ -119,7 +133,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 - 命令退出码为 `0`
 - 没有 warning
 
-### 5.3 全量测试
+### 5.4 全量测试
 
 ```zsh
 cargo test
@@ -139,7 +153,7 @@ cargo test
 - 所有测试通过
 - 没有失败、panic 或 `UnexpectedEof`
 
-### 5.4 本机预检
+### 5.5 本机预检
 
 ```zsh
 ./scripts/agent-llm-mm.sh doctor
@@ -399,7 +413,7 @@ cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner -
 ./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
 ```
 
-通过后，`target/reports/self-revision-demo/latest` 下至少应有：
+通过后，`target/reports/self-revision-demo/latest` 下至少应有；按发布口径复核时，这些 artifact 必须来自同一次成功运行：
 
 - `doctor.json`
 - `snapshot-before.json`
@@ -734,6 +748,8 @@ cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner -
 ./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
 ```
 
+发布前使用 `release-gate.md` 的 freshness 口径：这些 artifact 必须来自同一次成功运行，不能只因为 `latest` 目录已有旧文件就视为通过。
+
 ### 改 `src/support/config.rs`
 
 ```zsh
@@ -746,29 +762,33 @@ cargo test --test provider_config -v
 cargo test --test mcp_stdio
 ```
 
-### 准备提交前
+### 普通提交前快速回归
 
 ```zsh
 cargo fmt --check
+git diff --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ./scripts/agent-llm-mm.sh doctor
 ```
+
+发布前核验不使用这段简表作为最终依据；请按 [Release Gate](release-gate.md) 执行完整 gate。
 
 ---
 
 ## 11. 当前结论
 
-截至 `2026-04-24`，推荐把下面四条当作提交前基线：
+截至 `2026-04-27`，推荐把下面五条当作普通提交前基线；发布前仍以 [Release Gate](release-gate.md) 为准：
 
 ```zsh
 cargo fmt --check
+git diff --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ./scripts/agent-llm-mm.sh doctor
 ```
 
-如果这四条都通过，说明当前工作树至少满足：
+如果这五条都通过，说明当前工作树至少满足：
 
 - 编码规范通过
 - 编译与静态检查通过

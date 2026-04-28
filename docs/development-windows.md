@@ -76,10 +76,13 @@ transport = "stdio"
 
 ```powershell
 cargo fmt --check
+git diff --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 ```
+
+发布前请按 [Release Gate](release-gate.md) 跑完整 gate；本节只是 Windows 日常验证入口。Release gate 中的 `./scripts/agent-llm-mm.sh doctor` 在 Windows 上对应 `pwsh -File .\scripts\agent-llm-mm.ps1 doctor`。
 
 ## 8. 额外说明
 

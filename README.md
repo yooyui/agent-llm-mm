@@ -26,6 +26,7 @@
 - [当前实现状态](docs/project-status.md)
 - [进度追踪对照表](docs/progress-tracker.md)
 - [发布准备评估](docs/release-readiness.md)
+- [Release Gate Runbook](docs/release-gate.md)
 - [未来路线图](docs/roadmap.md)
 - [文档总览](docs/document-map.md)
 
@@ -165,6 +166,7 @@
 - [进度追踪对照表](docs/progress-tracker.md)
 - [未来路线图](docs/roadmap.md)
 - [发布准备评估](docs/release-readiness.md)
+- [Release Gate Runbook](docs/release-gate.md)
 - [协作说明](CONTRIBUTING.md)
 - [macOS 开发与接入指南](docs/development-macos.md)
 - [Windows 开发与接入指南](docs/development-windows.md)
@@ -173,6 +175,7 @@
 
 - [本机 MCP 接入说明](docs/local-mcp-integration-2026-03-26.md)
 - [测试指南](docs/testing-guide-2026-03-24.md)
+- [Release Gate Runbook](docs/release-gate.md)
 - [Self-Revision Demo Guide](docs/self-revision-demo-guide-2026-04-24.md)
 - [Self-Revision Demo Report](docs/reports/self-revision-demo-2026-04-24.md)
 - [Codex MCP 配置样例](examples/codex-mcp-config.toml)
