@@ -10,6 +10,6 @@ transport = "stdio"
 # If you prefer no wrapper script, use:
 # [mcp_servers.agent-llm-mm-cargo]
 # command = "cargo"
-# args = ["run", "--quiet", "--", "serve"]
+# args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 # transport = "stdio"
 # env = { AGENT_LLM_MM_CONFIG = "/absolute/path/agent-llm-mm/agent-llm-mm.local.toml" }

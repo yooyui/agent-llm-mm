@@ -84,6 +84,15 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 
 发布前请按 [Release Gate](release-gate.md) 跑完整 gate；本节只是 Windows 日常验证入口。Release gate 中的 `./scripts/agent-llm-mm.sh doctor` 在 Windows 上对应 `pwsh -File .\scripts\agent-llm-mm.ps1 doctor`。
 
+## 7.1 本地接入排障
+
+| Symptom | Likely Cause | Verification | Fix |
+| --- | --- | --- | --- |
+| `doctor` cannot write SQLite | database path not writable or sandbox restriction | 先检查 `agent-llm-mm.local.toml` 的 `database_url` 与 PowerShell 启动环境里的 `AGENT_LLM_MM_DATABASE_URL`；如果 `doctor` 已返回 JSON，再核对其中的 `database_url` | 设置 `AGENT_LLM_MM_DATABASE_URL` 到可写 SQLite 路径，或在本地 TOML 固定可写路径后重试 |
+| MCP client starts the wrong binary | auxiliary `src/bin` target ambiguity | 检查 MCP 客户端配置里的参数是否带 `--bin agent_llm_mm`（如 `args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]`） | 统一使用 PowerShell 脚本入口，或在客户端里固定 `cargo run --quiet --bin agent_llm_mm -- serve` |
+| dashboard not visible | `[dashboard].enabled` 为 false，或端口不可用 | 查看 TOML 的 `[dashboard]` 区块和 `enabled`，以及 `pwsh -File .\scripts\agent-llm-mm.ps1 doctor` 输出 | 设置 `[dashboard].enabled = true`，并改用可用的本地端口（如 `127.0.0.1:8787`） |
+| model calls fail | provider 配置不完整 | 执行 `pwsh -File .\scripts\agent-llm-mm.ps1 doctor`，确认 `provider`、`base_url`、`model` 已配置 | 在本地 TOML 更新 provider 信息；密钥仅放本地文件，不要提交 |
+
 ## 8. 额外说明
 
 - `agent-llm-mm.local.toml` 已被 `.gitignore` 忽略，不应提交。

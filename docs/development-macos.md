@@ -109,6 +109,15 @@ cargo test
 
 发布前请按 [Release Gate](release-gate.md) 跑完整 gate；本节只是 macOS 日常验证入口。
 
+## 7.1 本地接入排障
+
+| Symptom | Likely Cause | Verification | Fix |
+| --- | --- | --- | --- |
+| `doctor` cannot write SQLite | database path not writable or sandbox restriction | 先检查 `agent-llm-mm.local.toml` 的 `database_url` 与启动环境里的 `AGENT_LLM_MM_DATABASE_URL`；如果 `doctor` 已返回 JSON，再核对其中的 `database_url` | 设置 `AGENT_LLM_MM_DATABASE_URL` 为可写 SQLite URL / 文件路径，或在本地 TOML 固定可写 SQLite 路径后重试 |
+| MCP client starts the wrong binary | auxiliary `src/bin` target ambiguity | 检查客户端配置是否已显式带 `--bin agent_llm_mm`（如 `args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]`） | 使用 `agent-llm-mm.sh` 封装，或在客户端里固定 `cargo run --quiet --bin agent_llm_mm -- serve` |
+| dashboard not visible | `[dashboard].enabled` 为 false，或端口不可用 | 查看配置里的 `[dashboard]` 与 `enabled`，并确认 `./scripts/agent-llm-mm.sh doctor` 输出中的 dashboard 信息 | 启用 `[dashboard].enabled = true`，并换到可用的 `127.0.0.1` localhost 端口 |
+| model calls fail | provider 配置不完整 | 执行 `./scripts/agent-llm-mm.sh doctor`，确认 `provider`、`base_url`、`model` 均已回填 | 更新本地 TOML 的 provider 段；密钥只在本地文件里设置，不要提交 secrets |
+
 ## 8. Self-Revision Demo Package
 
 如果要在本机快速验证 automatic self-revision MVP 的完整证据链：
