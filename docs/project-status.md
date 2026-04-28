@@ -82,6 +82,20 @@
 - 通过治理的 automatic self-revision 最终仍复用 `run_reflection` 作为 identity / commitments 的 durable write path
 - 直接 `run_reflection` MCP tool 不会递归触发 auto-reflection
 
+当前 runtime hook contract matrix 如下：
+
+| Hook | Trigger Input | Runs When | Does Not Do |
+| --- | --- | --- | --- |
+| `ingest_interaction:failure` | repeated or explicit failure signal | after successful ingest path | does not turn successful ingest into MCP error if best-effort reflection fails |
+| `ingest_interaction:conflict` | explicit `trigger_hints` containing `conflict` or `identity` | after successful ingest path | does not infer conflict from arbitrary text alone |
+| `decide_with_snapshot:conflict` | explicit `auto_reflect_namespace` and conflict-compatible `trigger_hints` | after non-blocked decision | does not run when commitment gate blocks the decision |
+| `build_self_snapshot:periodic` | explicit `auto_reflect_namespace` | during snapshot build with periodic policy | does not create a background scheduler |
+
+Implementation notes:
+
+- `ingest_interaction:failure` currently means `failure` or `rollback` trigger hints plus the failure evidence threshold.
+- `build_self_snapshot:periodic` is part of the snapshot tool flow, but the best-effort reflection attempt runs before `build_self_snapshot::execute`; it is not a scheduler.
+
 这代表“自动 self-revision MVP”已经存在，但它仍然是受限、保守、局部接线的 demo 能力。
 
 ### 8. self-revision demo package

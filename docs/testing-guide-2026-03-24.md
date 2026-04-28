@@ -311,6 +311,20 @@ cargo test --test mcp_stdio ingest_interaction_auto_reflects_once_and_does_not_r
 - best-effort auto-reflection 失败是否不会把主 MCP 成功路径改写成 MCP 错误
 - `run_reflection` 是否仍是唯一 durable write path / persistence funnel
 
+运行时 contract matrix 应保持为：
+
+| Hook | Trigger Input | Runs When | Does Not Do |
+| --- | --- | --- | --- |
+| `ingest_interaction:failure` | repeated or explicit failure signal | after successful ingest path | does not turn successful ingest into MCP error if best-effort reflection fails |
+| `ingest_interaction:conflict` | explicit `trigger_hints` containing `conflict` or `identity` | after successful ingest path | does not infer conflict from arbitrary text alone |
+| `decide_with_snapshot:conflict` | explicit `auto_reflect_namespace` and conflict-compatible `trigger_hints` | after non-blocked decision | does not run when commitment gate blocks the decision |
+| `build_self_snapshot:periodic` | explicit `auto_reflect_namespace` | during snapshot build with periodic policy | does not create a background scheduler |
+
+实现细节核对：
+
+- `ingest_interaction:failure` 当前对应 `failure` 或 `rollback` trigger hints，加上 failure evidence threshold。
+- `build_self_snapshot:periodic` 属于 snapshot tool flow，但 best-effort reflection attempt 发生在 `build_self_snapshot::execute` 之前；它不是后台 scheduler。
+
 ### 6.6 automatic self-revision diagnostics
 
 ```zsh
@@ -326,6 +340,7 @@ cargo test --test bootstrap doctor_reports_self_revision_runtime_coverage -v
 - structured diagnostics 是否返回 `trigger_type` / `trigger_key` / `ledger_status` / `reason` / `suppression_reason` / `cooldown_until`
 - suppressed cooldown 是否保持已有窗口而不是在重复 suppression 时被无界延长
 - `doctor` 输出是否保守暴露 runtime hook coverage 与 `self_revision_write_path`
+- `doctor` 输出的 runtime hook list 是否仍然精确等于上面的 4 条 contract matrix，且 `self_revision_write_path = run_reflection`
 - `doctor` 输出 runtime hooks 不应被解读成新增 MCP tool、后台 daemon 或“所有请求自动反思”
 
 ### 6.7 self-revision evidence policy
