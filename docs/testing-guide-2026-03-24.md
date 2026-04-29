@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-04-28 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-04-29 fresh 验证更新）
 
 ## 1. 目标
 
@@ -26,7 +26,7 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-04-28`，`cargo test` 全量通过，摘要如下：
+截至 `2026-04-29`，`cargo test` 全量通过，摘要如下：
 
 - `application_use_cases`: 22 passed
 - `bootstrap`: 15 passed
@@ -38,14 +38,14 @@
 - `domain_invariants`: 4 passed
 - `domain_snapshot`: 6 passed
 - `demo_openai_compatible_stub`: 1 passed
-- `failure_modes`: 29 passed
+- `failure_modes`: 30 passed
 - `mcp_stdio`: 27 passed
 - `openai_compatible_model`: 7 passed
 - `provider_config`: 5 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_store`: 19 passed
 
-合计：152 个测试通过。
+合计：153 个测试通过。
 
 ---
 
@@ -423,6 +423,7 @@ cargo test --test failure_modes auto_reflection_intersects_proposed_evidence_que
 cargo test --test failure_modes auto_reflection_applies_query_limit_within_current_trigger_window_when_ids_are_empty -v
 cargo test --test failure_modes auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_query_policy -v
 cargo test --test failure_modes auto_reflection_rejects_empty_proposed_evidence_query_instead_of_widening -v
+cargo test --test failure_modes auto_reflection_scopes_trigger_window_to_input_namespace -v
 cargo test --test failure_modes auto_reflection_rejects_namespace_filter_with_no_trigger_window_intersection -v
 cargo test --test failure_modes auto_reflection_rejects_noop_proposal_when_query_has_no_trigger_window_intersection -v
 cargo test --test openai_compatible_model openai_compatible_model_parses_self_revision_evidence_policy -v
@@ -432,6 +433,7 @@ cargo test --test openai_compatible_model openai_compatible_model_parses_self_re
 
 - proposal 首阶段 evidence contract 是否包含 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence`
 - model 提议的 evidence id 是否仍必须落在当前 trigger window 内
+- project / user scoped conflict 和 periodic trigger window 是否在 proposal narrowing 前排除 sibling namespace 的事件
 - 当 model 同时提供 explicit ids 和 `proposed_evidence_query` 时，这些 ids 是否仍必须满足 query 在当前 trigger window 内的过滤约束
 - handled ledger 是否保留完整 evidence window，而不是只保留 model 选择的子集
 - `proposed_evidence_query` 在 explicit ids 为空时是否只会对当前 trigger window 做交集收口，并在有交集时只按当前窗口内候选应用 `limit`
@@ -869,7 +871,7 @@ cargo test
 
 ## 11. 当前结论
 
-截至 `2026-04-28`，推荐把下面五条当作普通提交前基线；发布前仍以 [Release Gate](release-gate.md) 为准：
+截至 `2026-04-29`，推荐把下面五条当作普通提交前基线；发布前仍以 [Release Gate](release-gate.md) 为准：
 
 ```zsh
 cargo fmt --check

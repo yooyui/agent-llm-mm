@@ -41,7 +41,7 @@ Evidence Query v2 may add only these fields and semantics:
 - deterministic limit behavior (implemented for namespace / owner / kind filtering)
 - clear no-match behavior (implemented for explicit `run_reflection` query and automatic proposal narrowing)
 
-The first implementation slice is namespace-aware narrowing. For automatic self-revision proposals, that narrowing happens inside the existing governed trigger window. For explicit `run_reflection`, there is no trigger window, so namespace-aware lookup is a direct store filter and an empty result stays `invalid_params`.
+The first implementation slice is namespace-aware narrowing. For automatic self-revision proposals, that narrowing happens inside the existing governed trigger window. Conflict / periodic trigger windows for explicit `project/*` and `user/*` namespaces are scoped before proposal narrowing, so newer evidence from sibling project / user namespaces cannot enter the model-governed window. For explicit `run_reflection`, there is no trigger window, so namespace-aware lookup is a direct store filter and an empty result stays `invalid_params`.
 
 The goal is a clearer lookup and governance contract shared by explicit reflection evidence lookup and automatic self-revision proposal validation. It is not a reasoning engine.
 
@@ -162,6 +162,7 @@ Current v1 governance behavior is already covered by:
 - `auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_query_policy`
 - `auto_reflection_rejects_model_proposed_evidence_outside_trigger_window`
 - `auto_reflection_rejects_empty_proposed_evidence_query_instead_of_widening`
+- `auto_reflection_scopes_trigger_window_to_input_namespace`
 - `auto_reflection_rejects_namespace_filter_with_no_trigger_window_intersection`
 - `reflection_rejects_identity_update_when_evidence_query_resolves_empty`
 - `sqlite_query_evidence_event_ids_filters_by_namespace_before_limit`
@@ -179,6 +180,7 @@ The namespace-aware v2 implementation slice covers:
 - namespace filter preserves newest-first deterministic order
 - `limit` is applied inside the namespace-filtered candidate set
 - explicit `run_reflection` namespace no-match behavior remains `invalid_params`
+- project / user scoped conflict and periodic trigger windows exclude events from sibling namespaces before proposal narrowing
 - self-revision proposals cannot use namespace filters to widen beyond the trigger window
 - no-match namespace filters do not silently bypass the proposed filter
 

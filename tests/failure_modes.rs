@@ -224,6 +224,7 @@ async fn auto_reflection_returns_structured_diagnostics_for_not_triggered_case()
 #[tokio::test]
 async fn auto_reflection_returns_structured_diagnostics_for_rejected_proposal() {
     let deps = test_support::deps_for_failure_modes();
+    deps.seed_project_reflection_event();
 
     let result = auto_reflect_if_needed::execute(
         &deps,
@@ -724,6 +725,92 @@ async fn auto_reflection_applies_model_proposed_evidence_subset_but_preserves_fu
     assert_eq!(
         handled_entry.evidence_window,
         vec!["evt-failure-2".to_string(), "evt-failure-1".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn auto_reflection_scopes_trigger_window_to_input_namespace() {
+    let deps = test_support::deps_for_failure_modes();
+    let project_namespace = Namespace::for_project("agent-llm-mm");
+    deps.seed_events(vec![
+        StoredEvent::new(
+            "evt-project-a-1".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new_with_namespace(
+                Owner::World,
+                project_namespace.clone(),
+                EventKind::Observation,
+                "project A evidence should remain in the trigger window",
+            )
+            .unwrap(),
+        ),
+        StoredEvent::new(
+            "evt-project-a-2".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new_with_namespace(
+                Owner::World,
+                project_namespace.clone(),
+                EventKind::Observation,
+                "newer project A evidence should remain in the trigger window",
+            )
+            .unwrap(),
+        ),
+        StoredEvent::new(
+            "evt-project-b-newer".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:03:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("other"),
+                EventKind::Observation,
+                "newer project B evidence must not enter project A trigger window",
+            )
+            .unwrap(),
+        ),
+        StoredEvent::new(
+            "evt-world-newest".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:04:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "newest world evidence must not enter project A trigger window",
+            ),
+        ),
+    ]);
+    deps.set_self_revision_proposal(test_support::commitment_only_auto_reflection_proposal());
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(project_namespace, vec!["conflict".to_string()]),
+    )
+    .await
+    .unwrap();
+
+    assert!(result.triggered);
+    assert_eq!(
+        result.evidence_event_ids,
+        vec!["evt-project-a-2".to_string(), "evt-project-a-1".to_string()]
+    );
+    let reflection = deps
+        .latest_reflection()
+        .expect("namespace-scoped auto-reflection should persist a reflection");
+    assert_eq!(
+        reflection.supporting_evidence_event_ids,
+        vec!["evt-project-a-2".to_string(), "evt-project-a-1".to_string()]
+    );
+    let handled_entry = deps
+        .latest_trigger_entry()
+        .expect("namespace-scoped auto-reflection should persist a trigger ledger entry");
+    assert_eq!(
+        handled_entry.evidence_window,
+        vec!["evt-project-a-2".to_string(), "evt-project-a-1".to_string()]
     );
 }
 
@@ -1408,6 +1495,7 @@ async fn auto_reflection_suppresses_periodic_trigger_during_cooldown() {
 #[tokio::test]
 async fn auto_reflection_returns_structured_diagnostics_for_suppressed_trigger() {
     let deps = test_support::deps_for_failure_modes();
+    deps.seed_project_reflection_event();
     deps.seed_periodic_cooldown("project/agent-llm-mm:periodic");
 
     let result = auto_reflect_if_needed::execute(
@@ -1916,6 +2004,22 @@ impl FailureModeDeps {
         let mut state = self.state.lock().unwrap();
         state.committed.events = events;
         state.committed.event_references = event_references;
+    }
+
+    fn seed_project_reflection_event(&self) {
+        self.seed_events(vec![StoredEvent::new(
+            "evt-reflection-1".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("agent-llm-mm"),
+                EventKind::Observation,
+                "evt-reflection-1",
+            )
+            .unwrap(),
+        )]);
     }
 
     fn advance_now_by_hours(&self, hours: i64) {

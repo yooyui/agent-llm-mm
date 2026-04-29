@@ -87,6 +87,7 @@
 - explicit namespace filter 的首片已经补齐 event namespace schema / migration；不能用 owner、summary 或 claim namespace 代替 event namespace
 - explicit reflection evidence lookup 继续走直接 store filter，空查询结果仍是 `invalid_params`
 - self-revision proposal 只允许在当前 trigger window 内 bounded narrowing，空查询结果不能绕过 query 去做更宽搜索
+- project / user scoped conflict 与 periodic trigger window 会先排除 sibling namespace 事件，但这仍不是 cross-namespace search / ranking 能力
 - 后续仍需补 bounded recency 与独立 evidence kind 语义
 
 原因：

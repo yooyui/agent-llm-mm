@@ -75,7 +75,7 @@
 - 已新增 `self_revision` 领域契约，包含 trigger type、proposal rationale 和 machine patch 最小结构
 - `ModelPort` 已支持 `propose_self_revision`
 - `mock` 与 `openai-compatible` adapter 已实现最小 proposal 行为
-- proposal 首阶段已支持 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence`；这些字段当前用于收口证据候选与置信度，其中 `proposed_evidence_query` 在 explicit ids 为空时可作为 bounded narrowing hint，对当前 trigger window 做交集收口，并在有交集时按当前窗口内的候选顺序应用 `limit`；若没有交集，不再绕过 query 改用 full trigger window。explicit ids 非空时，这些 ids 也必须满足 query 在当前 trigger window 内的过滤约束，但不代表 richer widening / ranking engine 已落地
+- proposal 首阶段已支持 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence`；这些字段当前用于收口证据候选与置信度，其中 `proposed_evidence_query` 在 explicit ids 为空时可作为 bounded narrowing hint，对当前 trigger window 做交集收口，并在有交集时按当前窗口内的候选顺序应用 `limit`；project / user scoped conflict 与 periodic trigger window 会先排除 sibling namespace 事件；若没有交集，不再绕过 query 改用 full trigger window。explicit ids 非空时，这些 ids 也必须满足 query 在当前 trigger window 内的过滤约束，但不代表 richer widening / ranking engine 已落地
 - 已新增 trigger ledger 持久化，能记录 handled / rejected / suppressed 结果、episode watermark 和 cooldown，并通过 structured diagnostics 暴露 trigger / rejection / suppression / cooldown 信息
 - 已新增 `auto_reflect_if_needed` 协调器，负责 trigger 判定、proposal 请求、治理校验和写入前收口
 - 当前 MCP-wired automatic path 已谨慎扩到 4 条：`ingest_interaction -> failure`、`ingest_interaction -> conflict`、`decide_with_snapshot -> conflict`、`build_self_snapshot -> periodic`
@@ -189,7 +189,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-04-28`，已 fresh 运行：
+截至 `2026-04-29`，已 fresh 运行：
 
 - `cargo fmt --check`
 - `git diff --check`
@@ -211,15 +211,15 @@ Implementation notes:
 - `domain_invariants`: 4
 - `domain_snapshot`: 6
 - `demo_openai_compatible_stub`: 1
-- `failure_modes`: 29
+- `failure_modes`: 30
 - `mcp_stdio`: 27
 - `openai_compatible_model`: 7
 - `provider_config`: 5
 - `self_revision_demo_runner`: 2
 - `sqlite_store`: 19
-- 合计：152 个测试通过
+- 合计：153 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
-- self-revision demo package 生成 8 个本地 artifact，并证明 before / after decision shift
+- self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 
 ## 对外描述建议
 

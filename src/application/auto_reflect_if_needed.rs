@@ -371,7 +371,7 @@ where
         }
         TriggerType::Conflict | TriggerType::Periodic => {
             deps.query_evidence_event_ids(EvidenceQuery {
-                namespace: None,
+                namespace: trigger_window_namespace_filter(&input.namespace),
                 owner: None,
                 kind: None,
                 limit: Some(5),
@@ -400,6 +400,17 @@ where
         should_consider,
         episode_watermark: Some(episode_watermark),
     })
+}
+
+fn trigger_window_namespace_filter(namespace: &Namespace) -> Option<Namespace> {
+    // Project and user namespaces are explicit isolation boundaries for
+    // conflict/periodic evidence. The current owner/namespace invariant keeps
+    // `self` and `world` as broader scopes for existing self-revision evidence.
+    if namespace.as_str().starts_with("project/") || namespace.as_str().starts_with("user/") {
+        Some(namespace.clone())
+    } else {
+        None
+    }
 }
 
 async fn evaluate_trigger_suppression<D>(
