@@ -103,6 +103,7 @@
 
 - 在现有 provider 枚举与 provider-specific config 结构上继续增加更多 provider
 - 保持应用层与领域层不感知第三方协议细节
+- 新增 provider 前先通过 [Provider Readiness Checklist](provider-contract.md)，尤其是 config validation、`doctor` redaction、timeout、非成功状态、malformed JSON、decision/self-revision/evidence policy 解析和 `stdio` provider path
 
 候选方向：
 

@@ -249,7 +249,54 @@ cargo test --test mcp_stdio
 - 修改了 `src/interfaces/mcp/server.rs`
 - 修改了应用层输入校验或错误映射
 
-### 6.3 领域不变量
+### 6.3 Provider 合规预检
+
+新增 provider 前先阅读 [Provider Readiness Checklist](provider-contract.md)。下面这组命令只是当前共享 provider 路径的最小验证；如果 checklist 里仍有 `partial` 或 `gap` 且新 provider 依赖该行为，新增 provider 的同一变更必须补齐对应专用回归或记录明确例外。
+
+```zsh
+cargo test --test provider_config -v
+cargo test --test openai_compatible_model -v
+cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openai_compatible_provider_from_config_file -v
+```
+
+重点覆盖：
+
+- config validation behavior
+- `doctor` redaction behavior
+- timeout handling
+- non-success HTTP status behavior
+- malformed JSON behavior
+- decision action parsing
+- self-revision proposal parsing
+- evidence policy parsing
+- config-selected provider 是否真实走到 MCP `stdio` provider path
+
+当前覆盖映射：
+
+- `tests/provider_config.rs`
+  - `default_config_uses_mock_provider_when_no_config_file_is_present`
+  - `load_from_path_reads_openai_compatible_provider_from_toml_file`
+  - `load_prefers_config_path_from_environment`
+  - `load_prefers_database_url_env_over_default_config_file`
+  - `doctor_fails_when_openai_provider_config_is_missing_api_key`
+- `tests/openai_compatible_model.rs`
+  - `openai_compatible_model_parses_first_assistant_message_into_action`
+  - `openai_compatible_model_rejects_empty_action`
+  - `openai_compatible_model_surfaces_non_success_status`
+  - `openai_compatible_model_parses_self_revision_proposal_from_assistant_message`
+  - `openai_compatible_model_defaults_missing_machine_patch_in_self_revision_proposal`
+  - `openai_compatible_model_accepts_fenced_json_self_revision_proposal`
+  - `openai_compatible_model_parses_self_revision_evidence_policy`
+- `tests/mcp_stdio.rs`
+  - `decide_with_snapshot_over_stdio_uses_openai_compatible_provider_from_config_file`
+
+新增 provider 前的阻断缺口：
+
+- `doctor` redaction 目前缺少正向断言；新增 provider 前需要证明 configured secret 不会出现在 serialized report 或用户可见诊断中
+- timeout failure 目前缺少专用回归；新增 provider 前需要覆盖超时不会挂起或静默 fallback
+- malformed JSON 目前只有部分解析失败路径覆盖；新增 provider 前需要补齐 decision 与 self-revision proposal 的明确错误断言
+
+### 6.4 领域不变量
 
 ```zsh
 cargo test --test domain_invariants --test domain_snapshot
@@ -262,7 +309,7 @@ cargo test --test domain_invariants --test domain_snapshot
 - namespace 默认派生和 owner 匹配
 - snapshot evidence 预算与 gate 行为
 
-### 6.4 应用层编排
+### 6.5 应用层编排
 
 ```zsh
 cargo test --test application_use_cases --test failure_modes
@@ -291,7 +338,7 @@ cargo test --test application_use_cases --test failure_modes
 - `reflection_rejects_missing_replacement_evidence_event_ids`
 - `reflection_rejects_empty_identity_update_even_with_supporting_evidence`
 
-### 6.5 automatic self-revision runtime coverage
+### 6.6 automatic self-revision runtime coverage
 
 ```zsh
 cargo test --test mcp_stdio ingest_interaction_can_trigger_conflict_auto_reflection_when_explicit_conflict_hints_present -v
@@ -331,7 +378,7 @@ cargo test --test mcp_stdio ingest_interaction_auto_reflects_once_and_does_not_r
 - `ingest_interaction:failure` 当前对应 `failure` 或 `rollback` trigger hints，加上 failure evidence threshold。
 - `build_self_snapshot:periodic` 属于 snapshot tool flow，但 best-effort reflection attempt 发生在 `build_self_snapshot::execute` 之前；它不是后台 scheduler。
 
-### 6.6 automatic self-revision diagnostics
+### 6.7 automatic self-revision diagnostics
 
 ```zsh
 cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_for_recursion_guard_skip -v
@@ -367,7 +414,7 @@ cargo test --test bootstrap doctor_reports_self_revision_runtime_coverage -v
 - `selected_evidence_event_ids` 只表示已进入 handled durable write 的实际证据子集；`rejected`、`suppressed`、`not_triggered`、`skipped` 没有 durable write selection，应通过 `evidence_window_size` 读取本次触发窗口规模。
 - `durable_write_path = run_reflection` 只是说明一旦进入 durable write，唯一允许的落盘路径仍是 `run_reflection`；它不代表新增 MCP tool、后台 daemon、额外 hook 或独立 self-revision worker。
 
-### 6.7 self-revision evidence policy
+### 6.8 self-revision evidence policy
 
 ```zsh
 cargo test --test failure_modes auto_reflection_rejects_model_proposed_evidence_outside_trigger_window -v
@@ -392,7 +439,7 @@ cargo test --test openai_compatible_model openai_compatible_model_parses_self_re
 - record-only / no-op proposal 是否同样不能绕过 no-match query rejection
 - `proposed_evidence_query` 当前是否仍不会在 id 为空时自动 widening / ranking
 
-### 6.8 automatic self-revision MVP 定向验证
+### 6.9 automatic self-revision MVP 定向验证
 
 这是当前 self-revision MVP 的最低定向回归集。只要你改了下面任一部分，就至少补跑这 7 条：
 
@@ -438,7 +485,7 @@ cargo test --test provider_config -v
 - 不要把这组测试解读成“所有 MCP 入口都会自动反思”
 - 当前 auto-reflection 仍通过已有 `run_reflection` 写入 identity / commitments，不存在新的 durable write 通道
 
-### 6.9 self-revision demo package
+### 6.10 self-revision demo package
 
 如果改动涉及下面任一部分，需要补跑 demo package 定向验证：
 
@@ -516,6 +563,8 @@ cargo test --test mcp_stdio -- --nocapture
 cargo test --test openai_compatible_model -- --nocapture
 cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openai_compatible_provider_from_config_file -- --nocapture
 ```
+
+新增 provider 的验收应先按 [Provider Readiness Checklist](provider-contract.md) 补齐 `partial` / `gap` 对应的专用回归或记录明确例外，再执行上述手工验证。
 
 ### 7.4 手工验证 evidence-aware reflection
 

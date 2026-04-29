@@ -35,6 +35,8 @@
   - 当前 demo 是否适合发布到 GitHub
 - [release-gate.md](release-gate.md)
   - 发布前最小 gate、self-revision 证据 gate、dashboard gate，以及 sandbox 失败的解释口径
+- [provider-contract.md](provider-contract.md)
+  - 新增 provider 前的就绪清单，覆盖配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射
 - [roadmap.md](roadmap.md)
   - 近期 / 中期 / 后期规划，明确哪些是 MVP 延伸，哪些不在近期承诺内
 - [../NOTICE](../NOTICE)
@@ -74,6 +76,8 @@
   - 如何把本项目接入本机 AI 客户端，以及当前 runtime hooks、`doctor` 输出和 self-revision MVP 运行边界
 - [testing-guide-2026-03-24.md](testing-guide-2026-03-24.md)
   - 当前测试基线、推荐验证顺序、self-revision runtime coverage / diagnostics / evidence policy 定向回归和常见问题排查
+- [provider-contract.md](provider-contract.md)
+  - 新增 provider 的就绪清单，以及 `tests/provider_config.rs`、`tests/openai_compatible_model.rs`、`tests/mcp_stdio.rs` 的覆盖映射
 - [release-gate.md](release-gate.md)
   - 发布 gate 的最小命令集、self-revision demo artifact 要求，以及 dashboard 边界检查
 - [self-revision-demo-guide-2026-04-24.md](self-revision-demo-guide-2026-04-24.md)
@@ -122,5 +126,6 @@
 - 如果你想确认 automatic self-revision 到底实现到哪里：直接读 `project-status.md`，再读 `roadmap.md`
 - 如果你想快速看见 automatic self-revision 的证据链：读 `self-revision-demo-guide-2026-04-24.md`，再运行 `./scripts/run-self-revision-demo.sh`
 - 如果你想确认 runtime hooks、diagnostics 和 durable write path：读 `project-status.md`，再读 `local-mcp-integration-2026-03-26.md`
+- 如果你要接入新 provider：先读 `provider-contract.md`，再按 `testing-guide-2026-03-24.md` 的 provider 验证顺序执行
 - 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md`、`testing-guide-2026-03-24.md` 与 `release-gate.md`
 - 如果你想追溯设计来源：最后读原始讨论资料和历史快照
