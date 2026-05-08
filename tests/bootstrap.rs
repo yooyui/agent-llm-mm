@@ -1,4 +1,5 @@
 use agent_llm_mm::{
+    interfaces::mcp::server::AUTO_REFLECTION_RUNTIME_HOOKS,
     run_command, run_doctor, startup_transport_from_default_config,
     support::{
         cli::{AppCommand, command_from_args},
@@ -316,6 +317,19 @@ async fn serve_command_fails_fast_for_malformed_database_url() {
     assert!(
         result.is_err(),
         "malformed database url should return an error"
+    );
+}
+
+#[test]
+fn runtime_hook_contract_is_exactly_four_hooks() {
+    assert_eq!(
+        AUTO_REFLECTION_RUNTIME_HOOKS,
+        [
+            "ingest_interaction:failure",
+            "ingest_interaction:conflict",
+            "decide_with_snapshot:conflict",
+            "build_self_snapshot:periodic",
+        ]
     );
 }
 

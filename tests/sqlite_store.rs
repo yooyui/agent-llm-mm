@@ -92,6 +92,8 @@ async fn sqlite_query_evidence_event_ids_is_recent_first_and_filtered() {
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
+            recorded_after: None,
+            recorded_before: None,
         })
         .await
         .unwrap();
@@ -137,6 +139,8 @@ async fn sqlite_query_evidence_event_ids_filters_by_namespace_before_limit() {
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
+            recorded_after: None,
+            recorded_before: None,
         })
         .await
         .unwrap();
@@ -163,6 +167,8 @@ async fn sqlite_query_evidence_event_ids_rejects_limit_above_i64_max() {
             owner: None,
             kind: None,
             limit: Some(excessive_limit),
+            recorded_after: None,
+            recorded_before: None,
         })
         .await;
 
@@ -197,6 +203,8 @@ async fn sqlite_query_evidence_event_ids_unbounded_ignores_default_limit() {
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: None,
+            recorded_after: None,
+            recorded_before: None,
         })
         .await
         .unwrap();
@@ -207,6 +215,8 @@ async fn sqlite_query_evidence_event_ids_unbounded_ignores_default_limit() {
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: None,
+            recorded_after: None,
+            recorded_before: None,
         })
         .await
         .unwrap();
@@ -1252,4 +1262,80 @@ mod test_support {
             .unwrap()
             .with_timezone(&Utc)
     }
+}
+
+#[tokio::test]
+async fn sqlite_query_evidence_event_ids_filters_by_recency_window() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "evt-old".to_string(),
+            now,
+            Event::new(Owner::World, EventKind::Observation, "old"),
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "evt-mid".to_string(),
+            now + chrono::Duration::seconds(60),
+            Event::new(Owner::World, EventKind::Observation, "mid"),
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "evt-new".to_string(),
+            now + chrono::Duration::seconds(120),
+            Event::new(Owner::World, EventKind::Observation, "new"),
+        ))
+        .await
+        .unwrap();
+
+    let after_only = context
+        .store
+        .query_evidence_event_ids(EvidenceQuery {
+            namespace: None,
+            owner: None,
+            kind: None,
+            limit: None,
+            recorded_after: Some(now + chrono::Duration::seconds(30)),
+            recorded_before: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(after_only, vec!["evt-new", "evt-mid"]);
+
+    let before_only = context
+        .store
+        .query_evidence_event_ids(EvidenceQuery {
+            namespace: None,
+            owner: None,
+            kind: None,
+            limit: None,
+            recorded_after: None,
+            recorded_before: Some(now + chrono::Duration::seconds(90)),
+        })
+        .await
+        .unwrap();
+    assert_eq!(before_only, vec!["evt-mid", "evt-old"]);
+
+    let window = context
+        .store
+        .query_evidence_event_ids(EvidenceQuery {
+            namespace: None,
+            owner: None,
+            kind: None,
+            limit: None,
+            recorded_after: Some(now + chrono::Duration::seconds(30)),
+            recorded_before: Some(now + chrono::Duration::seconds(90)),
+        })
+        .await
+        .unwrap();
+    assert_eq!(window, vec!["evt-mid"]);
 }

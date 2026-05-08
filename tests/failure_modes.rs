@@ -488,6 +488,8 @@ async fn auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_q
                 owner: Some(Owner::World),
                 kind: Some(EventKind::Observation),
                 limit: Some(5),
+                recorded_after: None,
+                recorded_before: None,
             }),
         ),
     );
@@ -556,6 +558,8 @@ async fn auto_reflection_keeps_explicit_ids_authoritative_when_query_limit_only_
                 owner: None,
                 kind: None,
                 limit: Some(1),
+                recorded_after: None,
+                recorded_before: None,
             }),
         ),
     );
@@ -631,6 +635,8 @@ async fn auto_reflection_applies_query_limit_within_current_trigger_window_when_
                 owner: None,
                 kind: None,
                 limit: Some(1),
+                recorded_after: None,
+                recorded_before: None,
             }),
         ),
     );
@@ -959,6 +965,8 @@ async fn auto_reflection_rejects_empty_proposed_evidence_query_instead_of_wideni
                 owner: Some(Owner::World),
                 kind: Some(EventKind::Observation),
                 limit: Some(5),
+                recorded_after: None,
+                recorded_before: None,
             }),
         ),
     );
@@ -1023,6 +1031,8 @@ async fn auto_reflection_rejects_namespace_filter_with_no_trigger_window_interse
                 owner: Some(Owner::World),
                 kind: Some(EventKind::Observation),
                 limit: Some(5),
+                recorded_after: None,
+                recorded_before: None,
             }),
         ),
     );
@@ -1070,6 +1080,8 @@ async fn auto_reflection_rejects_noop_proposal_when_query_has_no_trigger_window_
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(5),
+            recorded_after: None,
+            recorded_before: None,
         }),
     ));
 
@@ -1174,6 +1186,8 @@ async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger
                 owner: Some(Owner::World),
                 kind: Some(EventKind::Observation),
                 limit: Some(5),
+                recorded_after: None,
+                recorded_before: None,
             }),
         ),
     );

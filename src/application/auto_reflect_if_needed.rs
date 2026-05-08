@@ -366,6 +366,8 @@ where
                 owner: Some(Owner::Self_),
                 kind: Some(crate::domain::types::EventKind::Action),
                 limit: Some(5),
+                recorded_after: None,
+                recorded_before: None,
             })
             .await?
         }
@@ -375,6 +377,8 @@ where
                 owner: None,
                 kind: None,
                 limit: Some(5),
+                recorded_after: None,
+                recorded_before: None,
             })
             .await?
         }
@@ -964,6 +968,8 @@ where
                     owner: proposed_evidence_query.owner,
                     kind: proposed_evidence_query.kind,
                     limit: None,
+                    recorded_after: None,
+                    recorded_before: None,
                 })
                 .await?,
             );

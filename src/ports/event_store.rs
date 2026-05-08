@@ -22,6 +22,8 @@ pub struct EvidenceQuery {
     pub owner: Option<Owner>,
     pub kind: Option<EventKind>,
     pub limit: Option<usize>,
+    pub recorded_after: Option<DateTime<Utc>>,
+    pub recorded_before: Option<DateTime<Utc>>,
 }
 
 impl StoredEvent {

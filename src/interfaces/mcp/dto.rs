@@ -381,6 +381,8 @@ impl TryFrom<EvidenceQueryDto> for EvidenceQuery {
             owner: value.owner.map(Owner::from),
             kind: value.kind.map(EventKind::from),
             limit: value.limit,
+            recorded_after: None,
+            recorded_before: None,
         })
     }
 }

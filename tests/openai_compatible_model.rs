@@ -274,6 +274,8 @@ async fn openai_compatible_model_parses_self_revision_evidence_policy() {
             owner: Some(Owner::Self_),
             kind: Some(EventKind::Action),
             limit: Some(2),
+            recorded_after: None,
+            recorded_before: None,
         })
     );
     assert_eq!(proposal.confidence.as_deref(), Some("medium"));

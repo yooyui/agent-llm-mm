@@ -172,6 +172,14 @@ async fn query_evidence_event_ids_with_limit(
         predicates.push("kind = ?");
     }
 
+    if query.recorded_after.is_some() {
+        predicates.push("recorded_at > ?");
+    }
+
+    if query.recorded_before.is_some() {
+        predicates.push("recorded_at < ?");
+    }
+
     if !predicates.is_empty() {
         sql.push_str(" WHERE ");
         sql.push_str(&predicates.join(" AND "));
@@ -195,6 +203,14 @@ async fn query_evidence_event_ids_with_limit(
 
         if let Some(kind) = query.kind {
             query_builder = query_builder.bind(event_kind_as_str(kind));
+        }
+
+        if let Some(after) = query.recorded_after {
+            query_builder = query_builder.bind(after.to_rfc3339());
+        }
+
+        if let Some(before) = query.recorded_before {
+            query_builder = query_builder.bind(before.to_rfc3339());
         }
 
         if let Some(limit) = query.limit.or(default_limit) {

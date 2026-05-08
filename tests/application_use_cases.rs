@@ -263,6 +263,8 @@ async fn reflection_rejects_identity_update_when_evidence_query_resolves_empty()
             owner: Some(Owner::User),
             kind: Some(EventKind::Conversation),
             limit: Some(2),
+            recorded_after: None,
+            recorded_before: None,
         })
         .with_identity_update(vec!["identity:self=principal_architect".to_string()]),
     )
@@ -590,6 +592,8 @@ async fn reflection_rejects_replacement_claim_when_query_returns_no_events() {
             owner: Some(Owner::Self_),
             kind: Some(EventKind::Conversation),
             limit: Some(2),
+            recorded_after: None,
+            recorded_before: None,
         }),
     )
     .await;
@@ -952,6 +956,8 @@ mod test_support {
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
+            recorded_after: None,
+            recorded_before: None,
         })
     }
 
@@ -973,6 +979,8 @@ mod test_support {
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
+            recorded_after: None,
+            recorded_before: None,
         })
     }
 
@@ -994,6 +1002,8 @@ mod test_support {
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
+            recorded_after: None,
+            recorded_before: None,
         })
         .with_identity_update(vec![
             "identity:self=staff_architect".to_string(),
@@ -1025,6 +1035,8 @@ mod test_support {
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
+            recorded_after: None,
+            recorded_before: None,
         })
         .with_commitment_updates(vec![Commitment::new(
             Owner::Self_,
@@ -1044,6 +1056,8 @@ mod test_support {
             owner: Some(Owner::World),
             kind: Some(EventKind::Observation),
             limit: Some(2),
+            recorded_after: None,
+            recorded_before: None,
         })
         .with_identity_update(vec!["identity:self=staff_architect".to_string()])
     }
