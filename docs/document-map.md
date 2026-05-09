@@ -41,6 +41,8 @@
   - 近期 / 中期 / 后期规划，明确哪些是 MVP 延伸，哪些不在近期承诺内
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
   - MVP release gate 之后的正式产品化路线图，按 local alpha、durable observability、controlled beta、remote/team mode 和 GA readiness 分阶段推进
+- [2026-05-09-local-product-alpha-development-tasks.md](superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md)
+  - 正式产品化第一轮 Local Product Alpha 的开发任务列表，包含 PRD、release gate、配置 profile、smoke、数据安全、观测和 daemon gate
 - [../NOTICE](../NOTICE)
   - 项目版权、独立项目声明，以及 dashboard 生成图物料的归属说明
 
@@ -62,6 +64,8 @@
   - 近期 / 中期 / 后期规划
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
   - 正式产品化阶段规划
+- [2026-05-09-local-product-alpha-development-tasks.md](superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md)
+  - Local Product Alpha 开发执行清单
 
 ## 5. 发布物料
 
@@ -125,6 +129,8 @@
   - 基于原始逐轮日志与再次确认问答整合出的 self-revision MVP 设计初稿
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
   - MVP 之后的正式产品化路线图，当前下一阶段开发应优先参考
+- [2026-05-09-local-product-alpha-development-tasks.md](superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md)
+  - 正式产品化第一轮任务列表，适合拆给 subagent 或按 milestone 执行
 
 ## 8. 阅读建议
 
@@ -134,5 +140,5 @@
 - 如果你想确认 runtime hooks、diagnostics 和 durable write path：读 `project-status.md`，再读 `local-mcp-integration-2026-03-26.md`
 - 如果你要接入新 provider：先读 `provider-contract.md`，再按 `testing-guide-2026-03-24.md` 的 provider 验证顺序执行
 - 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md`、`testing-guide-2026-03-24.md` 与 `release-gate.md`
-- 如果你要把项目推进成正式产品：先读 `superpowers/plans/2026-05-09-productization-roadmap.md`，再拆 local-alpha PRD 和 release gate
+- 如果你要把项目推进成正式产品：先读 `superpowers/plans/2026-05-09-productization-roadmap.md`，再按 `superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md` 执行 Local Product Alpha 第一轮任务
 - 如果你想追溯设计来源：最后读原始讨论资料和历史快照
