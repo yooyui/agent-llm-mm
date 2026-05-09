@@ -132,11 +132,40 @@ async fn doctor_fails_when_openai_provider_config_is_missing_api_key() {
             timeout_ms: 30_000,
         }),
         dashboard: Default::default(),
+        ..Default::default()
     };
 
     let error = run_doctor(config).await.expect_err("doctor should fail");
 
     assert!(error.to_string().contains("api_key"));
+}
+
+#[tokio::test]
+async fn doctor_report_does_not_contain_api_key_in_serialized_output() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(temp_dir.path().join("doctor-redact.sqlite"));
+    let secret = "sk-super-secret-key-12345";
+    let config = AppConfig {
+        transport: TransportKind::Stdio,
+        database_url,
+        model_provider: ModelProviderKind::OpenAiCompatible,
+        model_config: ModelConfig::OpenAiCompatible(OpenAiCompatibleConfig {
+            base_url: "https://api.example.test/v1".to_string(),
+            api_key: secret.to_string(),
+            model: "gpt-4o-mini".to_string(),
+            timeout_ms: 30_000,
+        }),
+        dashboard: Default::default(),
+        ..Default::default()
+    };
+
+    let report = run_doctor(config).await.expect("doctor");
+    let json = serde_json::to_string(&report).expect("serialize");
+
+    assert!(
+        !json.contains(secret),
+        "doctor output must not contain the api_key secret"
+    );
 }
 
 fn sqlite_url(path: PathBuf) -> String {

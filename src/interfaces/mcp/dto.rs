@@ -18,6 +18,7 @@ use crate::{
     },
     error::AppError,
 };
+use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -358,6 +359,10 @@ pub struct EvidenceQueryDto {
     pub kind: Option<EventKindDto>,
     #[serde(default)]
     pub limit: Option<usize>,
+    #[serde(default)]
+    pub recorded_after: Option<String>,
+    #[serde(default)]
+    pub recorded_before: Option<String>,
 }
 
 impl TryFrom<EvidenceQueryDto> for EvidenceQuery {
@@ -381,10 +386,31 @@ impl TryFrom<EvidenceQueryDto> for EvidenceQuery {
             owner: value.owner.map(Owner::from),
             kind: value.kind.map(EventKind::from),
             limit: value.limit,
-            recorded_after: None,
-            recorded_before: None,
+            recorded_after: parse_optional_evidence_query_timestamp(
+                "recorded_after",
+                value.recorded_after,
+            )?,
+            recorded_before: parse_optional_evidence_query_timestamp(
+                "recorded_before",
+                value.recorded_before,
+            )?,
         })
     }
+}
+
+fn parse_optional_evidence_query_timestamp(
+    field: &str,
+    value: Option<String>,
+) -> Result<Option<DateTime<Utc>>, AppError> {
+    value
+        .map(|timestamp| {
+            DateTime::parse_from_rfc3339(&timestamp)
+                .map(|timestamp| timestamp.with_timezone(&Utc))
+                .map_err(|error| {
+                    AppError::InvalidParams(format!("invalid {field} timestamp: {error}"))
+                })
+        })
+        .transpose()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

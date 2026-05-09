@@ -281,6 +281,87 @@ async fn openai_compatible_model_parses_self_revision_evidence_policy() {
     assert_eq!(proposal.confidence.as_deref(), Some("medium"));
 }
 
+#[tokio::test]
+async fn openai_compatible_model_fails_gracefully_on_malformed_json_response() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let address = listener.local_addr().expect("local addr");
+    let base_url = format!("http://{address}");
+
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        let mut buf = vec![0u8; 4096];
+        let _ = stream.read(&mut buf).await;
+        let body = "this is not json at all {{{";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream.write_all(response.as_bytes()).await.unwrap();
+    });
+
+    let model = OpenAiCompatibleModel::new(OpenAiCompatibleConfig {
+        base_url,
+        api_key: "test-key".to_string(),
+        model: "gpt-4o-mini".to_string(),
+        timeout_ms: 5_000,
+    })
+    .expect("model");
+
+    let error = model
+        .decide(test_support::sample_request())
+        .await
+        .expect_err("malformed json should fail");
+
+    let msg = error.to_string();
+    assert!(
+        !msg.is_empty(),
+        "error message should describe the parse failure"
+    );
+}
+
+#[tokio::test]
+async fn openai_compatible_model_surfaces_timeout_as_error() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let address = listener.local_addr().expect("local addr");
+    let base_url = format!("http://{address}");
+
+    tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.expect("accept");
+        let mut buf = vec![0u8; 4096];
+        let _ = stream.read(&mut buf).await;
+        // Never respond — let the client timeout
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        drop(stream);
+    });
+
+    let model = OpenAiCompatibleModel::new(OpenAiCompatibleConfig {
+        base_url,
+        api_key: "test-key".to_string(),
+        model: "gpt-4o-mini".to_string(),
+        timeout_ms: 200, // very short timeout
+    })
+    .expect("model");
+
+    let error = model
+        .decide(test_support::sample_request())
+        .await
+        .expect_err("timeout should fail");
+
+    let msg = error.to_string();
+    assert!(
+        msg.contains("timed out")
+            || msg.contains("timeout")
+            || msg.contains("Timeout")
+            || msg.contains("error sending request"),
+        "error should indicate a network/timeout failure, got: {msg}"
+    );
+}
+
 mod test_support {
     use super::*;
 

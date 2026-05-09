@@ -79,12 +79,39 @@ impl DashboardConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DaemonConfig {
+    pub enabled: bool,
+    pub poll_interval_ms: u64,
+    pub max_concurrent_tasks: u32,
+}
+
+impl Default for DaemonConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            poll_interval_ms: 60_000,
+            max_concurrent_tasks: 1,
+        }
+    }
+}
+
+impl DaemonConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.enabled && self.poll_interval_ms == 0 {
+            return Err("daemon.poll_interval_ms must be greater than 0".to_string());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppConfig {
     pub transport: TransportKind,
     pub database_url: String,
     pub model_provider: ModelProviderKind,
     pub model_config: ModelConfig,
     pub dashboard: DashboardConfig,
+    pub daemon: DaemonConfig,
 }
 
 impl Default for AppConfig {
@@ -95,6 +122,7 @@ impl Default for AppConfig {
             model_provider: ModelProviderKind::Mock,
             model_config: ModelConfig::Mock,
             dashboard: DashboardConfig::default(),
+            daemon: DaemonConfig::default(),
         }
     }
 }
@@ -177,6 +205,17 @@ impl AppConfig {
                 }
             };
         }
+        if let Some(daemon) = file_config.daemon {
+            if let Some(enabled) = daemon.enabled {
+                config.daemon.enabled = enabled;
+            }
+            if let Some(poll_interval_ms) = daemon.poll_interval_ms {
+                config.daemon.poll_interval_ms = poll_interval_ms;
+            }
+            if let Some(max_concurrent_tasks) = daemon.max_concurrent_tasks {
+                config.daemon.max_concurrent_tasks = max_concurrent_tasks;
+            }
+        }
 
         Ok(config)
     }
@@ -184,6 +223,7 @@ impl AppConfig {
     pub fn validate(&self) -> Result<(), String> {
         self.validate_model_config()?;
         self.dashboard.validate()?;
+        self.daemon.validate()?;
         Ok(())
     }
 
@@ -278,6 +318,7 @@ struct FileConfig {
     database_url: Option<String>,
     dashboard: Option<FileDashboardConfig>,
     model: Option<FileModelConfig>,
+    daemon: Option<FileDaemonConfig>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -305,4 +346,11 @@ struct FileOpenAiCompatibleConfig {
     api_key: Option<String>,
     model: Option<String>,
     timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct FileDaemonConfig {
+    enabled: Option<bool>,
+    poll_interval_ms: Option<u64>,
+    max_concurrent_tasks: Option<u32>,
 }

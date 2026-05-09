@@ -45,7 +45,7 @@
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_store`: 19 passed
 
-合计：153 个测试通过。
+合计：165 个测试通过。
 
 ---
 
@@ -279,6 +279,7 @@ cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openai_compatib
   - `load_prefers_config_path_from_environment`
   - `load_prefers_database_url_env_over_default_config_file`
   - `doctor_fails_when_openai_provider_config_is_missing_api_key`
+  - `doctor_report_does_not_contain_api_key_in_serialized_output`
 - `tests/openai_compatible_model.rs`
   - `openai_compatible_model_parses_first_assistant_message_into_action`
   - `openai_compatible_model_rejects_empty_action`
@@ -287,14 +288,20 @@ cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openai_compatib
   - `openai_compatible_model_defaults_missing_machine_patch_in_self_revision_proposal`
   - `openai_compatible_model_accepts_fenced_json_self_revision_proposal`
   - `openai_compatible_model_parses_self_revision_evidence_policy`
+  - `openai_compatible_model_fails_gracefully_on_malformed_json_response`
+  - `openai_compatible_model_surfaces_timeout_as_error`
+- `tests/evidence_query_dto.rs`
+  - `evidence_query_dto_parses_recency_window_fields`
+  - `evidence_query_dto_rejects_invalid_recency_timestamp`
+- `tests/operation_log.rs`
+  - `operation_log_redacts_summary_json_before_persisting`
+  - `operation_log_queries_by_correlation_id`
 - `tests/mcp_stdio.rs`
   - `decide_with_snapshot_over_stdio_uses_openai_compatible_provider_from_config_file`
 
 新增 provider 前的阻断缺口：
 
-- `doctor` redaction 目前缺少正向断言；新增 provider 前需要证明 configured secret 不会出现在 serialized report 或用户可见诊断中
-- timeout failure 目前缺少专用回归；新增 provider 前需要覆盖超时不会挂起或静默 fallback
-- malformed JSON 目前只有部分解析失败路径覆盖；新增 provider 前需要补齐 decision 与 self-revision proposal 的明确错误断言
+- self-revision proposal 的 malformed JSON 仍只通过 proposal 解析路径间接覆盖；新增 provider 前需要按 provider contract 补齐更明确的 self-revision proposal 错误断言
 
 ### 6.4 领域不变量
 
@@ -437,6 +444,7 @@ cargo test --test openai_compatible_model openai_compatible_model_parses_self_re
 - 当 model 同时提供 explicit ids 和 `proposed_evidence_query` 时，这些 ids 是否仍必须满足 query 在当前 trigger window 内的过滤约束
 - handled ledger 是否保留完整 evidence window，而不是只保留 model 选择的子集
 - `proposed_evidence_query` 在 explicit ids 为空时是否只会对当前 trigger window 做交集收口，并在有交集时只按当前窗口内候选应用 `limit`
+- `proposed_evidence_query` 的 `recorded_after` / `recorded_before` 是否按 inclusive recency window 参与 trigger-window 内过滤
 - `proposed_evidence_query` 在 explicit ids 为空且 query 无交集时是否拒绝处理，而不是绕过 query 改用 full trigger window
 - record-only / no-op proposal 是否同样不能绕过 no-match query rejection
 - `proposed_evidence_query` 当前是否仍不会在 id 为空时自动 widening / ranking

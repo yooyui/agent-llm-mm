@@ -968,8 +968,8 @@ where
                     owner: proposed_evidence_query.owner,
                     kind: proposed_evidence_query.kind,
                     limit: None,
-                    recorded_after: None,
-                    recorded_before: None,
+                    recorded_after: proposed_evidence_query.recorded_after,
+                    recorded_before: proposed_evidence_query.recorded_before,
                 })
                 .await?,
             );

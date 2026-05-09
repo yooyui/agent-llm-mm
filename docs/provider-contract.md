@@ -12,10 +12,10 @@
 | Item | Required behavior | Current verification status | Current signals |
 | --- | --- | --- | --- |
 | Config validation behavior | Config loading must preserve provider selection, provider-specific fields, config-file precedence, and required-field validation. Missing required provider fields must fail before normal runtime use. | existing | `tests/provider_config.rs` covers default `mock`, explicit `openai-compatible` config loading, `AGENT_LLM_MM_CONFIG`, `AGENT_LLM_MM_DATABASE_URL`, and missing `api_key` failure through `doctor`. |
-| `doctor` redaction behavior | `doctor` may expose provider, base URL, model, status, and runtime readiness, but must not expose API keys or equivalent secrets. | partial | `docs/project-status.md` documents the boundary and `tests/provider_config.rs` covers missing key failure. There is not yet a direct positive assertion that a configured secret is absent from the serialized report. |
-| Timeout handling | Provider network calls must use bounded timeout configuration and surface timeout failures as provider errors, not hangs or silent fallback. | partial | `timeout_ms` is parsed in `tests/provider_config.rs` and used by `OpenAiCompatibleModel`; there is not yet a dedicated timeout-failure regression. |
+| `doctor` redaction behavior | `doctor` may expose provider, base URL, model, status, and runtime readiness, but must not expose API keys or equivalent secrets. | existing | `tests/provider_config.rs::doctor_report_does_not_contain_api_key_in_serialized_output` positively asserts that a configured secret is absent from the serialized report. |
+| Timeout handling | Provider network calls must use bounded timeout configuration and surface timeout failures as provider errors, not hangs or silent fallback. | existing | `tests/openai_compatible_model.rs::openai_compatible_model_surfaces_timeout_as_error` confirms that a 200ms timeout against a non-responding server surfaces as a provider error. |
 | Non-success HTTP status behavior | Non-2xx provider responses must return observable provider errors. | existing | `tests/openai_compatible_model.rs::openai_compatible_model_surfaces_non_success_status`. |
-| Malformed JSON behavior | Malformed or schema-incompatible model responses must fail without panic and without fabricating a valid decision or self-revision proposal. | partial | `tests/openai_compatible_model.rs` covers empty decision action, structured proposal parsing, missing `machine_patch` defaults, and fenced JSON proposals. Add explicit malformed JSON cases before broadening providers. |
+| Malformed JSON behavior | Malformed or schema-incompatible model responses must fail without panic and without fabricating a valid decision or self-revision proposal. | existing | `tests/openai_compatible_model.rs::openai_compatible_model_fails_gracefully_on_malformed_json_response` confirms that completely invalid JSON is surfaced as a provider error without panic. |
 | Decision action parsing | The first assistant message content is the action; blank content is rejected. | existing | `openai_compatible_model_parses_first_assistant_message_into_action` and `openai_compatible_model_rejects_empty_action`. |
 | Self-revision proposal parsing | `should_reflect`, `rationale`, `machine_patch`, and defaulted patch fields must parse consistently, including fenced JSON. | existing | `openai_compatible_model_parses_self_revision_proposal_from_assistant_message`, `openai_compatible_model_defaults_missing_machine_patch_in_self_revision_proposal`, and `openai_compatible_model_accepts_fenced_json_self_revision_proposal`. |
 | Evidence policy parsing | `proposed_evidence_event_ids`, `proposed_evidence_query`, and `confidence` must parse into the structured self-revision proposal contract. | existing | `openai_compatible_model_parses_self_revision_evidence_policy`. |
@@ -30,6 +30,7 @@
 - `load_prefers_config_path_from_environment`
 - `load_prefers_database_url_env_over_default_config_file`
 - `doctor_fails_when_openai_provider_config_is_missing_api_key`
+- `doctor_report_does_not_contain_api_key_in_serialized_output`
 
 `tests/openai_compatible_model.rs`:
 
@@ -40,6 +41,8 @@
 - `openai_compatible_model_defaults_missing_machine_patch_in_self_revision_proposal`
 - `openai_compatible_model_accepts_fenced_json_self_revision_proposal`
 - `openai_compatible_model_parses_self_revision_evidence_policy`
+- `openai_compatible_model_fails_gracefully_on_malformed_json_response`
+- `openai_compatible_model_surfaces_timeout_as_error`
 
 `tests/mcp_stdio.rs`:
 

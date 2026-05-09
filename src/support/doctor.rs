@@ -17,6 +17,9 @@ pub struct DoctorReport {
     pub dashboard_port: u16,
     pub dashboard_base_path: String,
     pub dashboard_required: bool,
+    pub daemon_enabled: bool,
+    pub daemon_poll_interval_ms: u64,
+    pub daemon_max_concurrent_tasks: u32,
     pub auto_reflection_runtime_hooks: Vec<String>,
     pub self_revision_write_path: &'static str,
     pub status: &'static str,
@@ -43,6 +46,9 @@ pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
         dashboard_port: config.dashboard.port,
         dashboard_base_path: config.dashboard.base_path,
         dashboard_required: config.dashboard.required,
+        daemon_enabled: config.daemon.enabled,
+        daemon_poll_interval_ms: config.daemon.poll_interval_ms,
+        daemon_max_concurrent_tasks: config.daemon.max_concurrent_tasks,
         auto_reflection_runtime_hooks: interfaces::mcp::server::AUTO_REFLECTION_RUNTIME_HOOKS
             .iter()
             .map(|hook| hook.to_string())

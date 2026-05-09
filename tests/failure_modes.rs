@@ -1328,6 +1328,90 @@ async fn auto_reflection_preserves_handled_reflection_id_when_unchanged_suppress
 }
 
 #[tokio::test]
+async fn auto_reflection_applies_recency_filters_from_proposed_evidence_query() {
+    let deps = test_support::deps_for_failure_modes();
+    let base_time = chrono::DateTime::parse_from_rfc3339("2026-03-23T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    deps.seed_events(vec![
+        StoredEvent::new(
+            "evt-conflict-old".to_string(),
+            base_time + chrono::Duration::minutes(1),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "older conflicting observation outside the proposed recency window",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-mid".to_string(),
+            base_time + chrono::Duration::minutes(2),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "middle conflicting observation inside the proposed recency window",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-new".to_string(),
+            base_time + chrono::Duration::minutes(3),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "newer conflicting observation inside the proposed recency window",
+            ),
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            Vec::new(),
+            Some(EvidenceQuery {
+                namespace: None,
+                owner: Some(Owner::World),
+                kind: Some(EventKind::Observation),
+                limit: None,
+                recorded_after: Some(base_time + chrono::Duration::minutes(2)),
+                recorded_before: Some(base_time + chrono::Duration::minutes(3)),
+            }),
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::self_(),
+            vec!["conflict".to_string(), "commitment".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result.evidence_event_ids,
+        vec![
+            "evt-conflict-new".to_string(),
+            "evt-conflict-mid".to_string()
+        ]
+    );
+    assert_eq!(
+        deps.evidence_query_trace()
+            .last()
+            .expect("auto-reflection should query evidence")
+            .recorded_after,
+        Some(base_time + chrono::Duration::minutes(2))
+    );
+    assert_eq!(
+        deps.latest_reflection()
+            .expect("recency-filtered auto-reflection should persist")
+            .supporting_evidence_event_ids,
+        vec![
+            "evt-conflict-new".to_string(),
+            "evt-conflict-mid".to_string()
+        ]
+    );
+}
+
+#[tokio::test]
 async fn auto_reflection_rejected_identity_attempt_does_not_start_cooldown_for_later_valid_retry() {
     let deps = test_support::deps_for_failure_modes();
     deps.set_self_revision_proposal(test_support::identity_only_auto_reflection_proposal());
@@ -1805,6 +1889,7 @@ struct State {
     fail_point: Option<FailPoint>,
     model_calls: Vec<ModelInput>,
     self_revision_proposal: agent_llm_mm::domain::self_revision::SelfRevisionProposal,
+    evidence_query_trace: Vec<EvidenceQuery>,
 }
 
 #[derive(Clone)]
@@ -1881,6 +1966,7 @@ impl Default for State {
                 agent_llm_mm::domain::self_revision::SelfRevisionProposal::no_revision(
                     "mock model did not detect a valid Failure revision".to_string(),
                 ),
+            evidence_query_trace: Vec::new(),
         }
     }
 }
@@ -1962,6 +2048,10 @@ impl FailureModeDeps {
             .trigger_ledger
             .last()
             .cloned()
+    }
+
+    fn evidence_query_trace(&self) -> Vec<EvidenceQuery> {
+        self.state.lock().unwrap().evidence_query_trace.clone()
     }
 
     fn clear_fail_point(&self) {
@@ -2191,8 +2281,20 @@ impl EventStore for FailureModeDeps {
         &self,
         query: EvidenceQuery,
     ) -> Result<Vec<String>, AppError> {
+        self.state
+            .lock()
+            .unwrap()
+            .evidence_query_trace
+            .push(query.clone());
         let mut events = self.state.lock().unwrap().committed.events.clone();
-        filter_and_order_events(&mut events, query.namespace, query.owner, query.kind);
+        filter_and_order_events(
+            &mut events,
+            query.namespace,
+            query.owner,
+            query.kind,
+            query.recorded_after,
+            query.recorded_before,
+        );
 
         let limit = query.limit.unwrap_or(10);
         if limit == 0 {
@@ -2210,8 +2312,20 @@ impl EventStore for FailureModeDeps {
         &self,
         query: EvidenceQuery,
     ) -> Result<Vec<String>, AppError> {
+        self.state
+            .lock()
+            .unwrap()
+            .evidence_query_trace
+            .push(query.clone());
         let mut events = self.state.lock().unwrap().committed.events.clone();
-        filter_and_order_events(&mut events, query.namespace, query.owner, query.kind);
+        filter_and_order_events(
+            &mut events,
+            query.namespace,
+            query.owner,
+            query.kind,
+            query.recorded_after,
+            query.recorded_before,
+        );
 
         let events = if let Some(limit) = query.limit {
             events.into_iter().take(limit).collect()
@@ -2239,6 +2353,8 @@ fn filter_and_order_events(
     namespace: Option<Namespace>,
     owner: Option<Owner>,
     kind: Option<EventKind>,
+    recorded_after: Option<DateTime<Utc>>,
+    recorded_before: Option<DateTime<Utc>>,
 ) {
     if let Some(namespace) = namespace {
         events.retain(|event| event.event.namespace() == &namespace);
@@ -2250,6 +2366,14 @@ fn filter_and_order_events(
 
     if let Some(kind) = kind {
         events.retain(|event| event.event.kind() == kind);
+    }
+
+    if let Some(recorded_after) = recorded_after {
+        events.retain(|event| event.recorded_at >= recorded_after);
+    }
+
+    if let Some(recorded_before) = recorded_before {
+        events.retain(|event| event.recorded_at <= recorded_before);
     }
 
     events.sort_by(|lhs, rhs| {

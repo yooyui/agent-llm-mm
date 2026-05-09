@@ -1338,4 +1338,18 @@ async fn sqlite_query_evidence_event_ids_filters_by_recency_window() {
         .await
         .unwrap();
     assert_eq!(window, vec!["evt-mid"]);
+
+    let inclusive_window = context
+        .store
+        .query_evidence_event_ids(EvidenceQuery {
+            namespace: None,
+            owner: None,
+            kind: None,
+            limit: None,
+            recorded_after: Some(now + chrono::Duration::seconds(60)),
+            recorded_before: Some(now + chrono::Duration::seconds(120)),
+        })
+        .await
+        .unwrap();
+    assert_eq!(inclusive_window, vec!["evt-new", "evt-mid"]);
 }

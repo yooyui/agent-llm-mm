@@ -28,9 +28,9 @@
 
 ### Phase F: Evidence Query v2 - Bounded Recency ✅
 - [x] `EvidenceQuery` 添加 `recorded_after: Option<DateTime<Utc>>` 和 `recorded_before: Option<DateTime<Utc>>`
-- [x] SQLite store `query_evidence_event_ids_with_limit` 实现 `recorded_at > ?` / `recorded_at < ?` 过滤
-- [x] 新增 `sqlite_query_evidence_event_ids_filters_by_recency_window` 测试（覆盖 after-only / before-only / window 三种场景）
-- [x] 所有现有调用点补齐 `recorded_after: None, recorded_before: None`
+- [x] SQLite store `query_evidence_event_ids_with_limit` 实现 inclusive `recorded_at >= ?` / `recorded_at <= ?` 过滤
+- [x] 新增 `sqlite_query_evidence_event_ids_filters_by_recency_window` 测试（覆盖 after-only / before-only / window 与 inclusive 边界场景）
+- [x] MCP DTO 与 automatic self-revision proposal narrowing 均保留 `recorded_after` / `recorded_before` 过滤语义
 
 ### Phase G: Dashboard 边界 ✅
 - [x] 确认 `dashboard_rejects_write_methods_on_read_only_routes` 测试已存在

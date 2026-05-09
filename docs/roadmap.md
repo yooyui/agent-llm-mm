@@ -73,7 +73,7 @@
 原因：
 
 - 反思路径的最小 deep-update 闭环已经落地，下一步不应再引入新的接口漂移，而应优先把规则与边界收口清楚
-- `proposed_evidence_query` 当前仍只是首阶段 evidence contract，不应被扩写成自动 widening / ranking engine
+- `proposed_evidence_query` 当前仍只是首阶段 evidence contract，已支持 namespace / owner / kind / inclusive recency window / limit 的窄化过滤，不应被扩写成自动 widening / ranking engine
 - 这将减少后续 evidence 语义与 schema 改造的反复成本
 
 ### 5. 收口 evidence-oriented query v2（窄化版）
@@ -82,13 +82,13 @@
 
 目标：
 
-- 在现有 `owner / kind / limit` 查询基础上，补齐 explicit namespace、bounded recency、deterministic limit / no-match 语义
+- 在现有 `namespace / owner / kind / inclusive recency window / limit` 查询基础上，继续收口 deterministic limit / no-match 语义
 - 补齐 evidence kind filter 边界，并保持 explicit evidence ids 只有通过服务端 validation 后才是 authoritative
 - explicit namespace filter 的首片已经补齐 event namespace schema / migration；不能用 owner、summary 或 claim namespace 代替 event namespace
 - explicit reflection evidence lookup 继续走直接 store filter，空查询结果仍是 `invalid_params`
 - self-revision proposal 只允许在当前 trigger window 内 bounded narrowing，空查询结果不能绕过 query 去做更宽搜索
 - project / user scoped conflict 与 periodic trigger window 会先排除 sibling namespace 事件，但这仍不是 cross-namespace search / ranking 能力
-- 后续仍需补 bounded recency 与独立 evidence kind 语义
+- 后续仍需补独立 evidence kind 语义
 
 原因：
 
@@ -161,4 +161,6 @@
 - 多租户或多 Agent 编排
 - 远程、可写或多租户可视化管理后台
 - 持续后台自治运行或完整 daemon 化自我治理
-- 把仓库包装成“生产级完整自我机制产品”
+- 把仓库包装成”生产级完整自我机制产品”
+
+完整自治、生产级 self-governing、远程管理、认证/多租户/持久化 operation log、以及”所有入口自动反思”的 daemon 均进入未来规划，但不属于当前 MVP hardening 的实现范围。详见 [Future Autonomy Productization Spec Index](superpowers/specs/2026-04-27-future-autonomy-productization-index.md)。

@@ -186,6 +186,7 @@ async fn doctor_bootstraps_configured_sqlite_database_and_returns_report() {
         model_provider: ModelProviderKind::Mock,
         model_config: ModelConfig::Mock,
         dashboard: Default::default(),
+        ..Default::default()
     };
 
     let report = run_doctor(config).await.expect("doctor should pass");
@@ -245,6 +246,7 @@ async fn doctor_reports_dashboard_config_without_starting_dashboard() {
             open_browser: false,
             required: true,
         },
+        ..Default::default()
     };
 
     let report = run_doctor(config).await.expect("doctor should pass");
@@ -291,6 +293,7 @@ async fn doctor_creates_missing_parent_directories_for_file_backed_sqlite_databa
         model_provider: ModelProviderKind::Mock,
         model_config: ModelConfig::Mock,
         dashboard: Default::default(),
+        ..Default::default()
     };
 
     let report = run_doctor(config).await.expect("doctor should pass");
@@ -310,6 +313,7 @@ async fn serve_command_fails_fast_for_malformed_database_url() {
         model_provider: ModelProviderKind::Mock,
         model_config: ModelConfig::Mock,
         dashboard: Default::default(),
+        ..Default::default()
     };
 
     let result = run_command(AppCommand::Serve, config).await;

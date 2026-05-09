@@ -135,7 +135,7 @@
 
 ### 未实现
 
-- richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / limit 的窄化查询；bounded recency、独立 evidence kind、weighting / relation / ranking 仍未实现）
+- richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / inclusive recency window / limit 的窄化查询；独立 evidence kind、weighting / relation / ranking 仍未实现）
 - richer evidence weighting / relation / ranking
 - evidence weight / relation
 - `identity_core` / `commitments` 的 richer schema、版本化修订与更细策略

@@ -11,6 +11,7 @@ pub mod episode;
 pub mod event;
 pub mod evidence_link;
 pub mod identity_core;
+pub mod operation_log;
 pub mod reflection;
 pub mod rules;
 pub mod self_revision;

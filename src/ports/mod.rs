@@ -13,6 +13,7 @@ pub mod event_store;
 pub mod id_generator;
 pub mod identity_store;
 pub mod model_port;
+pub mod operation_log_store;
 pub mod reflection_store;
 pub mod trigger_ledger_store;
 
@@ -28,6 +29,7 @@ pub use event_store::{EventStore, EvidenceQuery, StoredEvent};
 pub use id_generator::IdGenerator;
 pub use identity_store::IdentityStore;
 pub use model_port::{ModelDecision, ModelDecisionRequest, ModelInput, ModelPort};
+pub use operation_log_store::{OperationLogQuery, OperationLogStore};
 pub use reflection_store::{ReflectionStore, StoredReflection};
 pub use trigger_ledger_store::{StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore};
 

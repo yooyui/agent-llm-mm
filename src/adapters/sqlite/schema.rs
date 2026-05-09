@@ -62,6 +62,23 @@ CREATE TABLE IF NOT EXISTS commitments (
     owner TEXT NOT NULL
 )"#;
 
+const OPERATION_LOG_TABLE_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS operation_log (
+    operation_id TEXT PRIMARY KEY,
+    occurred_at TEXT NOT NULL,
+    namespace TEXT,
+    actor_kind TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    entrypoint TEXT NOT NULL,
+    operation_kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    correlation_id TEXT,
+    request_summary_json TEXT,
+    response_summary_json TEXT,
+    diagnostic_summary_json TEXT,
+    redaction_version INTEGER NOT NULL DEFAULT 1
+)"#;
+
 const LEGACY_NAMESPACE_BACKFILL_WITH_NAMESPACE_SQL: &str = "COALESCE(NULLIF(namespace, ''), CASE owner WHEN 'self' THEN 'self' WHEN 'user' THEN 'user/default' ELSE 'world' END)";
 const LEGACY_NAMESPACE_BACKFILL_WITHOUT_NAMESPACE_SQL: &str =
     "CASE owner WHEN 'self' THEN 'self' WHEN 'user' THEN 'user/default' ELSE 'world' END";
@@ -84,6 +101,8 @@ pub(super) fn init_sql() -> String {
 {identity_claims_table};
 
 {commitments_table};
+
+{operation_log_table};
 "#,
         events_table = events_table_sql(true),
         claims_table = claims_table_sql(true),
@@ -93,6 +112,7 @@ pub(super) fn init_sql() -> String {
         reflection_trigger_ledger_table = REFLECTION_TRIGGER_LEDGER_TABLE_SQL,
         identity_claims_table = IDENTITY_CLAIMS_TABLE_SQL,
         commitments_table = COMMITMENTS_TABLE_SQL,
+        operation_log_table = OPERATION_LOG_TABLE_SQL,
     )
 }
 

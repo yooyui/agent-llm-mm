@@ -20,3 +20,8 @@ event_capacity = 2000
 sse_enabled = true
 open_browser = false
 required = false
+
+[daemon]
+enabled = false
+poll_interval_ms = 60000
+max_concurrent_tasks = 1
