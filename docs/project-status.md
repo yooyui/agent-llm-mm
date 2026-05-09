@@ -189,7 +189,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-04-29`，已 fresh 运行：
+截至 `2026-05-09`，已 fresh 运行：
 
 - `cargo fmt --check`
 - `git diff --check`
@@ -202,22 +202,25 @@ Implementation notes:
 结果：
 
 - `application_use_cases`: 22
-- `bootstrap`: 15
+- `bootstrap`: 16
+- `daemon_config`: 3
 - `dashboard_config`: 4
 - `dashboard_http`: 5
 - `dashboard_projection`: 2
 - `dashboard_recorder`: 2
 - `decision_flow`: 2
+- `demo_openai_compatible_stub`: 1
 - `domain_invariants`: 4
 - `domain_snapshot`: 6
-- `demo_openai_compatible_stub`: 1
-- `failure_modes`: 30
+- `evidence_query_dto`: 2
+- `failure_modes`: 31
 - `mcp_stdio`: 27
-- `openai_compatible_model`: 7
-- `provider_config`: 5
+- `openai_compatible_model`: 9
+- `operation_log`: 6
+- `provider_config`: 6
 - `self_revision_demo_runner`: 2
-- `sqlite_store`: 19
-- 合计：165 个测试通过
+- `sqlite_store`: 20
+- 合计：170 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 
