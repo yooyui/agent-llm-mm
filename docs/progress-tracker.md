@@ -4,7 +4,7 @@
 
 本表用于把“原始规划 / 当前实现 / 剩余缺口 / 下一步任务”放到同一处，方便后续开发时持续更新，而不是每次都在多份历史文档之间来回比对。
 
-当前追踪基线：`2026-04-24`
+当前追踪基线：`2026-05-09`
 
 建议把它当成“任务推进总表”使用：
 
@@ -18,6 +18,7 @@
 | --- | --- |
 | `已完成` | 当前阶段承诺已落地，并且已有文档或测试支撑 |
 | `部分完成` | 已有可用 MVP 或局部实现，但离目标态仍有明确差距 |
+| `已规划` | 已进入后续规划并有明确路线图，但尚未完成对应产品实现 |
 | `未实现` | 目标已被讨论或列入路线图，但仓库里尚未形成可用实现 |
 | `暂不纳入近期承诺` | 方向存在，但 roadmap 明确不作为近期交付目标 |
 
@@ -37,7 +38,7 @@
 | provider 生态 | 在现有 provider 边界上继续增加更多 provider 类型 | 当前仅有 `mock` 与 `openai-compatible` 两类 provider | `部分完成` | `README.md`、`project-status.md`、`roadmap.md` | 缺 Azure OpenAI、OpenRouter、本地模型网关等更多适配器 | 中期按统一 provider contract 继续扩展，不让应用层感知第三方协议细节 |
 | 多层 memory 体系 | 形成 working / episodic / semantic / procedural 等更完整分层 | 当前仍以最小 self-agent memory 闭环为主，未形成独立多层 memory 回路 | `未实现` | `README.md`、`project-status.md`、`roadmap.md` 明确列为后续方向 | 缺独立层次、层间筛选/回写/淘汰策略，以及 slow-variable / self-model layering | 后期再进入该方向，前提是 schema、evidence 与 reflection policy 已稳定 |
 | 持续后台自治与完整 self-governing agent | 形成持续运行、统一触发、非手工驱动的更完整自治行为 | 当前没有后台 daemon、定时自治进程或“所有入口统一自动反思”的运行形态 | `未实现` | `project-status.md`、`roadmap.md` 都明确否定当前已实现该能力 | 缺 daemon 化调度、统一自动触发入口、持续运行治理策略 | 明确保留为后期方向，不在近期承诺里提前产品化 |
-| 产品化封装 | 从本机 demo 评估到更清晰的部署/隔离/transport 边界 | 当前仍定位为本机 `stdio` technical demo / MVP，不应包装成完整产品 | `暂不纳入近期承诺` | `README.md`、`roadmap.md`、`release-readiness.md` | 缺更稳定的 transport、隔离策略、部署方式和产品级运维能力 | 继续保持 demo / MVP 口径，避免路线图表达漂移 |
+| 产品化封装 | 从已验证 MVP 推进到 local-first formal product，并为后续 beta / remote / GA 建立 gate | MVP release gate 已过；正式产品化路线图已落到 `docs/superpowers/plans/2026-05-09-productization-roadmap.md`，但产品实现尚未完成 | `已规划` | `README.md`、`roadmap.md`、`release-readiness.md`、`docs/superpowers/plans/2026-05-09-productization-roadmap.md` | 缺 Local Product Alpha PRD、产品 release gate、安装/配置/数据安全包、durable observability、observe-only daemon、auth/remote/team mode/GA gate | 先创建 local-alpha PRD 和 local-alpha release gate，再按产品化路线图推进 |
 
 ## 近期建议任务序列
 
@@ -57,4 +58,4 @@
 
 ## 未来规划索引
 
-完整自治、生产级 self-governing、远程管理、认证/多租户/持久化 operation log、以及”所有入口自动反思”的 daemon 均进入未来规划，但不属于当前 MVP hardening 的实现范围。详见 [Future Autonomy Productization Spec Index](superpowers/specs/2026-04-27-future-autonomy-productization-index.md)。
+完整自治、生产级 self-governing、远程管理、认证/多租户、以及”所有入口自动反思”的 daemon 均进入正式产品化路线图，但必须按 local alpha、durable observability、controlled beta、remote/team mode 和 GA gate 分阶段推进。详见 [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md) 和 [Future Autonomy Productization Spec Index](superpowers/specs/2026-04-27-future-autonomy-productization-index.md)。

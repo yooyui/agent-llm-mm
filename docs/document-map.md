@@ -39,6 +39,8 @@
   - 新增 provider 前的就绪清单，覆盖配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射
 - [roadmap.md](roadmap.md)
   - 近期 / 中期 / 后期规划，明确哪些是 MVP 延伸，哪些不在近期承诺内
+- [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
+  - MVP release gate 之后的正式产品化路线图，按 local alpha、durable observability、controlled beta、remote/team mode 和 GA readiness 分阶段推进
 - [../NOTICE](../NOTICE)
   - 项目版权、独立项目声明，以及 dashboard 生成图物料的归属说明
 
@@ -58,6 +60,8 @@
   - 发布前应执行的命令、artifact 验证，以及 sandbox-only 失败的记录方式
 - [roadmap.md](roadmap.md)
   - 近期 / 中期 / 后期规划
+- [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
+  - 正式产品化阶段规划
 
 ## 5. 发布物料
 
@@ -119,6 +123,8 @@
   - 较早的 provider 设计稿，保留用于追溯，不代表当前最终实现
 - [2026-04-19-self-agent-memory-self-revision-mvp-design.md](superpowers/specs/2026-04-19-self-agent-memory-self-revision-mvp-design.md)
   - 基于原始逐轮日志与再次确认问答整合出的 self-revision MVP 设计初稿
+- [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
+  - MVP 之后的正式产品化路线图，当前下一阶段开发应优先参考
 
 ## 8. 阅读建议
 
@@ -128,4 +134,5 @@
 - 如果你想确认 runtime hooks、diagnostics 和 durable write path：读 `project-status.md`，再读 `local-mcp-integration-2026-03-26.md`
 - 如果你要接入新 provider：先读 `provider-contract.md`，再按 `testing-guide-2026-03-24.md` 的 provider 验证顺序执行
 - 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md`、`testing-guide-2026-03-24.md` 与 `release-gate.md`
+- 如果你要把项目推进成正式产品：先读 `superpowers/plans/2026-05-09-productization-roadmap.md`，再拆 local-alpha PRD 和 release gate
 - 如果你想追溯设计来源：最后读原始讨论资料和历史快照

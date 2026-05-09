@@ -15,7 +15,7 @@
 - 类型：本机 `stdio` MCP 服务
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
-- 当前状态：适合以“公开技术 demo / MVP”身份发布到 GitHub，不应包装成完整产品
+- 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
 - 最新 fresh 验证：`2026-05-09`
   - `cargo test` 全量通过，共 170 个测试
   - `doctor` 预检返回 `status = ok`
@@ -27,6 +27,7 @@
 - [进度追踪对照表](docs/progress-tracker.md)
 - [发布准备评估](docs/release-readiness.md)
 - [Release Gate Runbook](docs/release-gate.md)
+- [正式产品化路线图](docs/superpowers/plans/2026-05-09-productization-roadmap.md)
 - [未来路线图](docs/roadmap.md)
 - [文档总览](docs/document-map.md)
 

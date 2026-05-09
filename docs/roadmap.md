@@ -10,6 +10,21 @@
 
 2026-04-27 已补齐可配置的本机只读 dashboard：它随 `serve` 在 `[dashboard].enabled = true` 时启动，展示 `Memory-chan Live Desk` 运行面板、runtime operation 事件和静态生成图物料。它仍是本机观测面板，不是远程管理后台、写入界面或 durable operation-log database。
 
+2026-05-09 已确认当前 MVP release gate 可作为产品化起点：`cargo test` 全量通过 170 个测试，`doctor` 返回 `status = ok`，self-revision demo package 可生成 release gate 要求的证据链。正式产品化进入下一阶段规划，详见 [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md)。这不改变当前事实：仓库还不是 GA / 生产级完整自治产品。
+
+## 下一阶段：正式产品化
+
+目标：
+
+- 把当前已验证的本机 MCP `stdio` MVP 推进为 local-first formal product
+- 先完成 Local Product Alpha，再进入 durable observability、observe-only daemon、controlled beta、remote/team mode 和 GA readiness
+- 继续保持 `run_reflection` 作为 identity / commitments 的唯一 durable write path，直到后续 ADR 明确替换
+- 在 auth、authorization、audit、rollback 和隔离测试完成前，不暴露可写远程管理能力
+
+当前权威规划：
+
+- [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md)
+
 ## 近期
 
 ### 1. 收口 release gate 文档
@@ -147,7 +162,7 @@
 - procedural memory
 - 以及更完整的 slow variable / policy / self-model layering
 
-### 2. 评估更完整的产品化封装
+### 2. 推进正式产品化封装
 
 候选方向：
 
@@ -155,12 +170,14 @@
 - 更丰富的 transport
 - 更稳定的配置与部署方式
 
+当前该方向已进入下一阶段产品化规划，实施顺序以 [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md) 为准。
+
 ## 当前不纳入近期承诺的事项
 
-- 远程 HTTP 服务
+- 未经产品化设计和安全 gate 的远程 HTTP 服务
 - 多租户或多 Agent 编排
 - 远程、可写或多租户可视化管理后台
 - 持续后台自治运行或完整 daemon 化自我治理
 - 把仓库包装成”生产级完整自我机制产品”
 
-完整自治、生产级 self-governing、远程管理、认证/多租户/持久化 operation log、以及”所有入口自动反思”的 daemon 均进入未来规划，但不属于当前 MVP hardening 的实现范围。详见 [Future Autonomy Productization Spec Index](superpowers/specs/2026-04-27-future-autonomy-productization-index.md)。
+完整自治、生产级 self-governing、远程管理、认证/多租户、以及”所有入口自动反思”的 daemon 均进入产品化路线图，但必须按阶段 gate 推进，不能从当前 MVP 直接宣称已完成。详见 [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md) 和 [Future Autonomy Productization Spec Index](superpowers/specs/2026-04-27-future-autonomy-productization-index.md)。
