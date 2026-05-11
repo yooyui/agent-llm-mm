@@ -22,22 +22,28 @@ cd ~/code/agent-llm-mm
 
 ## 3. 准备本地配置
 
-先复制一份本地配置文件：
+先选择一个 profile，再复制为本机私有配置文件：
 
 ```zsh
-cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
+cp examples/agent-llm-mm.dev.example.toml agent-llm-mm.local.toml
 ```
 
-然后编辑 `agent-llm-mm.local.toml`：
+可选 profile：
+
+- `examples/agent-llm-mm.dev.example.toml`: 本地开发和手工测试，默认 `provider = "mock"`，dashboard disabled。
+- `examples/agent-llm-mm.prod-local.example.toml`: 正式本地数据，dashboard 只监听 `127.0.0.1`，daemon disabled；复制后必须替换 `database_url` 和 provider 占位值。
+- `examples/agent-llm-mm.demo.example.toml`: self-revision demo runner 专用，通常不要手工复制为日常配置。
+
+`examples/agent-llm-mm.example.toml` 只是通用入口说明，不再承载所有用途。然后编辑 `agent-llm-mm.local.toml`：
 
 - 固定自己的 `database_url`
 - 选择 `provider`
-- 填入自己的 API key
+- dev/mock profile 不需要 API key；只有选择 `openai-compatible` 或 prod-local profile 时，才在已忽略的 `agent-llm-mm.local.toml` 里填写 `base_url`、`api_key` 和 `model`
 
-建议的 macOS SQLite URL 示例：
+建议的 macOS SQLite URL 示例；dev、demo、prod-local 必须使用不同文件：
 
 ```toml
-database_url = "sqlite:///Users/<you>/Library/Application%20Support/agent-llm-mm-codex.sqlite"
+database_url = "sqlite:///Users/<you>/Library/Application%20Support/agent-llm-mm/dev.sqlite"
 ```
 
 ## 4. 本机预检
@@ -46,6 +52,12 @@ database_url = "sqlite:///Users/<you>/Library/Application%20Support/agent-llm-mm
 
 ```zsh
 ./scripts/agent-llm-mm.sh doctor
+```
+
+示例 profile 是结构模板，包含占位 `database_url`。先复制到 `agent-llm-mm.local.toml`，替换为本机可写 SQLite 路径后，再检查本机私有配置；如果选择 prod-local profile，还必须同时替换 `base_url`、`api_key` 和 `model`：
+
+```zsh
+./scripts/agent-llm-mm.sh doctor agent-llm-mm.local.toml
 ```
 
 如果你想绕过脚本，也可以：
@@ -162,7 +174,7 @@ port = 8787
 ./scripts/agent-llm-mm.sh serve
 ```
 
-浏览器访问 `http://127.0.0.1:8787/`。该面板只读，不会调用 `run_reflection` 或修改 SQLite。若需要挂在反向代理路径下，可设置 `base_path = "/agent-llm-mm"`。
+浏览器访问 `http://127.0.0.1:8787/`。该面板只读，不会调用 `run_reflection` 或修改 SQLite。保持 `host = "127.0.0.1"` 作为本机使用边界；`base_path = "/agent-llm-mm"` 只表示路径挂载，不是认证、授权或公网暴露控制。不要在没有单独产品化 gate / auth 决策前把 dashboard 暴露到公网反向代理。
 
 当前面板标题为 `Memory-chan Live Desk`，内嵌两份生成图物料：
 
@@ -175,5 +187,6 @@ port = 8787
 
 - `agent-llm-mm.local.toml` 已被 `.gitignore` 忽略，不应提交。
 - 未显式设置 `database_url` 时，默认库会落到当前平台的用户数据目录，并按“本机用户共享”语义复用。
-- 正式数据、手工测试数据和实验数据建议分开使用不同数据库文件。
+- 正式数据、手工测试数据和 demo 数据必须分开使用不同数据库文件；prod-local 只用于要保留、检查或备份的本地正式数据。
 - 如果多个本机客户端共用同一 SQLite 文件，需要预期 SQLite 单写者模型带来的锁等待和状态互相影响。
+- 所有示例 profile 都保持 `[daemon].enabled = false`；后续 daemon 观察模式必须走单独 gate。

@@ -1,18 +1,20 @@
+# General entry config for `agent_llm_mm`.
+#
+# Pick the profile that matches the data you are about to touch:
+# - examples/agent-llm-mm.dev.example.toml: local development and tests
+# - examples/agent-llm-mm.prod-local.example.toml: formal local data
+# - examples/agent-llm-mm.demo.example.toml: deterministic self-revision demo
+#
+# Do not reuse one database_url for formal data, manual tests, and demos.
+
 transport = "stdio"
-# macOS 示例:
-database_url = "sqlite:///Users/<you>/Library/Application%20Support/agent-llm-mm-codex.sqlite"
+database_url = "sqlite:///absolute/path/to/agent-llm-mm.local.sqlite"
 
 [model]
-provider = "openai-compatible"
-
-[model.openai_compatible]
-base_url = "https://api.openai.com/v1"
-api_key = "REPLACE_WITH_YOUR_API_KEY"
-model = "gpt-4o-mini"
-timeout_ms = 30000
+provider = "mock"
 
 [dashboard]
-enabled = true
+enabled = false
 host = "127.0.0.1"
 port = 8787
 base_path = "/"

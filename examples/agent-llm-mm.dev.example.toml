@@ -1,0 +1,25 @@
+# Development/test profile.
+#
+# Use this for local development, ad hoc verification, and disposable test data.
+# Keep this database_url separate from formal local data and demo databases.
+
+transport = "stdio"
+database_url = "sqlite:///Users/<you>/Library/Application%20Support/agent-llm-mm/dev.sqlite"
+
+[model]
+provider = "mock"
+
+[dashboard]
+enabled = false
+host = "127.0.0.1"
+port = 8787
+base_path = "/"
+event_capacity = 2000
+sse_enabled = true
+open_browser = false
+required = false
+
+[daemon]
+enabled = false
+poll_interval_ms = 60000
+max_concurrent_tasks = 1

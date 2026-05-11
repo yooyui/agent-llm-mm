@@ -1,0 +1,32 @@
+# Formal local-data profile.
+#
+# Use this for real local data that you intend to keep, inspect, or back up.
+# Keep formal data, manual test data, and demo data in separate database_url
+# files so smoke runs or demos cannot pollute the formal local database.
+
+transport = "stdio"
+database_url = "sqlite:///absolute/path/to/formal-local/agent-llm-mm.sqlite"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "https://api.example.local/v1"
+api_key = "REPLACE_WITH_LOCAL_SECRET"
+model = "replace-with-model-name"
+timeout_ms = 30000
+
+[dashboard]
+enabled = true
+host = "127.0.0.1"
+port = 8787
+base_path = "/"
+event_capacity = 2000
+sse_enabled = true
+open_browser = false
+required = false
+
+[daemon]
+enabled = false
+poll_interval_ms = 60000
+max_concurrent_tasks = 1
