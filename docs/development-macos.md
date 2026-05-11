@@ -130,19 +130,34 @@ cargo test
 | dashboard not visible | `[dashboard].enabled` 为 false，或端口不可用 | 查看配置里的 `[dashboard]` 与 `enabled`，并确认 `./scripts/agent-llm-mm.sh doctor` 输出中的 dashboard 信息 | 启用 `[dashboard].enabled = true`，并换到可用的 `127.0.0.1` localhost 端口 |
 | model calls fail | provider 配置不完整 | 执行 `./scripts/agent-llm-mm.sh doctor`，确认 `provider`、`base_url`、`model` 均已回填 | 更新本地 TOML 的 provider 段；密钥只在本地文件里设置，不要提交 secrets |
 
+## 7.2 SQLite 备份与恢复
+
+正式数据、手工 test 数据和 demo 数据必须使用不同 `database_url`。本地正式数据进入 productization 前，应先保守地按 [Local Alpha Data Safety Runbook](product/data-safety-local-alpha.md) 做 SQLite backup：
+
+```zsh
+./scripts/backup-sqlite.sh "sqlite:///Users/<you>/agent-llm-mm/formal/agent-llm-mm.sqlite"
+```
+
+默认 backup 目录是仓库内 `target/backups/sqlite/`，用于和常规 live database directory 分离；脚本会在写入前解析 live DB 目录和 backup 目录，如果 backup 目录等于 live DB 目录，或位于 live DB 目录的子目录下，会拒绝继续，并要求指定其它 backup 目录。backup 路径不能包含双引号、反斜杠、换行或 `..` 路径组件；`sqlite://` URL 也要求使用正斜杠路径，不能用反斜杠 escape，且会拒绝 invalid percent escape、控制字符、编码反斜杠和编码双引号。写出的 backup 和 restored database 文件会收紧到 owner-only 权限；restore 会先预留新目标路径，避免覆盖已有文件。如本机有 `shasum -a 256`，脚本会生成 `.sha256` checksum，缺少 checksum 工具时只提示降级。
+
+恢复时默认原则是 restore to a new path first，然后用新的 `database_url` 验证：
+
+```zsh
+./scripts/restore-sqlite.sh target/backups/sqlite/formal.sqlite.20260511-120000.12345.bak \
+  "sqlite:///Users/<you>/agent-llm-mm/restore-check/formal-restore.sqlite"
+```
+
+确认 restored database 可用后，再由人工决定是否切换正式配置。不要把 backup 直接覆盖回现有正式 SQLite 文件。
+
 ## 8. Self-Revision Demo Package
 
-如果要在本机快速验证 automatic self-revision MVP 的完整证据链：
+如果要在本机快速验证 automatic self-revision MVP 的完整证据链，写到 timestamped / manual 目录，避免绕过 Local Alpha product smoke 的 staging / promote 路径直接覆盖 `latest`：
 
 ```zsh
-./scripts/run-self-revision-demo.sh
+./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)
 ```
 
-固定输出目录：
-
-```zsh
-./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
-```
+Local Alpha 发布证据的 `latest` 目录由 `./scripts/product-smoke-local.sh` 负责更新。
 
 该脚本会构建本地二进制、启动 deterministic `openai-compatible` stub provider，并通过真实 MCP `stdio` 服务生成：
 

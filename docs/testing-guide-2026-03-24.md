@@ -97,7 +97,8 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 5. `./scripts/agent-llm-mm.sh doctor`
 6. `cargo run --quiet --bin agent_llm_mm -- doctor`
 7. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
-8. 如果改动涉及 demo package，或要按发布口径复核证据链，再补跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest`
+8. 如果改动涉及 demo package，先用 timestamped / scratch output 跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)`；如果要按 Local Alpha 发布口径复核 `latest` 证据链，使用下一条 product smoke
+9. 如果改动涉及 Local Alpha product smoke gate、启动包装脚本或本地产品化证据链，在 repo root 补跑 `./scripts/product-smoke-local.sh [config_path]`；如果当前目录不是 repo root，使用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh`，并在需要配置文件时传入绝对 config path
 
 如果只想快速回归某个变更，再执行对应的定向测试。若需要一份面向发布前核验的固定检查单，demo / MVP 发布直接使用 [Release Gate](release-gate.md)；Local Alpha / product alpha 发布使用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)。
 
@@ -514,10 +515,10 @@ cargo test --test provider_config -v
 
 ```zsh
 cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner --test openai_compatible_model --test mcp_stdio -v
-./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
+./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)
 ```
 
-通过后，`target/reports/self-revision-demo/latest` 下至少应有；按发布口径复核时，这些 artifact 必须来自同一次成功运行：
+通过后，指定 output dir 下至少应有；按 Local Alpha 发布口径复核 `latest` 时，改用 `./scripts/product-smoke-local.sh`，不要直接让 demo wrapper 写入 `latest`：
 
 - `doctor.json`
 - `snapshot-before.json`
@@ -535,6 +536,46 @@ cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner -
 - after snapshot 会出现 revised commitment
 - before / after decision action 会发生变化
 - `doctor.json` 仍声明 durable write path 是 `run_reflection`
+
+---
+
+### 6.11 Local Alpha product smoke script
+
+如果改动涉及 Local Alpha 发布 gate、本地启动包装、`doctor` 配置传递，或 self-revision demo 证据链的产品化入口，需要补跑 product smoke：
+
+```zsh
+./scripts/product-smoke-local.sh
+```
+
+如果要同时验证某个本地配置文件的 bootstrap / doctor 路径，可以传入可选 config path：
+
+```zsh
+./scripts/product-smoke-local.sh agent-llm-mm.local.toml
+```
+
+这里的 `agent-llm-mm.local.toml` 是本地用户配置占位路径，文件必须已存在；这个 smoke 只验证 `doctor` 的 config path 解析与传递，不会把 config path 传给 deterministic demo wrapper。
+
+以上 repo-relative 示例要求当前目录是 repo root。如果从其他当前目录运行，使用脚本绝对路径：
+
+```zsh
+cd /tmp && /path/to/agent-llm-mm/scripts/product-smoke-local.sh
+```
+
+如果从其他当前目录运行且要传入配置文件，config path 也使用绝对路径：
+
+```zsh
+cd /tmp && /path/to/agent-llm-mm/scripts/product-smoke-local.sh /path/to/agent-llm-mm/agent-llm-mm.local.toml
+```
+
+通过标准：
+
+- 脚本可从 repo root 或其他当前目录调用，并能定位 repo root
+- 可选 config path 必须存在；脚本会解析成绝对路径后只传给 `./scripts/agent-llm-mm.sh doctor`
+- `doctor` 退出码为 `0`
+- 脚本会先把 demo wrapper 输出到 staging 目录，8 个 artifact 均通过后才替换 `target/reports/self-revision-demo/latest`
+- `target/reports/self-revision-demo/latest` 下 8 个 required demo artifacts 均存在且非空
+
+限制说明：`scripts/run-self-revision-demo.sh` 当前只接受第 1 个参数作为 output dir，不接受 config path。因此 product smoke 的 config path 只覆盖 `doctor`，self-revision demo 仍使用现有 deterministic demo 契约。这条 product smoke 是 Local Alpha gate 的产品化入口，不替代 demo / MVP 的 [Release Gate](release-gate.md)，也不表示 GA / production-ready。
 
 ---
 
@@ -671,18 +712,37 @@ cargo test --test mcp_stdio build_self_snapshot_can_trigger_periodic_auto_reflec
 如果你想看一套可读 report，而不是逐条跑 MCP `stdio` 测试：
 
 ```zsh
-./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
+./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)
 ```
 
 然后打开：
 
 ```text
-target/reports/self-revision-demo/latest/report.md
+target/reports/self-revision-demo/manual-<timestamp>/report.md
 ```
 
 这条路径使用本地 deterministic provider，不需要真实 API key，也不会访问外网。
+Local Alpha 发布证据的 `latest` 目录由 `./scripts/product-smoke-local.sh` 负责更新，不要在手工 demo 中直接覆盖它。
 
-### 7.7 手工验证 dashboard 面板
+### 7.7 手工验证 Local Alpha product smoke
+
+如果你想从 Local Alpha gate 的产品化入口复核本机 `doctor` 和 self-revision demo 证据链：
+
+```zsh
+./scripts/product-smoke-local.sh
+```
+
+带本地配置文件时：
+
+```zsh
+./scripts/product-smoke-local.sh agent-llm-mm.local.toml
+```
+
+以上 repo-relative 示例要求当前目录是 repo root；从其他当前目录运行时，使用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh`，如果要传入配置文件，也传入绝对 config path。
+
+注意：config path 只传给 `doctor`；deterministic self-revision demo wrapper 仍只接收 output dir。
+
+### 7.8 手工验证 dashboard 面板
 
 如果你要手工查看只读 dashboard：
 
@@ -851,10 +911,26 @@ cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_f
 
 ```zsh
 cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner --test openai_compatible_model --test mcp_stdio -v
-./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
+./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)
 ```
 
-发布前使用 `release-gate.md` 的 freshness 口径：这些 artifact 必须来自同一次成功运行，不能只因为 `latest` 目录已有旧文件就视为通过。
+发布前使用对应 release gate 的 freshness 口径：这些 artifact 必须来自同一次成功运行，不能只因为已有旧文件就视为通过。Local Alpha 发布前不要直接让 demo wrapper 写入 `latest`，应使用 `./scripts/product-smoke-local.sh` 的 staging / promote 路径。
+
+### 改 Local Alpha product smoke gate / wrapper
+
+```zsh
+bash -n scripts/product-smoke-local.sh
+./scripts/product-smoke-local.sh
+./scripts/product-smoke-local.sh agent-llm-mm.local.toml
+(cd /tmp && /path/to/agent-llm-mm/scripts/product-smoke-local.sh)
+(cd /tmp && /path/to/agent-llm-mm/scripts/product-smoke-local.sh /path/to/agent-llm-mm/agent-llm-mm.local.toml)
+test -s target/reports/self-revision-demo/latest/report.md
+git diff --check
+```
+
+其中 `./scripts/product-smoke-local.sh` 是 repo root 示例；`agent-llm-mm.local.toml` 是本地用户配置占位路径，文件必须已存在，且只覆盖 `doctor` config path；从其他当前目录运行时，改用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh` 这类绝对脚本路径，并用绝对 config path 验证配置分支。
+
+这组命令只覆盖 Local Alpha product smoke 入口；demo / MVP 发布前仍以 `release-gate.md` 为准，Local Alpha 发布前仍以 `docs/product/release-gate-local-alpha.md` 为准。
 
 ### 改 `src/support/config.rs`
 

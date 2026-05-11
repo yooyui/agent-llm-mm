@@ -22,6 +22,32 @@ This file is the execution-oriented task list for the first productization slice
 
 The current MVP is accepted as the starting point, not the final product. Public wording should remain: "validated local MVP entering productization" until Local Product Alpha exits its gate.
 
+## Execution Status
+
+Last updated: 2026-05-11.
+
+Completed locally and validated:
+
+- [x] Task A1: Local Alpha PRD.
+- [x] Task A2: Local Alpha Release Gate.
+- [x] Task B1: Config Profile Examples.
+- [x] Task B2: Config Profile Validation Tests.
+- [x] Task C2: Product Smoke Script.
+- [x] Task D1: SQLite Backup and Restore Runbook.
+
+Completed as read-only evidence:
+
+- [x] Task E1: Runtime Operation Log Wiring Review. Current finding: operation log domain model and SQLite persistence exist; MCP runtime durable writes, correlation id generation/propagation, and dashboard durable history query surface are still missing.
+
+Next execution queue:
+
+- [ ] Task C1: Product Bootstrap Command.
+- [ ] Task D2: Support Bundle Design.
+- [ ] Task F1: Daemon Observe-Only Gate Doc.
+- [ ] Task E2: Correlation ID Contract.
+
+Current Local Alpha state remains: validated local MVP entering productization. Product Smoke and Data Safety now have working local paths, but Local Alpha is not complete until the remaining gate sections have fresh evidence.
+
 ## File Map
 
 Planned documentation and examples:
@@ -266,11 +292,11 @@ git commit -m "docs: clarify product bootstrap flow"
 
 **Checklist:**
 
-- [ ] Script runs `./scripts/agent-llm-mm.sh doctor`.
-- [ ] Script runs the existing self-revision demo wrapper into `target/reports/self-revision-demo/latest`.
-- [ ] Script verifies the 8 required demo artifacts are non-empty.
-- [ ] Script accepts an optional config path.
-- [ ] Script exits non-zero on missing artifacts or failed commands.
+- [x] Script runs `./scripts/agent-llm-mm.sh doctor`.
+- [x] Script runs the existing self-revision demo wrapper into a staging directory, then promotes validated artifacts to `target/reports/self-revision-demo/latest`.
+- [x] Script verifies the 8 required demo artifacts are non-empty.
+- [x] Script accepts an optional config path for `doctor`.
+- [x] Script exits non-zero on missing artifacts, lock conflicts, or failed commands.
 
 **Verification:**
 
@@ -304,12 +330,12 @@ git commit -m "chore: add local product smoke script"
 
 **Checklist:**
 
-- [ ] Document formal/test/demo database separation.
-- [ ] Document a safe backup command for SQLite files.
-- [ ] Document restore procedure with "restore to a new path first" as default.
-- [ ] Add scripts that refuse empty database paths.
-- [ ] Add scripts that write backups outside the live database directory by default.
-- [ ] Include checksum generation for backups if local tools are available.
+- [x] Document formal/test/demo database separation.
+- [x] Document a safe backup command for SQLite files.
+- [x] Document restore procedure with "restore to a new path first" as default.
+- [x] Add scripts that refuse empty database paths.
+- [x] Add scripts that write backups outside the live database directory by default.
+- [x] Include checksum generation for backups if local tools are available.
 
 **Verification:**
 
@@ -474,17 +500,17 @@ git commit -m "docs: gate observe-only daemon work"
 
 ## Recommended Execution Order
 
-1. Task A1: Local Alpha PRD
-2. Task A2: Local Alpha Release Gate
-3. Task B1: Config Profile Examples
-4. Task B2: Config Profile Validation Tests
-5. Task C1: Product Bootstrap Command
-6. Task C2: Product Smoke Script
-7. Task D1: SQLite Backup and Restore Runbook
-8. Task D2: Support Bundle Design
-9. Task E1: Runtime Operation Log Wiring Review
-10. Task F1: Daemon Observe-Only Gate Doc
-11. Task E2: Correlation ID Contract
+1. [x] Task A1: Local Alpha PRD
+2. [x] Task A2: Local Alpha Release Gate
+3. [x] Task B1: Config Profile Examples
+4. [x] Task B2: Config Profile Validation Tests
+5. [ ] Task C1: Product Bootstrap Command
+6. [x] Task C2: Product Smoke Script
+7. [x] Task D1: SQLite Backup and Restore Runbook
+8. [ ] Task D2: Support Bundle Design
+9. [x] Task E1: Runtime Operation Log Wiring Review
+10. [ ] Task F1: Daemon Observe-Only Gate Doc
+11. [ ] Task E2: Correlation ID Contract
 
 This order keeps the first three commits documentation-heavy, then moves into scripts and tests, then only touches runtime behavior after product gates are clear.
 
@@ -492,11 +518,11 @@ This order keeps the first three commits documentation-heavy, then moves into sc
 
 Before implementing runtime behavior:
 
-- [ ] PRD reviewed against productization roadmap.
-- [ ] Local Alpha release gate reviewed against current MVP release gate.
-- [ ] Config examples validated without leaking secrets.
-- [ ] Product smoke script runs locally.
-- [ ] Data backup/restore docs reviewed for destructive-command risk.
+- [x] PRD reviewed against productization roadmap.
+- [x] Local Alpha release gate reviewed against current MVP release gate.
+- [x] Config examples validated without leaking secrets.
+- [x] Product smoke script runs locally.
+- [x] Data backup/restore docs reviewed for destructive-command risk.
 - [ ] Daemon observe-only gate reviewed before daemon code changes.
 
 ## Final Verification for the Whole Slice

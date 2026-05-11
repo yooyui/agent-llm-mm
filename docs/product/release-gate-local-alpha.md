@@ -29,23 +29,46 @@ Expected evidence:
 
 ## Product Smoke Gate
 
-Task C2 is expected to add the product smoke command that proves install, config, MCP `stdio` sanity, and dashboard health from a local alpha install path. Until Task C2 is integrated, the Product Smoke Gate is a blocking gap: Local Alpha cannot be marked complete.
-
-Interim diagnostic evidence is:
+Run the local product smoke script from the repository root with the repo-relative script path:
 
 ```bash
-./scripts/agent-llm-mm.sh doctor
-./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
+./scripts/product-smoke-local.sh [config_path]
 ```
 
-This interim evidence is intentionally narrower than the future product smoke command. It proves the current local wrapper path, config/bootstrap health, and self-revision demo evidence chain, but it does not satisfy the Product Smoke Gate and does not prove fresh-machine install, guided config profiles, backup/restore, or a complete product support path.
+From another working directory, invoke the same script by absolute path:
+
+```bash
+/path/to/agent-llm-mm/scripts/product-smoke-local.sh [config_path]
+```
+
+If you pass `config_path` from another working directory, use an absolute config
+path. The repo-relative example below assumes you are already in the repo root;
+the absolute-path example below applies from any working directory.
+
+Required evidence:
+
+- the script exits with code `0`
+- `doctor` exits with code `0`
+- when `[config_path]` is provided, the path exists, is resolved to an absolute path, and is passed to `doctor`
+- the deterministic self-revision demo wrapper generates artifacts in a staging directory and promotes them to `target/reports/self-revision-demo/latest` only after the same smoke run passes the artifact checks
+- all 8 required self-revision demo artifacts listed in the Self-Revision Evidence Gate are present and non-empty
+
+Important limitation: `[config_path]` applies only to `doctor`. `scripts/run-self-revision-demo.sh` currently accepts only an output directory, so the product smoke script keeps the existing deterministic demo contract and does not pass a config path to the demo wrapper.
+
+This gate proves the current local wrapper path, optional config bootstrap health, and the self-revision demo evidence chain. It does not prove fresh-machine install, guided config profiles, backup/restore, GA readiness, production self-governance, remote write admin, remote team service, or multi-tenancy.
 
 ## Self-Revision Evidence Gate
 
-Run the existing self-revision demo wrapper and regenerate `latest` in the same verification pass:
+For Local Alpha release evidence, use the Product Smoke Gate above. It runs the
+existing self-revision demo wrapper through `scripts/product-smoke-local.sh`,
+validates the required artifacts in a staging directory, and promotes them to
+`latest` only after the checks pass.
+
+For manual demo-only diagnostics outside a release gate, write to a timestamped
+or scratch directory instead of `latest`:
 
 ```bash
-./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest
+./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)
 ```
 
 Required artifacts under `target/reports/self-revision-demo/latest`:
@@ -118,4 +141,4 @@ Allowed wording after this gate passes:
 
 ## Release Decision
 
-Local Alpha is not complete unless all sections above have fresh evidence. If one section is not yet implemented, record that section as a blocking gap rather than weakening the gate.
+Local Alpha is not complete unless all sections above have fresh evidence. If a section lacks fresh evidence, record it as an open gate item rather than weakening the gate. The Product Smoke Gate is implemented by `scripts/product-smoke-local.sh`, but it only passes for a release when a current successful run provides the required evidence. If any future gate section remains unimplemented, record that section separately as open.

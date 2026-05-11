@@ -105,6 +105,25 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 | dashboard not visible | `[dashboard].enabled` 为 false，或端口不可用 | 查看 TOML 的 `[dashboard]` 区块和 `enabled`，以及 `pwsh -File .\scripts\agent-llm-mm.ps1 doctor` 输出 | 设置 `[dashboard].enabled = true`，并改用可用的本地端口（如 `127.0.0.1:8787`） |
 | model calls fail | provider 配置不完整 | 执行 `pwsh -File .\scripts\agent-llm-mm.ps1 doctor`，确认 `provider`、`base_url`、`model` 已配置 | 在本地 TOML 更新 provider 信息；密钥仅放本地文件，不要提交 |
 
+## 7.2 SQLite 备份与恢复
+
+正式数据、手工 test 数据和 demo 数据必须使用不同 `database_url`。本地正式数据进入 productization 前，应先保守地按 [Local Alpha Data Safety Runbook](product/data-safety-local-alpha.md) 做 SQLite backup。当前 backup / restore helper 是 bash 脚本；在 Windows 上请从 Git Bash、WSL，或等价 bash 环境运行。Git Bash drive URL 形态 `sqlite:///D:/...` 会被脚本转换为 `D:/...`，不会按 Unix 路径 `/D:/...` 处理：
+
+```bash
+./scripts/backup-sqlite.sh "sqlite:///D:/agent-llm-mm/formal/agent-llm-mm.sqlite"
+```
+
+默认 backup 目录是仓库内 `target/backups/sqlite/`，用于和常规 live database directory 分离；脚本会在写入前解析 live DB 目录和 backup 目录，如果 backup 目录等于 live DB 目录，或位于 live DB 目录的子目录下，会拒绝继续，并要求指定其它 backup 目录。backup 路径不能包含双引号、反斜杠、换行或 `..` 路径组件；`sqlite://` URL 也要求使用正斜杠路径，不能用反斜杠 escape，且会拒绝 invalid percent escape、控制字符、编码反斜杠和编码双引号。写出的 backup 和 restored database 文件会收紧到 owner-only 权限；restore 会先预留新目标路径，避免覆盖已有文件。如本机有 `shasum -a 256` 或 `sha256sum`，脚本会生成 `.sha256` checksum，缺少 checksum 工具时只提示降级。
+
+恢复时默认原则是 restore to a new path first，然后用新的 `database_url` 验证：
+
+```bash
+./scripts/restore-sqlite.sh target/backups/sqlite/formal.sqlite.20260511-120000.12345.bak \
+  "sqlite:///D:/agent-llm-mm/restore-check/formal-restore.sqlite"
+```
+
+确认 restored database 可用后，再由人工决定是否切换正式配置。不要把 backup 直接覆盖回现有正式 SQLite 文件。
+
 ## 8. 额外说明
 
 - `agent-llm-mm.local.toml` 已被 `.gitignore` 忽略，不应提交。
