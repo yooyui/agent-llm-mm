@@ -117,6 +117,50 @@ provider = "mock"
     assert_eq!(config.model_provider, ModelProviderKind::Mock);
 }
 
+#[test]
+fn dev_example_config_parses_without_real_secrets() {
+    let config = load_example_config("agent-llm-mm.dev.example.toml");
+
+    assert_eq!(config.transport, TransportKind::Stdio);
+    assert_eq!(config.model_provider, ModelProviderKind::Mock);
+    assert_eq!(config.model_config, ModelConfig::Mock);
+    assert!(!config.dashboard.enabled);
+    assert!(!config.daemon.enabled);
+    config.validate().expect("dev example config should validate");
+}
+
+#[test]
+fn prod_local_example_config_parses_with_local_dashboard_and_disabled_daemon() {
+    let config = load_example_config("agent-llm-mm.prod-local.example.toml");
+
+    assert_eq!(config.transport, TransportKind::Stdio);
+    assert_eq!(config.model_provider, ModelProviderKind::OpenAiCompatible);
+    let ModelConfig::OpenAiCompatible(provider_config) = &config.model_config else {
+        panic!("prod-local example should use openai-compatible provider settings");
+    };
+    assert_eq!(provider_config.api_key, "REPLACE_WITH_LOCAL_SECRET");
+    assert!(
+        !provider_config.api_key.starts_with("sk-"),
+        "prod-local example must not contain a live-looking API key"
+    );
+    assert_eq!(config.dashboard.host, "127.0.0.1");
+    assert!(!config.daemon.enabled);
+    config
+        .validate()
+        .expect("prod-local example config structure should validate");
+}
+
+#[test]
+fn generic_example_config_parses_and_keeps_daemon_disabled() {
+    let config = load_example_config("agent-llm-mm.example.toml");
+
+    assert_eq!(config.transport, TransportKind::Stdio);
+    assert!(!config.daemon.enabled);
+    config
+        .validate()
+        .expect("generic example config should validate");
+}
+
 #[tokio::test]
 async fn doctor_fails_when_openai_provider_config_is_missing_api_key() {
     let temp_dir = tempdir().expect("temp dir");
@@ -170,6 +214,13 @@ async fn doctor_report_does_not_contain_api_key_in_serialized_output() {
 
 fn sqlite_url(path: PathBuf) -> String {
     format!("sqlite://{}", path.to_string_lossy().replace('\\', "/"))
+}
+
+fn load_example_config(file_name: &str) -> AppConfig {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join(file_name);
+    AppConfig::load_from_path(path).expect("example config should parse")
 }
 
 struct EnvGuard {
