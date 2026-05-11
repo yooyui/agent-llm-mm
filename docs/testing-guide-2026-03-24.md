@@ -12,6 +12,8 @@
 
 如果目标是判断“是否可以按当前 demo / MVP 口径发布”，请同时阅读 [Release Gate](release-gate.md)。本页偏向测试与回归，`release-gate.md` 负责收口发布前的最低 gate、self-revision 证据 gate、dashboard gate 和 sandbox 失败解释口径。
 
+如果目标是判断“是否可以进入 Local Product Alpha / product alpha 口径”，请使用 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 作为入口。本测试指南只保留参考入口，不复制产品 gate 的长清单；Local Alpha gate 会额外检查 product smoke evidence、dashboard local-only 边界、daemon disabled / observe-only 边界，以及 remote write / multi-tenancy 等产品文案限制。
+
 当前工作目录（按实际环境替换）：
 
 `~/code/agent-llm-mm`
@@ -97,7 +99,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 7. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
 8. 如果改动涉及 demo package，或要按发布口径复核证据链，再补跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest`
 
-如果只想快速回归某个变更，再执行对应的定向测试。若需要一份面向发布前核验的固定检查单，直接使用 [Release Gate](release-gate.md)。
+如果只想快速回归某个变更，再执行对应的定向测试。若需要一份面向发布前核验的固定检查单，demo / MVP 发布直接使用 [Release Gate](release-gate.md)；Local Alpha / product alpha 发布使用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)。
 
 ---
 
@@ -876,13 +878,13 @@ cargo test
 ./scripts/agent-llm-mm.sh doctor
 ```
 
-发布前核验不使用这段简表作为最终依据；请按 [Release Gate](release-gate.md) 执行完整 gate。
+demo / MVP 发布前核验不使用这段简表作为最终依据；请按 [Release Gate](release-gate.md) 执行完整 MVP gate。Local Alpha / product alpha 发布前核验使用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)。
 
 ---
 
 ## 11. 当前结论
 
-截至 `2026-04-29`，推荐把下面五条当作普通提交前基线；发布前仍以 [Release Gate](release-gate.md) 为准：
+截至 `2026-05-09`，推荐把下面五条当作普通提交前基线；demo / MVP 发布前仍以 [Release Gate](release-gate.md) 为准；Local Alpha / product alpha 发布前以 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 为准：
 
 ```zsh
 cargo fmt --check

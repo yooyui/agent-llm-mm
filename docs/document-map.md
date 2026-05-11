@@ -37,6 +37,8 @@
   - 发布前最小 gate、self-revision 证据 gate、dashboard gate，以及 sandbox 失败的解释口径
 - [product/prd-local-alpha.md](product/prd-local-alpha.md)
   - Local Product Alpha PRD，定义目标用户、产品承诺、范围内 / non-goals、用户工作流、Alpha exit gate、验收命令和文档入口；当前口径是 MVP gate 已过并进入产品化路线，但 Local Product Alpha / GA 仍需按后续 gate 完成
+- [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
+  - Local Alpha / product alpha release gate，区分 MVP gate 与产品 gate，收口最低命令、product smoke evidence、self-revision demo 8 个 artifact、dashboard local-only、daemon disabled / observe-only 和产品文案边界
 - [provider-contract.md](provider-contract.md)
   - 新增 provider 前的就绪清单，覆盖配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射
 - [roadmap.md](roadmap.md)
@@ -64,6 +66,8 @@
   - 发布前应执行的命令、artifact 验证，以及 sandbox-only 失败的记录方式
 - [product/prd-local-alpha.md](product/prd-local-alpha.md)
   - 进入 Local Product Alpha 工作前先读，确认 scope、non-goals、remote write / multi-tenancy / self-governance 边界和 Alpha exit gate
+- [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
+  - 判断 Local Alpha 是否可对外表述前阅读；它是产品 alpha gate，不替代 `release-gate.md` 的 MVP gate
 - [roadmap.md](roadmap.md)
   - 近期 / 中期 / 后期规划
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
@@ -94,6 +98,8 @@
   - 发布 gate 的最小命令集、self-revision demo artifact 要求，以及 dashboard 边界检查
 - [product/prd-local-alpha.md](product/prd-local-alpha.md)
   - Local Product Alpha PRD；后续产品化任务应先确认这里的范围、non-goals、exit gate 与验收命令
+- [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
+  - Local Alpha release gate；产品化发布前从这里确认 product smoke、self-revision demo、dashboard local-only、daemon observe-only 和 remote write / multi-tenancy 文案边界
 - [self-revision-demo-guide-2026-04-24.md](self-revision-demo-guide-2026-04-24.md)
   - 如何运行 `./scripts/run-self-revision-demo.sh` 并复核 8 个 demo artifact
 - [examples/codex-mcp-config.toml](../examples/codex-mcp-config.toml)
@@ -146,5 +152,5 @@
 - 如果你想确认 runtime hooks、diagnostics 和 durable write path：读 `project-status.md`，再读 `local-mcp-integration-2026-03-26.md`
 - 如果你要接入新 provider：先读 `provider-contract.md`，再按 `testing-guide-2026-03-24.md` 的 provider 验证顺序执行
 - 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md`、`testing-guide-2026-03-24.md` 与 `release-gate.md`
-- 如果你要把项目推进成正式产品：先读 `superpowers/plans/2026-05-09-productization-roadmap.md`，再读 `product/prd-local-alpha.md` 确认 Local Product Alpha 的 scope、non-goals 和 exit gate，最后按 `superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md` 执行第一轮任务
+- 如果你要把项目推进成正式产品：先读 `superpowers/plans/2026-05-09-productization-roadmap.md`，再读 `product/prd-local-alpha.md` 确认 Local Product Alpha 的 scope、non-goals 和 exit gate，然后读 `product/release-gate-local-alpha.md` 确认产品 alpha gate，最后按 `superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md` 执行第一轮任务
 - 如果你想追溯设计来源：最后读原始讨论资料和历史快照

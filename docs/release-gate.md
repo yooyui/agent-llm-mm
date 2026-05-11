@@ -4,6 +4,8 @@
 
 This gate is for the local MCP `stdio` technical demo / MVP. Passing it does not certify production autonomy, remote administration, multi-tenant deployment, or background daemon behavior.
 
+For the next productization stage, use the separate [Local Alpha Release Gate](product/release-gate-local-alpha.md). That product alpha gate does not replace this MVP gate: this file remains the minimum release gate for the technical demo / MVP, while the Local Alpha gate adds install/config/product-smoke, dashboard local-only, daemon observe-only, and product wording checks.
+
 ## Minimum Gate
 
 - `cargo fmt --check`
