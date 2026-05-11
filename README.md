@@ -27,6 +27,7 @@
 - [进度追踪对照表](docs/progress-tracker.md)
 - [发布准备评估](docs/release-readiness.md)
 - [Release Gate Runbook](docs/release-gate.md)
+- [Local Product Alpha PRD](docs/product/prd-local-alpha.md)
 - [正式产品化路线图](docs/superpowers/plans/2026-05-09-productization-roadmap.md)
 - [未来路线图](docs/roadmap.md)
 - [文档总览](docs/document-map.md)
@@ -77,7 +78,7 @@
   - demo runner 会启动本地 deterministic `openai-compatible` stub provider，并通过真实 MCP `stdio` 服务跑 canonical scenario
   - 输出 `doctor.json`、snapshot before / after、decision before / after、timeline、SQLite summary 和 Markdown report
   - 该 demo 只证明当前 MVP 边界内的可重复链路，不新增 MCP tool、daemon 或产品化运行形态
-- production dashboard service
+- local read-only dashboard service
   - 可通过 `[dashboard]` 配置启停
   - 随 `serve` 启动本机 HTTP 只读观测面板
   - 以 `Memory-chan Live Desk` 清新活力二次元风格展示 MCP tool 调用、runtime operation 和 auto-reflection 事件
@@ -169,6 +170,7 @@
 - [未来路线图](docs/roadmap.md)
 - [发布准备评估](docs/release-readiness.md)
 - [Release Gate Runbook](docs/release-gate.md)
+- [Local Product Alpha PRD](docs/product/prd-local-alpha.md)
 - [协作说明](CONTRIBUTING.md)
 - [macOS 开发与接入指南](docs/development-macos.md)
 - [Windows 开发与接入指南](docs/development-windows.md)
