@@ -1,10 +1,19 @@
 param(
-    [ValidateSet("serve", "doctor")]
     [string]$Mode = "serve",
     [string]$ConfigPath
 )
 
 $ErrorActionPreference = "Stop"
+
+switch ($Mode) {
+    "serve" { }
+    "doctor" { }
+    default {
+        [Console]::Error.WriteLine("unsupported mode: $Mode")
+        [Console]::Error.WriteLine("usage: pwsh -File .\scripts\agent-llm-mm.ps1 [serve|doctor] [config_path]")
+        exit 2
+    }
+}
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path

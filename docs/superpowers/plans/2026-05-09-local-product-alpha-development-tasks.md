@@ -24,7 +24,7 @@ The current MVP is accepted as the starting point, not the final product. Public
 
 ## Execution Status
 
-Last updated: 2026-05-11.
+Last updated: 2026-05-14.
 
 Completed locally and validated:
 
@@ -32,21 +32,24 @@ Completed locally and validated:
 - [x] Task A2: Local Alpha Release Gate.
 - [x] Task B1: Config Profile Examples.
 - [x] Task B2: Config Profile Validation Tests.
+- [x] Task C1: Product Bootstrap Command.
 - [x] Task C2: Product Smoke Script.
 - [x] Task D1: SQLite Backup and Restore Runbook.
+- [x] Task D2: Support Bundle Design.
+- [x] Task E2: Correlation ID Contract.
+- [x] Task F1: Daemon Observe-Only Gate Doc.
 
 Completed as read-only evidence:
 
-- [x] Task E1: Runtime Operation Log Wiring Review. Current finding: operation log domain model and SQLite persistence exist; MCP runtime durable writes, correlation id generation/propagation, and dashboard durable history query surface are still missing.
+- [x] Task E1: Runtime Operation Log Wiring Review. Current finding: operation log domain model and SQLite persistence exist. Successful MCP tool calls now append operation-log entries with generated correlation ids, dashboard events/projections preserve correlation ids, and the durable dashboard history query surface remains a later task.
 
 Next execution queue:
 
-- [ ] Task C1: Product Bootstrap Command.
-- [ ] Task D2: Support Bundle Design.
-- [ ] Task F1: Daemon Observe-Only Gate Doc.
-- [ ] Task E2: Correlation ID Contract.
+- [ ] Add durable operation-log dashboard history query surface.
+- [ ] Implement the support bundle script after operation-log history and log locations are stable.
+- [ ] Build observe-only daemon diagnostics behind the no-write gate.
 
-Current Local Alpha state remains: validated local MVP entering productization. Product Smoke and Data Safety now have working local paths, but Local Alpha is not complete until the remaining gate sections have fresh evidence.
+Current Local Alpha state remains: validated local MVP entering productization. Product Smoke, Data Safety, Support Bundle Design, Daemon Observe-Only Gate, and Correlation ID Contract now have working local paths or reviewed design gates, but Local Alpha is not complete until durable dashboard history, support bundle automation, observe-only daemon diagnostics, and the full Local Alpha gate have fresh evidence.
 
 ## File Map
 
@@ -57,6 +60,7 @@ Planned documentation and examples:
 - Create: `docs/product/data-safety-local-alpha.md`
 - Create: `docs/product/support-bundle-local-alpha.md`
 - Create: `docs/product/daemon-observe-only-gate.md`
+- Create: `docs/product/correlation-id-contract.md`
 - Create: `examples/agent-llm-mm.dev.example.toml`
 - Create: `examples/agent-llm-mm.prod-local.example.toml`
 - Modify: `README.md`
@@ -79,6 +83,8 @@ Likely script and test files:
 - Modify: `tests/provider_config.rs`
 - Modify: `tests/operation_log.rs`
 - Modify: `tests/daemon_config.rs`
+- Modify: `tests/dashboard_projection.rs`
+- Modify: `tests/mcp_stdio.rs`
 
 Implementation files to inspect before code changes:
 
@@ -258,11 +264,11 @@ git commit -m "test: cover product config profiles"
 
 **Checklist:**
 
-- [ ] Add a `doctor`-first product setup flow to docs.
-- [ ] Decide whether scripts need a `doctor-config` or `serve-config` alias; if not, document the current `[serve|doctor] [config_path]` contract clearly.
-- [ ] Keep the shell script pinned to `--bin agent_llm_mm`.
-- [ ] Keep unsupported modes failing with exit code 2.
-- [ ] Preserve macOS and Windows command separation.
+- [x] Add a `doctor`-first product setup flow to docs.
+- [x] Decide whether scripts need a `doctor-config` or `serve-config` alias; if not, document the current `[serve|doctor] [config_path]` contract clearly.
+- [x] Keep the shell script pinned to `--bin agent_llm_mm`.
+- [x] Keep unsupported modes failing with exit code 2.
+- [x] Preserve macOS and Windows command separation.
 
 **Verification:**
 
@@ -366,10 +372,10 @@ git commit -m "docs: add local data safety pack"
 
 **Checklist:**
 
-- [ ] Define support bundle contents: doctor output, config shape with secrets redacted, recent operation summaries, logs if available, release metadata.
-- [ ] Define excluded content: API keys, raw provider payloads with secrets, full user database by default.
-- [ ] Define redaction terms and test expectations.
-- [ ] Defer implementation script until durable operation log and log locations are stable.
+- [x] Define support bundle contents: doctor output, config shape with secrets redacted, recent operation summaries, logs if available, release metadata.
+- [x] Define excluded content: API keys, raw provider payloads with secrets, full user database by default.
+- [x] Define redaction terms and test expectations.
+- [x] Defer implementation script until durable operation log and log locations are stable.
 
 **Verification:**
 
@@ -435,29 +441,36 @@ git commit -m "docs: classify durable observability gaps"
 
 - Create or modify: `docs/product/correlation-id-contract.md`
 - Modify: `src/interfaces/mcp/server.rs`
-- Modify: `src/application/auto_reflect_if_needed.rs`
-- Modify: `src/domain/operation_log.rs`
-- Modify: `tests/operation_log.rs`
+- Modify: `src/interfaces/dashboard/event.rs`
+- Modify: `src/interfaces/dashboard/mod.rs`
+- Modify: `src/interfaces/dashboard/projection.rs`
+- Modify: `tests/dashboard_projection.rs`
 - Modify: `tests/mcp_stdio.rs`
 
 **Checklist:**
 
-- [ ] Document correlation id format and source.
-- [ ] Define behavior when callers omit correlation id.
-- [ ] Propagate generated correlation id through operation log entry.
-- [ ] Preserve correlation id in self-revision diagnostics where practical.
-- [ ] Add tests proving two different MCP calls get distinct correlation ids.
+- [x] Document correlation id format and source.
+- [x] Define behavior when callers omit correlation id: the MCP runtime generates a per-call id.
+- [x] Propagate generated correlation id through successful MCP operation-log entries.
+- [x] Preserve correlation id in dashboard self-revision diagnostics where practical.
+- [x] Add tests proving two different MCP calls get distinct correlation ids.
+- [x] Preserve correlation id in dashboard detail projections.
+
+Boundary:
+
+- Failure dashboard events carry generated correlation ids, but failure-path durable operation-log writes are not part of this task.
+- Correlation ids are observability metadata only; `run_reflection` remains the only durable identity / commitment write path.
 
 **Verification:**
 
 ```bash
-cargo test --test operation_log --test mcp_stdio -v
+cargo test --test dashboard_projection --test mcp_stdio --test operation_log -v
 ```
 
 **Commit:**
 
 ```bash
-git add docs/product/correlation-id-contract.md src/interfaces/mcp/server.rs src/application/auto_reflect_if_needed.rs src/domain/operation_log.rs tests/operation_log.rs tests/mcp_stdio.rs
+git add docs/product/correlation-id-contract.md src/interfaces/dashboard/event.rs src/interfaces/dashboard/mod.rs src/interfaces/dashboard/projection.rs src/interfaces/mcp/server.rs tests/dashboard_projection.rs tests/mcp_stdio.rs
 git commit -m "feat: add correlation id contract"
 ```
 
@@ -478,11 +491,11 @@ git commit -m "feat: add correlation id contract"
 
 **Checklist:**
 
-- [ ] Define observe-only daemon behavior.
-- [ ] Define forbidden behavior: no `run_reflection`, no identity/commitment writes, no remote listener.
-- [ ] Define required diagnostics.
-- [ ] Define exit gate before daemon can trigger governed self-revision.
-- [ ] Link to existing `docs/superpowers/specs/2026-04-27-local-daemon-trigger-policy.md`.
+- [x] Define observe-only daemon behavior.
+- [x] Define forbidden behavior: no `run_reflection`, no identity/commitment writes, no remote listener.
+- [x] Define required diagnostics.
+- [x] Define exit gate before daemon can trigger governed self-revision.
+- [x] Link to existing `docs/superpowers/specs/2026-04-27-local-daemon-trigger-policy.md`.
 
 **Verification:**
 
@@ -504,13 +517,13 @@ git commit -m "docs: gate observe-only daemon work"
 2. [x] Task A2: Local Alpha Release Gate
 3. [x] Task B1: Config Profile Examples
 4. [x] Task B2: Config Profile Validation Tests
-5. [ ] Task C1: Product Bootstrap Command
+5. [x] Task C1: Product Bootstrap Command
 6. [x] Task C2: Product Smoke Script
 7. [x] Task D1: SQLite Backup and Restore Runbook
-8. [ ] Task D2: Support Bundle Design
+8. [x] Task D2: Support Bundle Design
 9. [x] Task E1: Runtime Operation Log Wiring Review
-10. [ ] Task F1: Daemon Observe-Only Gate Doc
-11. [ ] Task E2: Correlation ID Contract
+10. [x] Task F1: Daemon Observe-Only Gate Doc
+11. [x] Task E2: Correlation ID Contract
 
 This order keeps the first three commits documentation-heavy, then moves into scripts and tests, then only touches runtime behavior after product gates are clear.
 
@@ -523,7 +536,7 @@ Before implementing runtime behavior:
 - [x] Config examples validated without leaking secrets.
 - [x] Product smoke script runs locally.
 - [x] Data backup/restore docs reviewed for destructive-command risk.
-- [ ] Daemon observe-only gate reviewed before daemon code changes.
+- [x] Daemon observe-only gate reviewed before daemon code changes.
 
 ## Final Verification for the Whole Slice
 

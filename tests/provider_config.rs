@@ -126,7 +126,9 @@ fn dev_example_config_parses_without_real_secrets() {
     assert_eq!(config.model_config, ModelConfig::Mock);
     assert!(!config.dashboard.enabled);
     assert!(!config.daemon.enabled);
-    config.validate().expect("dev example config should validate");
+    config
+        .validate()
+        .expect("dev example config should validate");
 }
 
 #[test]

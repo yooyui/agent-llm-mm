@@ -73,6 +73,7 @@ impl DashboardObserver {
         &self,
         operation: &str,
         namespace: Option<String>,
+        correlation_id: Option<String>,
         summary: String,
         payload: &T,
     ) {
@@ -84,6 +85,7 @@ impl DashboardObserver {
             Uuid::new_v4().to_string(),
             operation,
             namespace,
+            correlation_id,
             sequence,
             summary,
             serde_json::to_value(payload).unwrap_or_else(|_| json!({ "serialization": "failed" })),
@@ -94,6 +96,7 @@ impl DashboardObserver {
         &self,
         operation: &str,
         namespace: Option<String>,
+        correlation_id: Option<String>,
         summary: String,
         error: String,
     ) {
@@ -102,7 +105,12 @@ impl DashboardObserver {
             return;
         }
         self.record_event(event::tool_failed(
-            operation, namespace, sequence, summary, error,
+            operation,
+            namespace,
+            correlation_id,
+            sequence,
+            summary,
+            error,
         ));
     }
 
@@ -110,6 +118,7 @@ impl DashboardObserver {
         &self,
         operation: &str,
         namespace: Option<String>,
+        correlation_id: Option<String>,
         status: OperationStatus,
         summary: String,
         payload: &T,
@@ -121,6 +130,7 @@ impl DashboardObserver {
         self.record_event(event::auto_reflection_event(
             operation,
             namespace,
+            correlation_id,
             sequence,
             status,
             summary,

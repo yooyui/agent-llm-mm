@@ -114,7 +114,10 @@ Implementation notes:
 - HTTP surface 只注册 GET route；写方法会返回 `405 Method Not Allowed`，dashboard route 不调用 `run_reflection`
 - 当前 UI 为 `Memory-chan Live Desk`，使用内嵌生成图物料与 CSS 装饰复刻清新活力二次元观测面板
 - 生成图物料位于 `src/interfaces/dashboard/static/`，版权/归属说明已记录在 `NOTICE`
-- 当前事件记录为 bounded in-memory recorder，不是 durable operation-log database
+- 当前 dashboard event recorder 仍是 bounded in-memory recorder，不是 durable operation-log database
+- MCP tool 调用已生成 `mcp-tool-call-<uuid-v4>` correlation id；dashboard 成功/失败事件、auto-reflection 诊断事件和 detail projection 会保留该 id
+- 成功 MCP tool 调用会追加 tool-level `operation_log` 元数据，包含 entrypoint、status、namespace、correlation id 和受限摘要；失败路径 durable operation-log 记录和 dashboard durable history query surface 仍未实现
+- correlation id 与 operation-log 元数据仅用于观测排障，不替代 `run_reflection`，也不写 identity / commitments / reflection audit
 
 ## 部分实现
 

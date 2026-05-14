@@ -26,6 +26,9 @@ Expected evidence:
 - `doctor` reports `status = ok`
 - `doctor` continues to report `self_revision_write_path = run_reflection`
 - `doctor` does not expose provider secrets
+- bootstrap documentation remains doctor-first, and wrapper scripts keep the
+  `[serve|doctor] [config_path]` contract with unsupported modes returning exit
+  code `2`
 
 ## Product Smoke Gate
 
@@ -56,6 +59,45 @@ Required evidence:
 Important limitation: `[config_path]` applies only to `doctor`. `scripts/run-self-revision-demo.sh` currently accepts only an output directory, so the product smoke script keeps the existing deterministic demo contract and does not pass a config path to the demo wrapper.
 
 This gate proves the current local wrapper path, optional config bootstrap health, and the self-revision demo evidence chain. It does not prove fresh-machine install, guided config profiles, backup/restore, GA readiness, production self-governance, remote write admin, remote team service, or multi-tenancy.
+
+## Support Bundle Gate
+
+Local Alpha support bundle behavior is currently a design contract, not an
+implemented generator. Review
+[`support-bundle-local-alpha.md`](support-bundle-local-alpha.md) before sharing
+debugging material.
+
+Required boundary:
+
+- allowed contents are limited to `doctor` output, redacted config shape, bounded
+  operation summaries after durable log wiring exists, log excerpts after log
+  locations are stable, release metadata, and product smoke evidence summaries
+- excluded contents include API keys, `Authorization` / `Bearer` values, raw
+  provider payloads with secrets, full SQLite databases by default, unredacted
+  TOML files, SSH keys, cookies, and browser session data
+- future automation must have redaction tests before it is treated as a product
+  feature
+- no support bundle flow may upload data or claim production support readiness
+
+## Correlation ID Gate
+
+Runtime observability must keep MCP calls traceable without creating a new
+semantic write path. Review
+[`correlation-id-contract.md`](correlation-id-contract.md) when changing MCP
+tool handlers, dashboard projection, operation-log runtime wiring, or support
+bundle summaries.
+
+Required evidence:
+
+- dashboard event detail exposes `correlation_id`
+- each MCP `tools/call` gets a generated `mcp-tool-call-<uuid-v4>` correlation ID
+- distinct MCP calls get distinct correlation IDs
+- best-effort auto-reflection dashboard diagnostics reuse the triggering MCP
+  call correlation ID
+- successful MCP tool calls append operation-log metadata with the same
+  correlation ID
+- correlation metadata does not write identity, commitments, claims, or
+  reflections outside governed `run_reflection`
 
 ## Self-Revision Evidence Gate
 
@@ -110,9 +152,16 @@ Before any daemon write path exists, the daemon must first pass an observe-only 
 
 - config defaults keep daemon disabled
 - observe-only mode can run without identity or commitment writes
+- observe-only mode does not call `run_reflection`
 - daemon-triggered durable writes are blocked until separately gated
 - any future daemon write path still uses governed `run_reflection`
+- no remote listener or remote trigger ingestion is present
 - no background autonomy claim is made from daemon config or doctor output
+
+The detailed gate is
+[`daemon-observe-only-gate.md`](daemon-observe-only-gate.md). The older future
+daemon trigger policy does not authorize write-capable daemon behavior in Local
+Alpha.
 
 ## Product Wording Gate
 

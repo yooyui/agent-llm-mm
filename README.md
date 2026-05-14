@@ -84,6 +84,8 @@
   - 以 `Memory-chan Live Desk` 清新活力二次元风格展示 MCP tool 调用、runtime operation 和 auto-reflection 事件
   - 面板内嵌生成图物料：`src/interfaces/dashboard/static/memory_chan_hero.png` 与 `src/interfaces/dashboard/static/memory_chan_sidebar.png`
   - 保留 decision / snapshot 投影字段用于后续扩展
+  - MCP tool 调用会生成 `mcp-tool-call-<uuid-v4>` correlation id，并在 dashboard 成功/失败事件、auto-reflection 诊断事件和 detail projection 中保留
+  - 成功的 MCP tool 调用会追加 tool-level `operation_log` 元数据，便于按 correlation id 排查；这只是 observability metadata，不是新的 identity / commitment / reflection 写路径
   - 不改变 MCP tool 列表，不污染 MCP `stdout`
 - `namespace` 最小闭环
   - `self`

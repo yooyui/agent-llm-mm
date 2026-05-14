@@ -10,6 +10,7 @@ use std::{
     collections::HashMap,
     fs,
     path::Path,
+    process::Command,
     sync::{Mutex, OnceLock},
     time::Duration,
     vec,
@@ -170,6 +171,71 @@ fn shell_entry_pins_main_binary_when_auxiliary_bins_exist() {
         powershell.contains("cargo run --quiet --bin agent_llm_mm --"),
         "PowerShell script must select the main binary explicitly when auxiliary src/bin targets exist"
     );
+}
+
+#[test]
+fn wrapper_scripts_reject_unsupported_modes_with_exit_code_two() {
+    let script = fs::read_to_string("scripts/agent-llm-mm.sh").expect("script should be readable");
+    let powershell = fs::read_to_string("scripts/agent-llm-mm.ps1")
+        .expect("PowerShell script should be readable");
+    if command_exists("bash") {
+        let shell_output = Command::new("bash")
+            .args(["scripts/agent-llm-mm.sh", "nope"])
+            .output()
+            .expect("shell wrapper should run");
+
+        assert_eq!(
+            shell_output.status.code(),
+            Some(2),
+            "shell wrapper should reject unsupported modes with exit code 2; stderr={}",
+            String::from_utf8_lossy(&shell_output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&shell_output.stderr)
+                .contains("usage: ./scripts/agent-llm-mm.sh [serve|doctor] [config_path]"),
+            "shell wrapper should print supported mode/config path contract"
+        );
+    }
+    if command_exists("pwsh") {
+        let powershell_output = Command::new("pwsh")
+            .args(["-NoProfile", "-File", "scripts/agent-llm-mm.ps1", "nope"])
+            .output()
+            .expect("PowerShell wrapper should run");
+
+        assert_eq!(
+            powershell_output.status.code(),
+            Some(2),
+            "PowerShell wrapper should reject unsupported modes with exit code 2; stderr={}",
+            String::from_utf8_lossy(&powershell_output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&powershell_output.stderr).contains(
+                "usage: pwsh -File .\\scripts\\agent-llm-mm.ps1 [serve|doctor] [config_path]"
+            ),
+            "PowerShell wrapper should print supported mode/config path contract"
+        );
+    }
+    assert!(
+        powershell.contains("exit 2"),
+        "PowerShell wrapper should reject unsupported modes with exit code 2"
+    );
+    assert!(
+        script.contains("usage: ./scripts/agent-llm-mm.sh [serve|doctor] [config_path]"),
+        "shell wrapper should document the supported mode/config path contract"
+    );
+    assert!(
+        powershell.contains(
+            "usage: pwsh -File .\\scripts\\agent-llm-mm.ps1 [serve|doctor] [config_path]"
+        ),
+        "PowerShell wrapper should document the supported mode/config path contract"
+    );
+}
+
+fn command_exists(command: &str) -> bool {
+    Command::new(command)
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
 }
 
 #[tokio::test]

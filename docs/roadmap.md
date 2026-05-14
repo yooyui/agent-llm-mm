@@ -20,10 +20,16 @@
 - 先完成 Local Product Alpha，再进入 durable observability、observe-only daemon、controlled beta、remote/team mode 和 GA readiness
 - 继续保持 `run_reflection` 作为 identity / commitments 的唯一 durable write path，直到后续 ADR 明确替换
 - 在 auth、authorization、audit、rollback 和隔离测试完成前，不暴露可写远程管理能力
+- Local Product Alpha 的支持包先停留在设计 gate：只允许分享脱敏 `doctor` 输出、配置形状、受限摘要和 release metadata；完整自动化支持包要等 durable operation log、日志位置和脱敏测试稳定
+- daemon 先经过 observe-only gate：Local Alpha 阶段不调用 `run_reflection`、不写 identity / commitments、不启动 remote listener
+- correlation ID 先用于 observability：MCP tool call、dashboard event 和 operation-log metadata 可按 `mcp-tool-call-<uuid-v4>` 串联，但不新增语义写路径
 
 当前权威规划：
 
 - [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md)
+- [Local Alpha Support Bundle Design](product/support-bundle-local-alpha.md)
+- [Daemon Observe-Only Gate](product/daemon-observe-only-gate.md)
+- [Correlation ID Contract](product/correlation-id-contract.md)
 
 ## 近期
 

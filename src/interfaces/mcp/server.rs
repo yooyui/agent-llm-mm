@@ -25,6 +25,7 @@ use crate::{
         run_reflection::ReflectionInput,
     },
     domain::identity_core::IdentityCore,
+    domain::operation_log::{ActorKind, OperationLogEntry, OperationLogKind, OperationLogStatus},
     domain::self_revision::{
         SELF_REVISION_DURABLE_WRITE_PATH, SelfRevisionProposal, SelfRevisionRequest, TriggerType,
     },
@@ -36,7 +37,7 @@ use crate::{
     ports::{
         ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
         IdGenerator, IdentityStore, IngestTransaction, IngestTransactionRunner, ModelDecision,
-        ModelDecisionRequest, ModelPort, ReflectionStore, ReflectionTransaction,
+        ModelDecisionRequest, ModelPort, OperationLogStore, ReflectionStore, ReflectionTransaction,
         ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
         StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
@@ -144,8 +145,15 @@ impl Server {
         &self,
         Parameters(params): Parameters<IngestInteractionParams>,
     ) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
         let auto_reflect_input = AutoReflectInput::from_ingest(&params).map_err(|error| {
-            record_app_error_to_mcp(&self.runtime.dashboard, "ingest_interaction", None, error)
+            record_app_error_to_mcp(
+                &self.runtime.dashboard,
+                "ingest_interaction",
+                None,
+                Some(correlation_id.clone()),
+                error,
+            )
         })?;
         let dashboard_namespace = Some(auto_reflect_input.namespace.as_str().to_string());
         let runtime_hook = runtime_hook_for("ingest_interaction", auto_reflect_input.trigger_type);
@@ -156,6 +164,7 @@ impl Server {
                 &self.runtime.dashboard,
                 "ingest_interaction",
                 dashboard_namespace.clone(),
+                Some(correlation_id.clone()),
                 AppError::from(error),
             )
         })?;
@@ -166,6 +175,7 @@ impl Server {
                     &self.runtime.dashboard,
                     "ingest_interaction",
                     dashboard_namespace.clone(),
+                    Some(correlation_id.clone()),
                     error,
                 )
             })?;
@@ -181,6 +191,7 @@ impl Server {
                 Some(result.event_id.as_str()),
                 &self.runtime.dashboard,
                 dashboard_namespace.clone(),
+                Some(correlation_id.clone()),
             ),
             Err(error) => {
                 warn!(
@@ -195,10 +206,21 @@ impl Server {
         }
         self.runtime.dashboard.record_tool_ok(
             "ingest_interaction",
-            dashboard_namespace,
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
             format!("ingest stored event {}", result.event_id),
             &result,
         );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok(
+                    "ingest_interaction",
+                    dashboard_namespace,
+                    Some(correlation_id),
+                )
+                .with_response_summary(serde_json::json!({ "event_id": result.event_id })),
+            )
+            .await;
         structured(result)
     }
 
@@ -207,12 +229,14 @@ impl Server {
         &self,
         Parameters(params): Parameters<BuildSelfSnapshotParams>,
     ) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
         let auto_reflect_input =
             AutoReflectInput::from_build_snapshot(&params).map_err(|error| {
                 record_app_error_to_mcp(
                     &self.runtime.dashboard,
                     "build_self_snapshot",
                     params.auto_reflect_namespace.clone(),
+                    Some(correlation_id.clone()),
                     error,
                 )
             })?;
@@ -233,6 +257,7 @@ impl Server {
                     None,
                     &self.runtime.dashboard,
                     auto_reflect_namespace,
+                    Some(correlation_id.clone()),
                 ),
                 Err(error) => {
                     warn!(
@@ -253,18 +278,32 @@ impl Server {
                     &self.runtime.dashboard,
                     "build_self_snapshot",
                     dashboard_namespace.clone(),
+                    Some(correlation_id.clone()),
                     error,
                 )
             })?;
         self.runtime.dashboard.record_tool_ok(
             "build_self_snapshot",
-            dashboard_namespace,
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
             format!(
                 "snapshot built with {} evidence links",
                 result.snapshot.evidence.len()
             ),
             &result,
         );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok(
+                    "build_self_snapshot",
+                    dashboard_namespace,
+                    Some(correlation_id),
+                )
+                .with_response_summary(serde_json::json!({
+                    "snapshot_evidence_count": result.snapshot.evidence.len()
+                })),
+            )
+            .await;
         structured(result)
     }
 
@@ -273,11 +312,13 @@ impl Server {
         &self,
         Parameters(params): Parameters<DecideWithSnapshotParams>,
     ) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
         let auto_reflect_input = AutoReflectInput::from_decide(&params).map_err(|error| {
             record_app_error_to_mcp(
                 &self.runtime.dashboard,
                 "decide_with_snapshot",
                 params.auto_reflect_namespace.clone(),
+                Some(correlation_id.clone()),
                 error,
             )
         })?;
@@ -289,6 +330,7 @@ impl Server {
                     &self.runtime.dashboard,
                     "decide_with_snapshot",
                     dashboard_namespace.clone(),
+                    Some(correlation_id.clone()),
                     error,
                 )
             })?;
@@ -310,6 +352,7 @@ impl Server {
                     None,
                     &self.runtime.dashboard,
                     auto_reflect_namespace,
+                    Some(correlation_id.clone()),
                 ),
                 Err(error) => {
                     warn!(
@@ -330,10 +373,21 @@ impl Server {
         };
         self.runtime.dashboard.record_tool_ok(
             "decide_with_snapshot",
-            dashboard_namespace,
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
             summary,
             &result,
         );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok(
+                    "decide_with_snapshot",
+                    dashboard_namespace,
+                    Some(correlation_id),
+                )
+                .with_response_summary(serde_json::json!({ "blocked": result.blocked })),
+            )
+            .await;
         structured(result)
     }
 
@@ -342,20 +396,42 @@ impl Server {
         &self,
         Parameters(params): Parameters<RunReflectionParams>,
     ) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
         let input = ReflectionInput::try_from(params).map_err(|error| {
-            record_app_error_to_mcp(&self.runtime.dashboard, "run_reflection", None, error)
+            record_app_error_to_mcp(
+                &self.runtime.dashboard,
+                "run_reflection",
+                None,
+                Some(correlation_id.clone()),
+                error,
+            )
         })?;
         let result = run_reflection::execute(&self.runtime, input)
             .await
             .map_err(|error| {
-                record_app_error_to_mcp(&self.runtime.dashboard, "run_reflection", None, error)
+                record_app_error_to_mcp(
+                    &self.runtime.dashboard,
+                    "run_reflection",
+                    None,
+                    Some(correlation_id.clone()),
+                    error,
+                )
             })?;
         self.runtime.dashboard.record_tool_ok(
             "run_reflection",
             None,
+            Some(correlation_id.clone()),
             format!("reflection recorded {}", result.reflection_id),
             &result,
         );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok("run_reflection", None, Some(correlation_id))
+                    .with_response_summary(
+                        serde_json::json!({ "reflection_id": result.reflection_id }),
+                    ),
+            )
+            .await;
         structured(result)
     }
 }
@@ -411,6 +487,69 @@ impl Runtime {
             Err(error) => Err(error),
         }
     }
+
+    async fn record_tool_operation(&self, record: ToolOperationRecord) {
+        let entry = OperationLogEntry {
+            operation_id: Uuid::new_v4().to_string(),
+            occurred_at: Utc::now(),
+            namespace: record.namespace,
+            actor_kind: ActorKind::System,
+            actor_id: "mcp-stdio".to_string(),
+            entrypoint: record.entrypoint.to_string(),
+            operation_kind: OperationLogKind::Tool,
+            status: record.status,
+            correlation_id: record.correlation_id,
+            request_summary_json: record.request_summary.map(|value| value.to_string()),
+            response_summary_json: record.response_summary.map(|value| value.to_string()),
+            diagnostic_summary_json: record.diagnostic_summary.map(|value| value.to_string()),
+            redaction_version: 1,
+        };
+
+        if let Err(error) = self.store.append_operation(entry).await {
+            warn!(
+                entrypoint = record.entrypoint,
+                error = %error,
+                "failed to append MCP tool operation log entry"
+            );
+        }
+    }
+}
+
+struct ToolOperationRecord {
+    entrypoint: &'static str,
+    namespace: Option<String>,
+    status: OperationLogStatus,
+    correlation_id: Option<String>,
+    request_summary: Option<serde_json::Value>,
+    response_summary: Option<serde_json::Value>,
+    diagnostic_summary: Option<serde_json::Value>,
+}
+
+impl ToolOperationRecord {
+    fn ok(
+        entrypoint: &'static str,
+        namespace: Option<String>,
+        correlation_id: Option<String>,
+    ) -> Self {
+        Self {
+            entrypoint,
+            namespace,
+            status: OperationLogStatus::Ok,
+            correlation_id,
+            request_summary: None,
+            response_summary: None,
+            diagnostic_summary: None,
+        }
+    }
+
+    fn with_response_summary(mut self, summary: serde_json::Value) -> Self {
+        self.response_summary = Some(summary);
+        self
+    }
+}
+
+fn generated_mcp_correlation_id() -> String {
+    format!("mcp-tool-call-{}", Uuid::new_v4())
 }
 
 fn build_runtime_model(config: &AppConfig) -> Result<RuntimeModel, AppError> {
@@ -605,11 +744,12 @@ fn record_app_error_to_mcp(
     dashboard: &DashboardObserver,
     operation: &str,
     namespace: Option<String>,
+    correlation_id: Option<String>,
     error: AppError,
 ) -> McpError {
     let summary = format!("{operation} failed");
     let message = error.to_string();
-    dashboard.record_tool_failed(operation, namespace, summary, message);
+    dashboard.record_tool_failed(operation, namespace, correlation_id, summary, message);
     app_error_to_mcp(error)
 }
 
@@ -619,6 +759,7 @@ fn log_auto_reflection_success(
     event_id: Option<&str>,
     dashboard: &DashboardObserver,
     namespace: Option<String>,
+    correlation_id: Option<String>,
 ) {
     info!(
         runtime_hook,
@@ -637,6 +778,7 @@ fn log_auto_reflection_success(
     dashboard.record_auto_reflection(
         runtime_hook,
         namespace,
+        correlation_id,
         auto_reflection_status(result),
         auto_reflection_summary(result),
         result,

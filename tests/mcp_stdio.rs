@@ -1788,6 +1788,125 @@ required = true
         event_operations.contains(&"ingest_interaction"),
         "dashboard should record the MCP tool operation: {events:?}"
     );
+    let ingest_correlation_id = events
+        .as_array()
+        .expect("events array")
+        .iter()
+        .find(|event| event.get("operation").and_then(Value::as_str) == Some("ingest_interaction"))
+        .and_then(|event| event.get("correlation_id"))
+        .and_then(Value::as_str);
+    assert!(
+        ingest_correlation_id
+            .is_some_and(|correlation_id| correlation_id.starts_with("mcp-tool-call-")),
+        "dashboard tool event should expose generated MCP correlation id: {events:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dashboard_records_distinct_correlation_ids_for_distinct_mcp_calls() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
+    let port = listener.local_addr().expect("local addr").port();
+    drop(listener);
+    let config = r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[dashboard]
+enabled = true
+host = "127.0.0.1"
+port = __DASHBOARD_PORT__
+event_capacity = 50
+required = true
+"#
+    .replace("__DASHBOARD_PORT__", &port.to_string());
+    let mut client = test_support::spawn_stdio_client_with_config(config)
+        .await
+        .expect("client");
+
+    let _ = client.list_all_tools().await.expect("list tools");
+    client
+        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .await
+        .expect("first snapshot response");
+    client
+        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .await
+        .expect("second snapshot response");
+
+    let events: serde_json::Value =
+        reqwest::get(format!("http://127.0.0.1:{port}/api/events?limit=10"))
+            .await
+            .expect("dashboard events response")
+            .json()
+            .await
+            .expect("dashboard events json");
+    let correlation_ids = events
+        .as_array()
+        .expect("events array")
+        .iter()
+        .filter(|event| {
+            event.get("operation").and_then(Value::as_str) == Some("build_self_snapshot")
+        })
+        .filter_map(|event| event.get("correlation_id").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        correlation_ids.len(),
+        2,
+        "each dashboard tool event should carry a correlation id: {events:?}"
+    );
+    assert_ne!(
+        correlation_ids[0], correlation_ids[1],
+        "distinct MCP calls should have distinct correlation ids"
+    );
+}
+
+#[tokio::test]
+async fn mcp_tool_call_appends_operation_log_with_correlation_id() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "Operation log should record this MCP call with a correlation id."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:operation-log-correlation"
+            }),
+        )
+        .await
+        .expect("ingest response");
+    assert!(
+        response.get("result").is_some(),
+        "tool call should succeed before operation log assertion: {response:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let row = sqlx::query(
+        "SELECT entrypoint, operation_kind, status, correlation_id FROM operation_log WHERE entrypoint = 'ingest_interaction' ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("operation log entry should be written for MCP tool call");
+
+    assert_eq!(row.get::<String, _>("entrypoint"), "ingest_interaction");
+    assert_eq!(row.get::<String, _>("operation_kind"), "tool");
+    assert_eq!(row.get::<String, _>("status"), "ok");
+    let correlation_id = row.get::<Option<String>, _>("correlation_id");
+    assert!(
+        correlation_id
+            .as_deref()
+            .is_some_and(|correlation_id| correlation_id.starts_with("mcp-tool-call-")),
+        "operation log entry should include generated MCP correlation id"
+    );
 }
 
 #[tokio::test]

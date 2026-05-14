@@ -39,6 +39,12 @@
   - Local Product Alpha PRD，定义目标用户、产品承诺、范围内 / non-goals、用户工作流、Alpha exit gate、验收命令和文档入口；当前口径是 MVP gate 已过并进入产品化路线，但 Local Product Alpha / GA 仍需按后续 gate 完成
 - [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
   - Local Alpha / product alpha release gate，区分 MVP gate 与产品 gate，收口最低命令、product smoke evidence、self-revision demo 8 个 artifact、dashboard local-only、daemon disabled / observe-only 和产品文案边界
+- [product/support-bundle-local-alpha.md](product/support-bundle-local-alpha.md)
+  - Local Alpha 支持包设计 gate，定义可分享内容、排除内容、脱敏术语和后续自动化测试期望；当前不代表一键 support bundle 脚本已实现
+- [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
+  - daemon observe-only gate，定义 Local Alpha 阶段只读诊断边界、forbidden behavior、required diagnostics 和进入写能力前的退出 gate
+- [product/correlation-id-contract.md](product/correlation-id-contract.md)
+  - correlation ID contract，定义 MCP tool call 级 `mcp-tool-call-<uuid-v4>`、dashboard / operation-log 传播和不越过 `run_reflection` 的观测边界
 - [provider-contract.md](provider-contract.md)
   - 新增 provider 前的就绪清单，覆盖配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射
 - [roadmap.md](roadmap.md)
@@ -68,6 +74,12 @@
   - 进入 Local Product Alpha 工作前先读，确认 scope、non-goals、remote write / multi-tenancy / self-governance 边界和 Alpha exit gate
 - [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
   - 判断 Local Alpha 是否可对外表述前阅读；它是产品 alpha gate，不替代 `release-gate.md` 的 MVP gate
+- [product/support-bundle-local-alpha.md](product/support-bundle-local-alpha.md)
+  - 设计本地排障材料或支持包前阅读，避免泄露 API keys、raw provider payloads 或完整 SQLite 数据库
+- [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
+  - 任何 daemon 代码或文档推进前阅读，确认 observe-only 阶段不调用 `run_reflection`、不写 identity / commitments、不开远程监听
+- [product/correlation-id-contract.md](product/correlation-id-contract.md)
+  - 任何 MCP handler、dashboard projection、operation-log 或 support bundle 变更前阅读，确认 correlation id 只是 observability metadata
 - [roadmap.md](roadmap.md)
   - 近期 / 中期 / 后期规划
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
@@ -100,6 +112,12 @@
   - Local Product Alpha PRD；后续产品化任务应先确认这里的范围、non-goals、exit gate 与验收命令
 - [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
   - Local Alpha release gate；产品化发布前从这里确认 product smoke、self-revision demo、dashboard local-only、daemon observe-only 和 remote write / multi-tenancy 文案边界
+- [product/support-bundle-local-alpha.md](product/support-bundle-local-alpha.md)
+  - Local Alpha support bundle 设计；目前是设计 gate，不是自动化生成脚本
+- [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
+  - Local Alpha daemon observe-only gate；防止 daemon work 提前进入写能力或后台自治声明
+- [product/correlation-id-contract.md](product/correlation-id-contract.md)
+  - Local Alpha correlation id contract；用于把 MCP tool call、dashboard event 和 operation-log metadata 串起来
 - [self-revision-demo-guide-2026-04-24.md](self-revision-demo-guide-2026-04-24.md)
   - 如何运行 `./scripts/run-self-revision-demo.sh` 并复核 8 个 demo artifact
 - [examples/codex-mcp-config.toml](../examples/codex-mcp-config.toml)

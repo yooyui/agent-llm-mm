@@ -99,6 +99,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 7. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
 8. 如果改动涉及 demo package，先用 timestamped / scratch output 跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)`；如果要按 Local Alpha 发布口径复核 `latest` 证据链，使用下一条 product smoke
 9. 如果改动涉及 Local Alpha product smoke gate、启动包装脚本或本地产品化证据链，在 repo root 补跑 `./scripts/product-smoke-local.sh [config_path]`；如果当前目录不是 repo root，使用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh`，并在需要配置文件时传入绝对 config path
+10. 如果改动涉及 bootstrap wrapper，确认脚本契约仍是 `[serve|doctor] [config_path]`，unsupported mode 返回 exit code `2`，并补跑 `cargo test --test bootstrap wrapper_scripts_reject_unsupported_modes_with_exit_code_two -v`
 
 如果只想快速回归某个变更，再执行对应的定向测试。若需要一份面向发布前核验的固定检查单，demo / MVP 发布直接使用 [Release Gate](release-gate.md)；Local Alpha / product alpha 发布使用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)。
 
@@ -931,6 +932,34 @@ git diff --check
 其中 `./scripts/product-smoke-local.sh` 是 repo root 示例；`agent-llm-mm.local.toml` 是本地用户配置占位路径，文件必须已存在，且只覆盖 `doctor` config path；从其他当前目录运行时，改用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh` 这类绝对脚本路径，并用绝对 config path 验证配置分支。
 
 这组命令只覆盖 Local Alpha product smoke 入口；demo / MVP 发布前仍以 `release-gate.md` 为准，Local Alpha 发布前仍以 `docs/product/release-gate-local-alpha.md` 为准。
+
+### 改 Local Alpha support bundle design
+
+```zsh
+rg -n 'API key|redact|support bundle|excluded|doctor' docs/product/support-bundle-local-alpha.md docs/product/release-gate-local-alpha.md
+git diff --check
+```
+
+这只验证 support bundle 的设计 gate。当前没有一键 support bundle 生成脚本；不要把该文档写成自动化能力已完成。
+
+### 改 daemon observe-only gate
+
+```zsh
+rg -n 'observe-only|run_reflection|forbidden|daemon|remote listener' docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/roadmap.md docs/progress-tracker.md
+git diff --check
+```
+
+这只验证 daemon 观察模式的边界文档。Local Alpha 仍保持 daemon disabled by default；observe-only 阶段不能调用 `run_reflection`，也不能声明后台自治。
+
+### 改 correlation id / operation log observability
+
+```zsh
+cargo test --test dashboard_projection --test mcp_stdio --test operation_log -v
+rg -n 'correlation_id|mcp-tool-call|run_reflection|operation-log' docs/product/correlation-id-contract.md docs/product/release-gate-local-alpha.md
+git diff --check
+```
+
+这组命令验证 MCP tool call 级 correlation id、dashboard 详情投影和 operation-log 元数据。该链路只是 observability metadata，不代表新增 identity / commitments / reflection 的旁路写入能力。
 
 ### 改 `src/support/config.rs`
 
