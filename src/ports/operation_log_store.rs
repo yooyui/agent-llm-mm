@@ -5,6 +5,7 @@ use crate::{domain::operation_log::OperationLogEntry, error::AppError};
 
 #[derive(Debug, Clone, Default)]
 pub struct OperationLogQuery {
+    pub operation_id: Option<String>,
     pub namespace: Option<String>,
     pub operation_kind: Option<String>,
     pub correlation_id: Option<String>,

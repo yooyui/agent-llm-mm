@@ -16,18 +16,26 @@ use serde_json::json;
 use tokio::net::TcpListener;
 use tokio_stream::{Stream, StreamExt, wrappers::BroadcastStream};
 
-use crate::support::config::DashboardConfig;
+use crate::{
+    adapters::sqlite::SqliteStore,
+    ports::{OperationLogQuery, OperationLogStore},
+    support::config::DashboardConfig,
+};
 
 use super::{
     DashboardRuntimeInfo, EventQuery, OperationKind, OperationRecorder, OperationStatus,
     assets::{DASHBOARD_HTML, MEMORY_CHAN_HERO_PNG, MEMORY_CHAN_SIDEBAR_PNG},
-    build_summary, project_event_detail,
+    build_summary, project_event_detail, project_from_log_entry,
 };
+
+const OPERATION_LOG_HISTORY_DEFAULT_LIMIT: usize = 100;
+const OPERATION_LOG_HISTORY_MAX_LIMIT: usize = 100;
 
 #[derive(Clone)]
 struct DashboardState {
     recorder: OperationRecorder,
     runtime: DashboardRuntimeInfo,
+    operation_log: Option<SqliteStore>,
 }
 
 pub struct DashboardHandle {
@@ -60,16 +68,37 @@ struct EventsQuery {
     namespace: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct OperationLogHttpQuery {
+    limit: Option<usize>,
+    kind: Option<String>,
+    correlation_id: Option<String>,
+    namespace: Option<String>,
+}
+
 pub async fn start_dashboard_service(
     config: DashboardConfig,
     recorder: OperationRecorder,
     runtime: DashboardRuntimeInfo,
 ) -> Result<DashboardHandle> {
+    start_dashboard_service_with_operation_log(config, recorder, runtime, None).await
+}
+
+pub async fn start_dashboard_service_with_operation_log(
+    config: DashboardConfig,
+    recorder: OperationRecorder,
+    runtime: DashboardRuntimeInfo,
+    operation_log: Option<SqliteStore>,
+) -> Result<DashboardHandle> {
     config.validate().map_err(anyhow::Error::msg)?;
     let listener = TcpListener::bind(format!("{}:{}", config.host, config.port)).await?;
     let address = listener.local_addr()?;
     let base_path = normalized_base_path(&config.base_path);
-    let state = DashboardState { recorder, runtime };
+    let state = DashboardState {
+        recorder,
+        runtime,
+        operation_log,
+    };
     let app = router(state, &base_path, config.sse_enabled);
     let task = tokio::spawn(async move {
         if let Err(error) = axum::serve(listener, app).await {
@@ -92,6 +121,8 @@ fn router(state: DashboardState, base_path: &str, sse_enabled: bool) -> Router {
         .route("/api/summary", get(summary))
         .route("/api/events", get(events))
         .route("/api/events/{id}", get(event_detail))
+        .route("/api/operation-log", get(operation_log_history))
+        .route("/api/operation-log/{id}", get(operation_log_detail))
         .route("/api/health", get(health));
 
     if sse_enabled {
@@ -157,6 +188,96 @@ async fn event_detail(
         None => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "operation event not found" })),
+        )
+            .into_response(),
+    }
+}
+
+async fn operation_log_history(
+    State(state): State<Arc<DashboardState>>,
+    Query(query): Query<OperationLogHttpQuery>,
+) -> impl IntoResponse {
+    let Some(store) = &state.operation_log else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "operation log history is not configured" })),
+        )
+            .into_response();
+    };
+
+    let limit = match bounded_operation_log_limit(query.limit) {
+        Ok(limit) => limit,
+        Err(error) => {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response();
+        }
+    };
+
+    match store
+        .query_operations(OperationLogQuery {
+            namespace: query.namespace,
+            operation_kind: query.kind,
+            correlation_id: query.correlation_id,
+            limit: Some(limit),
+            ..Default::default()
+        })
+        .await
+    {
+        Ok(entries) => Json(
+            entries
+                .iter()
+                .map(project_from_log_entry)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+fn bounded_operation_log_limit(limit: Option<usize>) -> Result<usize, String> {
+    let limit = limit.unwrap_or(OPERATION_LOG_HISTORY_DEFAULT_LIMIT);
+    if limit > OPERATION_LOG_HISTORY_MAX_LIMIT {
+        return Err(format!(
+            "operation log history limit must be <= {OPERATION_LOG_HISTORY_MAX_LIMIT}"
+        ));
+    }
+    Ok(limit)
+}
+
+async fn operation_log_detail(
+    State(state): State<Arc<DashboardState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let Some(store) = &state.operation_log else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "error": "operation log history is not configured" })),
+        )
+            .into_response();
+    };
+
+    match store
+        .query_operations(OperationLogQuery {
+            operation_id: Some(id),
+            limit: Some(1),
+            ..Default::default()
+        })
+        .await
+    {
+        Ok(entries) => match entries.first() {
+            Some(entry) => Json(project_from_log_entry(entry)).into_response(),
+            None => (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "operation log entry not found" })),
+            )
+                .into_response(),
+        },
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
         )
             .into_response(),
     }

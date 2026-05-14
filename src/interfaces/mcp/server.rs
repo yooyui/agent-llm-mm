@@ -32,7 +32,7 @@ use crate::{
     error::AppError,
     interfaces::dashboard::{
         DashboardHandle, DashboardObserver, DashboardRuntimeInfo, OperationRecorder,
-        OperationStatus, start_dashboard_service,
+        OperationStatus, start_dashboard_service_with_operation_log,
     },
     ports::{
         ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
@@ -62,8 +62,11 @@ pub async fn run_stdio_server() -> Result<()> {
 }
 
 pub async fn run_stdio_server_with_config(config: AppConfig) -> Result<()> {
-    let (dashboard_observer, _dashboard_handle) = start_configured_dashboard(&config).await?;
-    let server = Server::from_config(config, dashboard_observer).await?;
+    config.validate().map_err(anyhow::Error::msg)?;
+    let store = SqliteStore::bootstrap(&config.database_url).await?;
+    let (dashboard_observer, _dashboard_handle) =
+        start_configured_dashboard(&config, Some(store.clone())).await?;
+    let server = Server::from_parts(config, store, dashboard_observer).await?;
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
@@ -77,6 +80,7 @@ pub async fn validate_stdio_runtime(config: &AppConfig) -> Result<(), AppError> 
 
 async fn start_configured_dashboard(
     config: &AppConfig,
+    operation_log: Option<SqliteStore>,
 ) -> Result<(DashboardObserver, Option<DashboardHandle>)> {
     if !config.dashboard.enabled {
         return Ok((DashboardObserver::disabled(), None));
@@ -91,7 +95,14 @@ async fn start_configured_dashboard(
         read_only: true,
     };
 
-    match start_dashboard_service(config.dashboard.clone(), recorder.clone(), runtime).await {
+    match start_dashboard_service_with_operation_log(
+        config.dashboard.clone(),
+        recorder.clone(),
+        runtime,
+        operation_log,
+    )
+    .await
+    {
         Ok(handle) => {
             let observer = DashboardObserver::enabled(recorder);
             observer.record_dashboard_started(&handle.base_url());
@@ -126,11 +137,12 @@ pub struct Server {
 }
 
 impl Server {
-    async fn from_config(
+    async fn from_parts(
         config: AppConfig,
+        store: SqliteStore,
         dashboard: DashboardObserver,
     ) -> Result<Self, AppError> {
-        let runtime = Runtime::bootstrap(&config, dashboard).await?;
+        let runtime = Runtime::from_store(&config, store, dashboard).await?;
         Ok(Self {
             runtime,
             tool_router: Self::tool_router(),
@@ -465,6 +477,16 @@ impl Runtime {
         config.validate().map_err(AppError::Message)?;
 
         let store = SqliteStore::bootstrap(&config.database_url).await?;
+        Self::from_store(config, store, dashboard).await
+    }
+
+    async fn from_store(
+        config: &AppConfig,
+        store: SqliteStore,
+        dashboard: DashboardObserver,
+    ) -> Result<Self, AppError> {
+        config.validate().map_err(AppError::Message)?;
+
         let runtime = Self {
             store,
             model: build_runtime_model(config)?,

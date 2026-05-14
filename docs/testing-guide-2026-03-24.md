@@ -954,12 +954,12 @@ git diff --check
 ### 改 correlation id / operation log observability
 
 ```zsh
-cargo test --test dashboard_projection --test mcp_stdio --test operation_log -v
+cargo test --test dashboard_projection --test dashboard_http --test mcp_stdio --test operation_log -v
 rg -n 'correlation_id|mcp-tool-call|run_reflection|operation-log' docs/product/correlation-id-contract.md docs/product/release-gate-local-alpha.md
 git diff --check
 ```
 
-这组命令验证 MCP tool call 级 correlation id、dashboard 详情投影和 operation-log 元数据。该链路只是 observability metadata，不代表新增 identity / commitments / reflection 的旁路写入能力。
+这组命令验证 MCP tool call 级 correlation id、dashboard 详情投影、`/api/operation-log` 本机只读 durable history 查询和 operation-log 元数据。该链路只是 observability metadata，不代表新增 identity / commitments / reflection 的旁路写入能力。
 
 ### 改 `src/support/config.rs`
 

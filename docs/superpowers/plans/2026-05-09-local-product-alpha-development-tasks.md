@@ -37,19 +37,19 @@ Completed locally and validated:
 - [x] Task D1: SQLite Backup and Restore Runbook.
 - [x] Task D2: Support Bundle Design.
 - [x] Task E2: Correlation ID Contract.
+- [x] Task E3: Durable Operation-Log Dashboard History Query.
 - [x] Task F1: Daemon Observe-Only Gate Doc.
 
 Completed as read-only evidence:
 
-- [x] Task E1: Runtime Operation Log Wiring Review. Current finding: operation log domain model and SQLite persistence exist. Successful MCP tool calls now append operation-log entries with generated correlation ids, dashboard events/projections preserve correlation ids, and the durable dashboard history query surface remains a later task.
+- [x] Task E1: Runtime Operation Log Wiring Review. Current finding: operation log domain model and SQLite persistence exist. Successful MCP tool calls now append operation-log entries with generated correlation ids, dashboard events/projections preserve correlation ids, and dashboard now exposes a local read-only durable operation-log history query surface.
 
 Next execution queue:
 
-- [ ] Add durable operation-log dashboard history query surface.
 - [ ] Implement the support bundle script after operation-log history and log locations are stable.
 - [ ] Build observe-only daemon diagnostics behind the no-write gate.
 
-Current Local Alpha state remains: validated local MVP entering productization. Product Smoke, Data Safety, Support Bundle Design, Daemon Observe-Only Gate, and Correlation ID Contract now have working local paths or reviewed design gates, but Local Alpha is not complete until durable dashboard history, support bundle automation, observe-only daemon diagnostics, and the full Local Alpha gate have fresh evidence.
+Current Local Alpha state remains: validated local MVP entering productization. Product Smoke, Data Safety, Support Bundle Design, Daemon Observe-Only Gate, Correlation ID Contract, and Durable Operation-Log Dashboard History now have working local paths or reviewed design gates, but Local Alpha is not complete until support bundle automation, observe-only daemon diagnostics, and the full Local Alpha gate have fresh evidence.
 
 ## File Map
 
@@ -83,6 +83,7 @@ Likely script and test files:
 - Modify: `tests/provider_config.rs`
 - Modify: `tests/operation_log.rs`
 - Modify: `tests/daemon_config.rs`
+- Modify: `tests/dashboard_http.rs`
 - Modify: `tests/dashboard_projection.rs`
 - Modify: `tests/mcp_stdio.rs`
 
@@ -474,6 +475,59 @@ git add docs/product/correlation-id-contract.md src/interfaces/dashboard/event.r
 git commit -m "feat: add correlation id contract"
 ```
 
+### Task E3: Durable Operation-Log Dashboard History Query
+
+**Owner:** worker.
+
+**Purpose:** Let Local Alpha users inspect durable MCP tool operation history from the local read-only dashboard API instead of relying only on bounded in-memory dashboard events.
+
+**Files:**
+
+- Modify: `src/interfaces/dashboard/http.rs`
+- Modify: `src/interfaces/dashboard/mod.rs`
+- Modify: `src/interfaces/dashboard/projection.rs` if projection shape changes
+- Modify: `src/interfaces/mcp/server.rs`
+- Modify: `src/ports/operation_log_store.rs`
+- Modify: `src/adapters/sqlite/store.rs`
+- Modify: `tests/dashboard_http.rs`
+- Modify: `tests/mcp_stdio.rs`
+- Modify: `docs/project-status.md`
+- Modify: `docs/progress-tracker.md`
+- Modify: `docs/product/release-gate-local-alpha.md`
+- Modify: `docs/testing-guide-2026-03-24.md`
+
+**Checklist:**
+
+- [x] Expose local read-only `GET /api/operation-log` history API.
+- [x] Expose local read-only `GET /api/operation-log/{id}` detail API.
+- [x] Support bounded filters for `limit`, `namespace`, `kind`, and `correlation_id`.
+- [x] Apply a default and maximum history list limit of 100 entries.
+- [x] Wire the dashboard service to the same SQLite store used by the MCP runtime.
+- [x] Keep existing `/api/events` bounded in-memory live event behavior unchanged.
+- [x] Keep write methods rejected on dashboard routes.
+- [x] Add tests for direct dashboard HTTP history reads.
+- [x] Add MCP stdio test proving dashboard history sees durable entries from real MCP calls.
+
+**Boundary:**
+
+- This is a local read-only JSON API, not a remote management surface.
+- It does not add dashboard write actions.
+- It does not make support bundle automation complete.
+- Failure-path durable operation-log entries remain a later task.
+
+**Verification:**
+
+```bash
+cargo test --test dashboard_http --test mcp_stdio --test operation_log -v
+```
+
+**Commit:**
+
+```bash
+git add src/interfaces/dashboard/http.rs src/interfaces/dashboard/mod.rs src/interfaces/mcp/server.rs src/ports/operation_log_store.rs src/adapters/sqlite/store.rs tests/dashboard_http.rs tests/mcp_stdio.rs docs/project-status.md docs/progress-tracker.md docs/product/release-gate-local-alpha.md docs/testing-guide-2026-03-24.md docs/superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md
+git commit -m "feat: expose dashboard operation log history"
+```
+
 ## Milestone F: Observe-Only Daemon Gate
 
 ### Task F1: Daemon Observe-Only Gate Doc
@@ -524,6 +578,7 @@ git commit -m "docs: gate observe-only daemon work"
 9. [x] Task E1: Runtime Operation Log Wiring Review
 10. [x] Task F1: Daemon Observe-Only Gate Doc
 11. [x] Task E2: Correlation ID Contract
+12. [x] Task E3: Durable Operation-Log Dashboard History Query
 
 This order keeps the first three commits documentation-heavy, then moves into scripts and tests, then only touches runtime behavior after product gates are clear.
 

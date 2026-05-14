@@ -96,6 +96,10 @@ Required evidence:
   call correlation ID
 - successful MCP tool calls append operation-log metadata with the same
   correlation ID
+- local dashboard `GET /api/operation-log` can read durable operation-log
+  entries by bounded filters such as `correlation_id`, with a default and
+  maximum list limit of 100 entries, without changing the existing live
+  `/api/events` in-memory recorder
 - correlation metadata does not write identity, commitments, claims, or
   reflections outside governed `run_reflection`
 
@@ -133,7 +137,8 @@ The dashboard remains a local-only, read-only inspection surface for Local Alpha
 Required boundary:
 
 - bind only to localhost or an explicitly local address
-- expose read-only routes for local observation
+- expose read-only routes for local observation, including bounded live events
+  and durable operation-log history
 - do not expose write actions from the dashboard
 - do not publish the dashboard through a public reverse proxy without a separate gate covering auth, authorization, audit, rollback, and transport risk
 
@@ -142,6 +147,7 @@ Recommended verification when dashboard behavior changes:
 ```bash
 cargo test --test dashboard_config --test dashboard_recorder --test dashboard_projection --test dashboard_http
 cargo test --test mcp_stdio dashboard_enabled_does_not_corrupt_mcp_stdout_and_records_tool_event -v
+cargo test --test mcp_stdio dashboard_exposes_durable_operation_log_history_for_mcp_calls -v
 ```
 
 ## Daemon Gate

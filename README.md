@@ -86,6 +86,7 @@
   - 保留 decision / snapshot 投影字段用于后续扩展
   - MCP tool 调用会生成 `mcp-tool-call-<uuid-v4>` correlation id，并在 dashboard 成功/失败事件、auto-reflection 诊断事件和 detail projection 中保留
   - 成功的 MCP tool 调用会追加 tool-level `operation_log` 元数据，便于按 correlation id 排查；这只是 observability metadata，不是新的 identity / commitment / reflection 写路径
+  - 本机只读 dashboard API 已提供 `GET /api/operation-log` 与 `GET /api/operation-log/{id}` durable history 查询，可按 `limit`、`namespace`、`kind`、`correlation_id` 做受限排障；history 列表默认最多返回 100 条，单次查询最大 100 条
   - 不改变 MCP tool 列表，不污染 MCP `stdout`
 - `namespace` 最小闭环
   - `self`

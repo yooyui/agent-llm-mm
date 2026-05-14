@@ -1803,6 +1803,86 @@ required = true
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dashboard_exposes_durable_operation_log_history_for_mcp_calls() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
+    let port = listener.local_addr().expect("local addr").port();
+    drop(listener);
+    let config = r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[dashboard]
+enabled = true
+host = "127.0.0.1"
+port = __DASHBOARD_PORT__
+event_capacity = 50
+required = true
+"#
+    .replace("__DASHBOARD_PORT__", &port.to_string());
+    let mut client = test_support::spawn_stdio_client_with_config(config)
+        .await
+        .expect("client");
+
+    let _ = client.list_all_tools().await.expect("list tools");
+    let response = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "Dashboard should expose durable history for this MCP call."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:dashboard-operation-log-history"
+            }),
+        )
+        .await
+        .expect("ingest response");
+    assert!(
+        response.get("result").is_some(),
+        "tool call should succeed before operation-log history assertion: {response:?}"
+    );
+
+    let events: serde_json::Value =
+        reqwest::get(format!("http://127.0.0.1:{port}/api/events?limit=10"))
+            .await
+            .expect("dashboard events response")
+            .json()
+            .await
+            .expect("dashboard events json");
+    let correlation_id = events
+        .as_array()
+        .expect("events array")
+        .iter()
+        .find(|event| event.get("operation").and_then(Value::as_str) == Some("ingest_interaction"))
+        .and_then(|event| event.get("correlation_id"))
+        .and_then(Value::as_str)
+        .expect("dashboard event should include correlation id")
+        .to_string();
+
+    let history: serde_json::Value = reqwest::get(format!(
+        "http://127.0.0.1:{port}/api/operation-log?correlation_id={correlation_id}&limit=5"
+    ))
+    .await
+    .expect("operation-log history response")
+    .json()
+    .await
+    .expect("operation-log history json");
+    let entries = history.as_array().expect("history array");
+    assert_eq!(
+        entries.len(),
+        1,
+        "dashboard operation-log history should expose the matching durable entry: {history:?}"
+    );
+    assert_eq!(entries[0]["operation"], "ingest_interaction");
+    assert_eq!(entries[0]["kind"], "tool");
+    assert_eq!(entries[0]["status"], "ok");
+    assert_eq!(entries[0]["correlation_id"], correlation_id);
+    assert_eq!(entries[0]["read_only"], true);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dashboard_records_distinct_correlation_ids_for_distinct_mcp_calls() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
     let port = listener.local_addr().expect("local addr").port();

@@ -14,9 +14,12 @@ pub mod projection;
 pub mod recorder;
 
 pub use event::{EventQuery, OperationEvent, OperationKind, OperationStatus};
-pub use http::{DashboardHandle, start_dashboard_service};
+pub use http::{
+    DashboardHandle, start_dashboard_service, start_dashboard_service_with_operation_log,
+};
 pub use projection::{
     DashboardRuntimeInfo, DashboardSummary, OperationDetail, build_summary, project_event_detail,
+    project_from_log_entry,
 };
 pub use recorder::OperationRecorder;
 

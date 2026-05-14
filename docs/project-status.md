@@ -116,7 +116,8 @@ Implementation notes:
 - 生成图物料位于 `src/interfaces/dashboard/static/`，版权/归属说明已记录在 `NOTICE`
 - 当前 dashboard event recorder 仍是 bounded in-memory recorder，不是 durable operation-log database
 - MCP tool 调用已生成 `mcp-tool-call-<uuid-v4>` correlation id；dashboard 成功/失败事件、auto-reflection 诊断事件和 detail projection 会保留该 id
-- 成功 MCP tool 调用会追加 tool-level `operation_log` 元数据，包含 entrypoint、status、namespace、correlation id 和受限摘要；失败路径 durable operation-log 记录和 dashboard durable history query surface 仍未实现
+- 成功 MCP tool 调用会追加 tool-level `operation_log` 元数据，包含 entrypoint、status、namespace、correlation id 和受限摘要
+- dashboard 已提供本机只读 `GET /api/operation-log` 与 `GET /api/operation-log/{id}` durable history JSON API，可按 `limit`、`namespace`、`kind`、`correlation_id` 做受限查询；history 列表默认最多返回 100 条，单次查询最大 100 条；失败路径 durable operation-log 记录仍未实现
 - correlation id 与 operation-log 元数据仅用于观测排障，不替代 `run_reflection`，也不写 identity / commitments / reflection audit
 
 ## 部分实现
