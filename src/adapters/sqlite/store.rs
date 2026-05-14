@@ -1530,11 +1530,17 @@ impl OperationLogStore for SqliteStore {
         );
         let mut predicates = Vec::new();
 
+        if query.operation_id.is_some() {
+            predicates.push("operation_id = ?");
+        }
         if query.namespace.is_some() {
             predicates.push("namespace = ?");
         }
         if query.operation_kind.is_some() {
             predicates.push("operation_kind = ?");
+        }
+        if query.status.is_some() {
+            predicates.push("status = ?");
         }
         if query.correlation_id.is_some() {
             predicates.push("correlation_id = ?");
@@ -1558,11 +1564,17 @@ impl OperationLogStore for SqliteStore {
 
         let mut query_builder = sqlx::query(&sql);
 
+        if let Some(ref operation_id) = query.operation_id {
+            query_builder = query_builder.bind(operation_id.clone());
+        }
         if let Some(ref ns) = query.namespace {
             query_builder = query_builder.bind(ns.clone());
         }
         if let Some(ref kind) = query.operation_kind {
             query_builder = query_builder.bind(kind.clone());
+        }
+        if let Some(ref status) = query.status {
+            query_builder = query_builder.bind(status.clone());
         }
         if let Some(ref correlation_id) = query.correlation_id {
             query_builder = query_builder.bind(correlation_id.clone());
@@ -1574,7 +1586,12 @@ impl OperationLogStore for SqliteStore {
             query_builder = query_builder.bind(before.to_rfc3339());
         }
         if let Some(limit) = query.limit {
-            query_builder = query_builder.bind(limit as i64);
+            let limit = i64::try_from(limit).map_err(|_| {
+                AppError::InvalidParams(
+                    "operation log query limit exceeds the supported maximum".to_string(),
+                )
+            })?;
+            query_builder = query_builder.bind(limit);
         }
 
         let rows = map_sqlite(query_builder.fetch_all(&self.pool).await)?;

@@ -114,7 +114,28 @@ Implementation notes:
 - HTTP surface 只注册 GET route；写方法会返回 `405 Method Not Allowed`，dashboard route 不调用 `run_reflection`
 - 当前 UI 为 `Memory-chan Live Desk`，使用内嵌生成图物料与 CSS 装饰复刻清新活力二次元观测面板
 - 生成图物料位于 `src/interfaces/dashboard/static/`，版权/归属说明已记录在 `NOTICE`
-- 当前事件记录为 bounded in-memory recorder，不是 durable operation-log database
+- 当前 dashboard event recorder 仍是 bounded in-memory recorder，不是 durable operation-log database
+- MCP tool 调用已生成 `mcp-tool-call-<uuid-v4>` correlation id；dashboard 成功/失败事件、auto-reflection 诊断事件和 detail projection 会保留该 id
+- 已知 MCP tool 调用在 object-shaped arguments 进入项目 handler 后，成功与 handler-reached 失败都会追加 tool-level `operation_log` 元数据，包含 entrypoint、status、namespace、correlation id 和受限摘要；framework-level 解析/路由失败不在该 handler-level 记录范围内；失败路径记录不改变 MCP error code / error message 语义
+- dashboard 已提供本机只读 `GET /api/operation-log` 与 `GET /api/operation-log/{id}` durable history JSON API，可按 `limit`、`namespace`、`kind`、`correlation_id` 做受限查询；history 列表默认最多返回 100 条，单次查询最大 100 条
+- correlation id 与 operation-log 元数据仅用于观测排障，不替代 `run_reflection`，也不写 identity / commitments / reflection audit
+
+### 10. Local support bundle generator
+
+- 已新增首版本机支持包生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path]`
+- 生成器输出 `manifest.json`、`doctor.json`、`config-shape.json`、`operation-summaries.json`、`release-metadata.json` 和 `product-smoke-summary.json`
+- `doctor` / config 只保留脱敏 shape：SQLite URL 会泛化为 `sqlite://<local-path>`，provider credential 只输出布尔值，provider URL 会移除 userinfo 与 query；support bundle 的 `doctor.json` 不执行 runtime bootstrap
+- operation summaries 通过 read-only SQLite 连接读取最多 25 条 durable operation-log metadata，不输出 request / response payload summary；数据库或 `operation_log` 表不存在时会标记 unavailable，不创建或迁移数据库
+- 默认不复制完整 SQLite 数据库、不包含 raw TOML、不上传数据，也不新增 identity / commitments / reflection 的 durable write path
+- local support bundle 仍只是 Local Alpha 诊断辅助；它不代表生产支持通道、远程上传能力、observe-only daemon diagnostics 或 Local Alpha 完整 gate 已完成
+
+### 11. Observe-only daemon diagnostics
+
+- `doctor` 已输出 `daemon_observe_only` 本机只读诊断字段
+- 该字段固定声明 `mode = "observe_only"`、`local_only = true`、`write_gate_approved = false`、`writes_allowed = false`、`remote_listener_enabled = false`
+- 当 `[daemon].enabled = true` 时，诊断会读取本地 `operation_log` 中 `operation_kind = tool / trigger` 且 `status = failed / suppressed` 的有界候选计数，当前每个 kind/status 读取最多 25 条
+- 诊断还暴露 `data_sources`、`cooldown_status`、`in_flight_task_count` 和 `read_errors`，用于本机 preflight 排查
+- 这不是 daemon 写能力：不会启动 daemon loop，不调用 `run_reflection`，不写 identity / commitments / claims / events / reflections，也不代表后台自治或 Local Alpha 已完成
 
 ## 部分实现
 
@@ -189,7 +210,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-05-09`，已 fresh 运行：
+截至 `2026-05-14`，已 fresh 运行：
 
 - `cargo fmt --check`
 - `git diff --check`
@@ -202,10 +223,10 @@ Implementation notes:
 结果：
 
 - `application_use_cases`: 22
-- `bootstrap`: 16
-- `daemon_config`: 3
+- `bootstrap`: 17
+- `daemon_config`: 5
 - `dashboard_config`: 4
-- `dashboard_http`: 5
+- `dashboard_http`: 7
 - `dashboard_projection`: 2
 - `dashboard_recorder`: 2
 - `decision_flow`: 2
@@ -214,13 +235,14 @@ Implementation notes:
 - `domain_snapshot`: 6
 - `evidence_query_dto`: 2
 - `failure_modes`: 31
-- `mcp_stdio`: 27
+- `mcp_stdio`: 36
 - `openai_compatible_model`: 9
-- `operation_log`: 6
-- `provider_config`: 6
+- `operation_log`: 9
+- `provider_config`: 9
 - `self_revision_demo_runner`: 2
 - `sqlite_store`: 20
-- 合计：170 个测试通过
+- `support_bundle`: 4
+- 合计：194 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 

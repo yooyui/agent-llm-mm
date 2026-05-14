@@ -11,6 +11,7 @@
   - `./scripts/agent-llm-mm.sh doctor`
   - `./scripts/agent-llm-mm.sh serve`
   - `./scripts/run-self-revision-demo.sh`
+  - `./scripts/generate-support-bundle.sh`
 
 ## 2. 进入项目目录
 
@@ -47,6 +48,8 @@ database_url = "sqlite:///Users/<you>/Library/Application%20Support/agent-llm-mm
 ```
 
 ## 4. 本机预检
+
+本地产品化启动顺序是 doctor-first：先让 `doctor` 证明配置、SQLite 路径、provider 形态和 daemon 默认状态可用，再启动 `serve`。仓库入口脚本的契约固定为 `[serve|doctor] [config_path]`；没有 `doctor-config` 或 `serve-config` alias，传入其它 mode 会返回 exit code `2`。
 
 优先使用仓库内脚本：
 
@@ -120,8 +123,20 @@ cargo test
 ```
 
 发布前请按 [Release Gate](release-gate.md) 跑完整 gate；本节只是 macOS 日常验证入口。
+如果判断 Local Product Alpha / product alpha 口径，还必须改用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)；普通 `doctor` 通过不等于 Local Alpha 完成。
 
-## 7.1 本地接入排障
+## 7.1 本地支持包
+
+需要本机排障材料时，可以生成脱敏 support bundle：
+
+```zsh
+./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+./scripts/generate-support-bundle.sh target/support-bundles/manual-check-config agent-llm-mm.local.toml
+```
+
+输出目录必须不存在或为空；生成器会拒绝非空目录，避免旧的本地文件混入可分享支持包。输出目录会包含 redacted `doctor` shape、config shape、bounded operation summaries、release metadata、product smoke summary 和 manifest。该支持包默认不复制完整 SQLite 数据库、不包含 raw TOML、不包含 provider payload，也不会上传数据。它只是 Local Alpha 诊断辅助，不代表生产支持通道或 Local Alpha 已完成。
+
+## 7.2 本地接入排障
 
 | Symptom | Likely Cause | Verification | Fix |
 | --- | --- | --- | --- |
@@ -130,7 +145,7 @@ cargo test
 | dashboard not visible | `[dashboard].enabled` 为 false，或端口不可用 | 查看配置里的 `[dashboard]` 与 `enabled`，并确认 `./scripts/agent-llm-mm.sh doctor` 输出中的 dashboard 信息 | 启用 `[dashboard].enabled = true`，并换到可用的 `127.0.0.1` localhost 端口 |
 | model calls fail | provider 配置不完整 | 执行 `./scripts/agent-llm-mm.sh doctor`，确认 `provider`、`base_url`、`model` 均已回填 | 更新本地 TOML 的 provider 段；密钥只在本地文件里设置，不要提交 secrets |
 
-## 7.2 SQLite 备份与恢复
+## 7.3 SQLite 备份与恢复
 
 正式数据、手工 test 数据和 demo 数据必须使用不同 `database_url`。本地正式数据进入 productization 前，应先保守地按 [Local Alpha Data Safety Runbook](product/data-safety-local-alpha.md) 做 SQLite backup：
 

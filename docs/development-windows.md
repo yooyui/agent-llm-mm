@@ -47,6 +47,8 @@ database_url = "sqlite:///D:/agent-llm-mm/dev.sqlite"
 
 ## 4. 本机预检
 
+本地产品化启动顺序是 doctor-first：先让 `doctor` 证明配置、SQLite 路径、provider 形态和 daemon 默认状态可用，再启动 `serve`。PowerShell 入口脚本的契约固定为 `[serve|doctor] [config_path]`；没有 `doctor-config` 或 `serve-config` alias，传入其它 mode 会返回 exit code `2`。
+
 ```powershell
 pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 ```
@@ -95,6 +97,7 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 ```
 
 发布前请按 [Release Gate](release-gate.md) 跑完整 gate；本节只是 Windows 日常验证入口。Release gate 中的 `./scripts/agent-llm-mm.sh doctor` 在 Windows 上对应 `pwsh -File .\scripts\agent-llm-mm.ps1 doctor`。
+如果判断 Local Product Alpha / product alpha 口径，还必须改用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)；普通 `doctor` 通过不等于 Local Alpha 完成。
 
 ## 7.1 本地接入排障
 

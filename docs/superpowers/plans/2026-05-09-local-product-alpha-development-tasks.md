@@ -24,7 +24,7 @@ The current MVP is accepted as the starting point, not the final product. Public
 
 ## Execution Status
 
-Last updated: 2026-05-11.
+Last updated: 2026-05-14.
 
 Completed locally and validated:
 
@@ -32,21 +32,26 @@ Completed locally and validated:
 - [x] Task A2: Local Alpha Release Gate.
 - [x] Task B1: Config Profile Examples.
 - [x] Task B2: Config Profile Validation Tests.
+- [x] Task C1: Product Bootstrap Command.
 - [x] Task C2: Product Smoke Script.
 - [x] Task D1: SQLite Backup and Restore Runbook.
+- [x] Task D2: Support Bundle Design.
+- [x] Task D3: Local Support Bundle Generator.
+- [x] Task E2: Correlation ID Contract.
+- [x] Task E3: Durable Operation-Log Dashboard History Query.
+- [x] Task F1: Daemon Observe-Only Gate Doc.
+- [x] Task F2: Observe-Only Daemon Diagnostics.
 
 Completed as read-only evidence:
 
-- [x] Task E1: Runtime Operation Log Wiring Review. Current finding: operation log domain model and SQLite persistence exist; MCP runtime durable writes, correlation id generation/propagation, and dashboard durable history query surface are still missing.
+- [x] Task E1: Runtime Operation Log Wiring Review. Current finding: operation log domain model and SQLite persistence exist. Known MCP tool calls whose object-shaped arguments reach project handlers now append operation-log entries for success and handler-reached failures with generated correlation ids, dashboard events/projections preserve correlation ids, dashboard failure events use bounded diagnostic classes instead of provider payloads, and dashboard now exposes a local read-only durable operation-log history query surface. Framework-level parse/router failures remain outside this handler-level operation-log coverage.
 
 Next execution queue:
 
-- [ ] Task C1: Product Bootstrap Command.
-- [ ] Task D2: Support Bundle Design.
-- [ ] Task F1: Daemon Observe-Only Gate Doc.
-- [ ] Task E2: Correlation ID Contract.
+- [x] Build observe-only daemon diagnostics behind the no-write gate.
+- [x] Add durable operation-log entries for failure paths without changing MCP error semantics.
 
-Current Local Alpha state remains: validated local MVP entering productization. Product Smoke and Data Safety now have working local paths, but Local Alpha is not complete until the remaining gate sections have fresh evidence.
+Current Local Alpha state remains: validated local MVP entering productization. Product Smoke, Data Safety, Support Bundle Generator, Daemon Observe-Only Gate, Correlation ID Contract, Durable Operation-Log Dashboard History, failure-path durable operation-log metadata, and observe-only daemon diagnostics now have working local paths or reviewed design gates, but Local Alpha is not complete until the full Local Alpha gate has fresh evidence.
 
 ## File Map
 
@@ -57,6 +62,7 @@ Planned documentation and examples:
 - Create: `docs/product/data-safety-local-alpha.md`
 - Create: `docs/product/support-bundle-local-alpha.md`
 - Create: `docs/product/daemon-observe-only-gate.md`
+- Create: `docs/product/correlation-id-contract.md`
 - Create: `examples/agent-llm-mm.dev.example.toml`
 - Create: `examples/agent-llm-mm.prod-local.example.toml`
 - Modify: `README.md`
@@ -72,13 +78,18 @@ Likely script and test files:
 - Modify: `scripts/agent-llm-mm.sh`
 - Modify: `scripts/agent-llm-mm.ps1`
 - Create: `scripts/product-smoke-local.sh`
+- Create: `scripts/generate-support-bundle.sh`
 - Create: `scripts/backup-sqlite.sh`
 - Create: `scripts/restore-sqlite.sh`
 - Create: `tests/product_smoke.rs` if Rust-level smoke helpers are needed
 - Modify: `tests/bootstrap.rs`
 - Modify: `tests/provider_config.rs`
+- Create: `tests/support_bundle.rs`
 - Modify: `tests/operation_log.rs`
 - Modify: `tests/daemon_config.rs`
+- Modify: `tests/dashboard_http.rs`
+- Modify: `tests/dashboard_projection.rs`
+- Modify: `tests/mcp_stdio.rs`
 
 Implementation files to inspect before code changes:
 
@@ -258,11 +269,11 @@ git commit -m "test: cover product config profiles"
 
 **Checklist:**
 
-- [ ] Add a `doctor`-first product setup flow to docs.
-- [ ] Decide whether scripts need a `doctor-config` or `serve-config` alias; if not, document the current `[serve|doctor] [config_path]` contract clearly.
-- [ ] Keep the shell script pinned to `--bin agent_llm_mm`.
-- [ ] Keep unsupported modes failing with exit code 2.
-- [ ] Preserve macOS and Windows command separation.
+- [x] Add a `doctor`-first product setup flow to docs.
+- [x] Decide whether scripts need a `doctor-config` or `serve-config` alias; if not, document the current `[serve|doctor] [config_path]` contract clearly.
+- [x] Keep the shell script pinned to `--bin agent_llm_mm`.
+- [x] Keep unsupported modes failing with exit code 2.
+- [x] Preserve macOS and Windows command separation.
 
 **Verification:**
 
@@ -366,10 +377,10 @@ git commit -m "docs: add local data safety pack"
 
 **Checklist:**
 
-- [ ] Define support bundle contents: doctor output, config shape with secrets redacted, recent operation summaries, logs if available, release metadata.
-- [ ] Define excluded content: API keys, raw provider payloads with secrets, full user database by default.
-- [ ] Define redaction terms and test expectations.
-- [ ] Defer implementation script until durable operation log and log locations are stable.
+- [x] Define support bundle contents: doctor output, config shape with secrets redacted, recent operation summaries, logs if available, release metadata.
+- [x] Define excluded content: API keys, raw provider payloads with secrets, full user database by default.
+- [x] Define redaction terms and test expectations.
+- [x] Defer implementation script until durable operation log and log locations are stable.
 
 **Verification:**
 
@@ -383,6 +394,76 @@ git diff --check
 ```bash
 git add docs/product/support-bundle-local-alpha.md docs/product/release-gate-local-alpha.md docs/testing-guide-2026-03-24.md
 git commit -m "docs: design local support bundle"
+```
+
+### Task D3: Local Support Bundle Generator
+
+**Owner:** worker, with spec and code quality review.
+
+**Purpose:** Generate the first local-only redacted diagnostic support bundle
+after durable operation-log history became available.
+
+**Files:**
+
+- Create: `src/support/support_bundle.rs`
+- Create: `src/bin/generate_support_bundle.rs`
+- Create: `scripts/generate-support-bundle.sh`
+- Create: `tests/support_bundle.rs`
+- Modify: `src/support/mod.rs`
+- Modify: `docs/product/support-bundle-local-alpha.md`
+- Modify: `docs/product/release-gate-local-alpha.md`
+- Modify: `docs/testing-guide-2026-03-24.md`
+- Modify: `README.md`, `docs/project-status.md`, `docs/progress-tracker.md`,
+  `docs/document-map.md`, `docs/roadmap.md`, `docs/development-macos.md`
+
+**Checklist:**
+
+- [x] Generate `manifest.json`, `doctor.json`, `config-shape.json`,
+  `operation-summaries.json`, `release-metadata.json`, and
+  `product-smoke-summary.json`.
+- [x] Keep the bundle local-only with `upload_performed = false`.
+- [x] Redact SQLite database paths to `sqlite://<local-path>`.
+- [x] Represent provider credentials as a boolean rather than a secret value.
+- [x] Emit provider URL shape without userinfo or query string values.
+- [x] Exclude full SQLite databases, raw TOML, provider payloads, auth headers,
+  bearer values, cookies, browser session data, and SSH keys by default.
+- [x] Limit operation summaries to metadata-only durable entries.
+- [x] Read operation summaries through a read-only SQLite connection.
+- [x] Do not create, migrate, or bootstrap a missing SQLite database during
+  support bundle generation.
+- [x] Do not seed default identity or commitments while generating a support
+  bundle.
+- [x] Keep `run_reflection` as the only durable identity / commitments /
+  reflection write path.
+- [x] Keep logs excluded until log locations and log redaction rules are stable.
+- [x] Reject non-empty output directories before writing bundle artifacts so
+  stale local files cannot be shared as part of the support bundle.
+
+**Boundary:**
+
+- This is not a production support channel.
+- This does not upload data.
+- This does not complete Local Product Alpha by itself.
+- This does not add observe-only daemon diagnostics.
+- This does not add failure-path durable operation-log entries.
+
+**Verification:**
+
+```bash
+cargo test --test support_bundle -v
+bash -n scripts/generate-support-bundle.sh
+rm -rf target/support-bundles/manual-check
+./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
+rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/manual-check || true
+find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' \) -print
+```
+
+**Commit:**
+
+```bash
+git add src/support/mod.rs src/support/support_bundle.rs src/bin/generate_support_bundle.rs scripts/generate-support-bundle.sh tests/support_bundle.rs README.md docs/project-status.md docs/progress-tracker.md docs/document-map.md docs/roadmap.md docs/development-macos.md docs/product/support-bundle-local-alpha.md docs/product/release-gate-local-alpha.md docs/testing-guide-2026-03-24.md docs/superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md
+git commit -m "feat: add local support bundle generator"
 ```
 
 ## Milestone E: Durable Observability
@@ -435,30 +516,145 @@ git commit -m "docs: classify durable observability gaps"
 
 - Create or modify: `docs/product/correlation-id-contract.md`
 - Modify: `src/interfaces/mcp/server.rs`
-- Modify: `src/application/auto_reflect_if_needed.rs`
-- Modify: `src/domain/operation_log.rs`
-- Modify: `tests/operation_log.rs`
+- Modify: `src/interfaces/dashboard/event.rs`
+- Modify: `src/interfaces/dashboard/mod.rs`
+- Modify: `src/interfaces/dashboard/projection.rs`
+- Modify: `tests/dashboard_projection.rs`
 - Modify: `tests/mcp_stdio.rs`
 
 **Checklist:**
 
-- [ ] Document correlation id format and source.
-- [ ] Define behavior when callers omit correlation id.
-- [ ] Propagate generated correlation id through operation log entry.
-- [ ] Preserve correlation id in self-revision diagnostics where practical.
-- [ ] Add tests proving two different MCP calls get distinct correlation ids.
+- [x] Document correlation id format and source.
+- [x] Define behavior when callers omit correlation id: the MCP runtime generates a per-call id.
+- [x] Propagate generated correlation id through successful MCP operation-log entries.
+- [x] Preserve correlation id in dashboard self-revision diagnostics where practical.
+- [x] Add tests proving two different MCP calls get distinct correlation ids.
+- [x] Preserve correlation id in dashboard detail projections.
+
+Boundary:
+
+- Failure dashboard events carry generated correlation ids; durable failure operation-log writes are covered by Task E4.
+- Correlation ids are observability metadata only; `run_reflection` remains the only durable identity / commitment write path.
 
 **Verification:**
 
 ```bash
-cargo test --test operation_log --test mcp_stdio -v
+cargo test --test dashboard_projection --test mcp_stdio --test operation_log -v
 ```
 
 **Commit:**
 
 ```bash
-git add docs/product/correlation-id-contract.md src/interfaces/mcp/server.rs src/application/auto_reflect_if_needed.rs src/domain/operation_log.rs tests/operation_log.rs tests/mcp_stdio.rs
+git add docs/product/correlation-id-contract.md src/interfaces/dashboard/event.rs src/interfaces/dashboard/mod.rs src/interfaces/dashboard/projection.rs src/interfaces/mcp/server.rs tests/dashboard_projection.rs tests/mcp_stdio.rs
 git commit -m "feat: add correlation id contract"
+```
+
+### Task E3: Durable Operation-Log Dashboard History Query
+
+**Owner:** worker.
+
+**Purpose:** Let Local Alpha users inspect durable MCP tool operation history from the local read-only dashboard API instead of relying only on bounded in-memory dashboard events.
+
+**Files:**
+
+- Modify: `src/interfaces/dashboard/http.rs`
+- Modify: `src/interfaces/dashboard/mod.rs`
+- Modify: `src/interfaces/dashboard/projection.rs` if projection shape changes
+- Modify: `src/interfaces/mcp/server.rs`
+- Modify: `src/ports/operation_log_store.rs`
+- Modify: `src/adapters/sqlite/store.rs`
+- Modify: `tests/dashboard_http.rs`
+- Modify: `tests/mcp_stdio.rs`
+- Modify: `docs/project-status.md`
+- Modify: `docs/progress-tracker.md`
+- Modify: `docs/product/release-gate-local-alpha.md`
+- Modify: `docs/testing-guide-2026-03-24.md`
+
+**Checklist:**
+
+- [x] Expose local read-only `GET /api/operation-log` history API.
+- [x] Expose local read-only `GET /api/operation-log/{id}` detail API.
+- [x] Support bounded filters for `limit`, `namespace`, `kind`, and `correlation_id`.
+- [x] Apply a default and maximum history list limit of 100 entries.
+- [x] Wire the dashboard service to the same SQLite store used by the MCP runtime.
+- [x] Keep existing `/api/events` bounded in-memory live event behavior unchanged.
+- [x] Keep write methods rejected on dashboard routes.
+- [x] Add tests for direct dashboard HTTP history reads.
+- [x] Add MCP stdio test proving dashboard history sees durable entries from real MCP calls.
+
+**Boundary:**
+
+- This is a local read-only JSON API, not a remote management surface.
+- It does not add dashboard write actions.
+- It does not make support bundle automation complete.
+- Failure-path durable operation-log entries remain a later task.
+
+**Verification:**
+
+```bash
+cargo test --test dashboard_http --test mcp_stdio --test operation_log -v
+```
+
+**Commit:**
+
+```bash
+git add src/interfaces/dashboard/http.rs src/interfaces/dashboard/mod.rs src/interfaces/mcp/server.rs src/ports/operation_log_store.rs src/adapters/sqlite/store.rs tests/dashboard_http.rs tests/mcp_stdio.rs docs/project-status.md docs/progress-tracker.md docs/product/release-gate-local-alpha.md docs/testing-guide-2026-03-24.md docs/superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md
+git commit -m "feat: expose dashboard operation log history"
+```
+
+### Task E4: Failure-Path Durable Operation-Log Entries
+
+**Owner:** worker.
+
+**Purpose:** Make failed MCP tool calls visible in durable local operation-log
+history without changing MCP error semantics.
+
+**Files:**
+
+- Modify: `src/interfaces/mcp/server.rs`
+- Modify: `tests/mcp_stdio.rs`
+- Modify: `README.md`
+- Modify: `docs/project-status.md`
+- Modify: `docs/progress-tracker.md`
+- Modify: `docs/product/release-gate-local-alpha.md`
+- Modify: `docs/testing-guide-2026-03-24.md`
+
+**Checklist:**
+
+- [x] Write a failing test proving an invalid MCP tool call returns the same
+  MCP error code while appending a durable `operation_log` entry with
+  `status = failed`.
+- [x] Record failed MCP tool operation metadata through the same
+  `mcp-tool-call-<uuid-v4>` correlation id used by dashboard failure events.
+- [x] Keep diagnostic summaries bounded to MCP error class/code and safe
+  static detail categories, not raw request payloads or provider payloads.
+- [x] Preserve `run_reflection` as the only durable identity / commitment /
+  reflection write path.
+
+**Boundary:**
+
+- This task records MCP tool failure metadata only.
+- It does not convert best-effort auto-reflection failures into MCP errors.
+- It does not add dashboard write actions, remote management, auth, daemon
+  behavior, or provider-payload logging.
+
+**Verification:**
+
+```bash
+cargo test --test mcp_stdio mcp_tool_failure_appends_failed_operation_log_without_changing_error_semantics -v
+cargo test --test mcp_stdio handler_reached_missing_fields_append_failed_operation_log_without_changing_error_semantics -v
+cargo test --test mcp_stdio mcp_tool_failure_does_not_persist_provider_error_payload_in_operation_log -v
+cargo test --test mcp_stdio dashboard_failed_tool_event_does_not_expose_provider_error_payload -v
+cargo test --test mcp_stdio non_object_mcp_tool_arguments_do_not_reach_handler_operation_log -v
+cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -v
+cargo test --test dashboard_projection --test dashboard_http --test mcp_stdio --test operation_log -v
+```
+
+**Commit:**
+
+```bash
+git add src/interfaces/mcp/server.rs tests/mcp_stdio.rs README.md docs/project-status.md docs/progress-tracker.md docs/product/release-gate-local-alpha.md docs/testing-guide-2026-03-24.md docs/superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md
+git commit -m "feat: log failed MCP operations"
 ```
 
 ## Milestone F: Observe-Only Daemon Gate
@@ -478,11 +674,11 @@ git commit -m "feat: add correlation id contract"
 
 **Checklist:**
 
-- [ ] Define observe-only daemon behavior.
-- [ ] Define forbidden behavior: no `run_reflection`, no identity/commitment writes, no remote listener.
-- [ ] Define required diagnostics.
-- [ ] Define exit gate before daemon can trigger governed self-revision.
-- [ ] Link to existing `docs/superpowers/specs/2026-04-27-local-daemon-trigger-policy.md`.
+- [x] Define observe-only daemon behavior.
+- [x] Define forbidden behavior: no `run_reflection`, no identity/commitment writes, no remote listener.
+- [x] Define required diagnostics.
+- [x] Define exit gate before daemon can trigger governed self-revision.
+- [x] Link to existing `docs/superpowers/specs/2026-04-27-local-daemon-trigger-policy.md`.
 
 **Verification:**
 
@@ -498,19 +694,72 @@ git add docs/product/daemon-observe-only-gate.md docs/product/release-gate-local
 git commit -m "docs: gate observe-only daemon work"
 ```
 
+### Task F2: Observe-Only Daemon Diagnostics
+
+**Owner:** worker.
+
+**Purpose:** Expose daemon preflight diagnostics without starting a daemon loop or creating a daemon write path.
+
+**Files:**
+
+- Modify: `src/support/doctor.rs`
+- Modify: `src/interfaces/mcp/server.rs`
+- Modify: `src/ports/operation_log_store.rs`
+- Modify: `src/adapters/sqlite/store.rs`
+- Modify: `tests/daemon_config.rs`
+- Modify: `tests/operation_log.rs`
+- Modify: `README.md`
+- Modify: `docs/project-status.md`
+- Modify: `docs/progress-tracker.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/product/daemon-observe-only-gate.md`
+- Modify: `docs/product/release-gate-local-alpha.md`
+- Modify: `docs/testing-guide-2026-03-24.md`
+
+**Checklist:**
+
+- [x] Add `doctor.daemon_observe_only` with `mode = observe_only`.
+- [x] Keep `write_gate_approved = false`, `writes_allowed = false`, and `remote_listener_enabled = false`.
+- [x] Read only local `daemon_config` and `operation_log` diagnostics.
+- [x] Count bounded failed / suppressed `tool` and `trigger` candidates by status, currently capped at 25 rows per kind/status read.
+- [x] Prove diagnostics do not write semantic memory tables after existing doctor bootstrap.
+- [x] Preserve `run_reflection` as the only durable identity / commitment / reflection write path.
+- [x] Keep daemon disabled by default and avoid any background autonomy claim.
+
+**Verification:**
+
+```bash
+cargo test --test daemon_config -v
+cargo test --test operation_log -v
+./scripts/agent-llm-mm.sh doctor
+rg -n 'daemon_observe_only|observe-only|writes_allowed|remote_listener_enabled|operation_log' README.md docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/project-status.md docs/progress-tracker.md
+git diff --check
+```
+
+**Commit:**
+
+```bash
+git add src/support/doctor.rs src/interfaces/mcp/server.rs src/ports/operation_log_store.rs src/adapters/sqlite/store.rs tests/daemon_config.rs tests/operation_log.rs README.md docs/project-status.md docs/progress-tracker.md docs/roadmap.md docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/testing-guide-2026-03-24.md docs/superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md
+git commit -m "feat: add observe-only daemon diagnostics"
+```
+
 ## Recommended Execution Order
 
 1. [x] Task A1: Local Alpha PRD
 2. [x] Task A2: Local Alpha Release Gate
 3. [x] Task B1: Config Profile Examples
 4. [x] Task B2: Config Profile Validation Tests
-5. [ ] Task C1: Product Bootstrap Command
+5. [x] Task C1: Product Bootstrap Command
 6. [x] Task C2: Product Smoke Script
 7. [x] Task D1: SQLite Backup and Restore Runbook
-8. [ ] Task D2: Support Bundle Design
+8. [x] Task D2: Support Bundle Design
 9. [x] Task E1: Runtime Operation Log Wiring Review
-10. [ ] Task F1: Daemon Observe-Only Gate Doc
-11. [ ] Task E2: Correlation ID Contract
+10. [x] Task F1: Daemon Observe-Only Gate Doc
+11. [x] Task E2: Correlation ID Contract
+12. [x] Task E3: Durable Operation-Log Dashboard History Query
+13. [x] Task D3: Local Support Bundle Generator
+14. [x] Task E4: Failure-Path Durable Operation-Log Entries
+15. [x] Task F2: Observe-Only Daemon Diagnostics
 
 This order keeps the first three commits documentation-heavy, then moves into scripts and tests, then only touches runtime behavior after product gates are clear.
 
@@ -523,7 +772,7 @@ Before implementing runtime behavior:
 - [x] Config examples validated without leaking secrets.
 - [x] Product smoke script runs locally.
 - [x] Data backup/restore docs reviewed for destructive-command risk.
-- [ ] Daemon observe-only gate reviewed before daemon code changes.
+- [x] Daemon observe-only gate reviewed before daemon code changes.
 
 ## Final Verification for the Whole Slice
 

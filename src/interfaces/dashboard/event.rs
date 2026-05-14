@@ -83,6 +83,7 @@ pub fn tool_completed(
     operation_id: String,
     operation: &str,
     namespace: Option<String>,
+    correlation_id: Option<String>,
     sequence: u64,
     summary: String,
     payload: Value,
@@ -96,7 +97,7 @@ pub fn tool_completed(
         operation: operation.to_string(),
         namespace,
         summary,
-        correlation_id: None,
+        correlation_id,
         payload,
     }
 }
@@ -104,6 +105,7 @@ pub fn tool_completed(
 pub fn tool_failed(
     operation: &str,
     namespace: Option<String>,
+    correlation_id: Option<String>,
     sequence: u64,
     summary: String,
     error: String,
@@ -117,7 +119,7 @@ pub fn tool_failed(
         operation: operation.to_string(),
         namespace,
         summary,
-        correlation_id: None,
+        correlation_id,
         payload: json!({ "error": error }),
     }
 }
@@ -125,6 +127,7 @@ pub fn tool_failed(
 pub fn auto_reflection_event(
     operation: &str,
     namespace: Option<String>,
+    correlation_id: Option<String>,
     sequence: u64,
     status: OperationStatus,
     summary: String,
@@ -139,7 +142,7 @@ pub fn auto_reflection_event(
         operation: operation.to_string(),
         namespace,
         summary,
-        correlation_id: None,
+        correlation_id,
         payload,
     }
 }

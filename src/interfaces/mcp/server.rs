@@ -4,11 +4,12 @@ use chrono::{DateTime, Utc};
 use rmcp::{
     ErrorData as McpError, ServerHandler, ServiceExt,
     handler::server::{router::tool::ToolRouter, tool::Parameters},
-    model::{CallToolResult, ServerCapabilities, ServerInfo},
+    model::{CallToolResult, JsonObject, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router,
     transport::stdio,
 };
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -25,18 +26,19 @@ use crate::{
         run_reflection::ReflectionInput,
     },
     domain::identity_core::IdentityCore,
+    domain::operation_log::{ActorKind, OperationLogEntry, OperationLogKind, OperationLogStatus},
     domain::self_revision::{
         SELF_REVISION_DURABLE_WRITE_PATH, SelfRevisionProposal, SelfRevisionRequest, TriggerType,
     },
     error::AppError,
     interfaces::dashboard::{
         DashboardHandle, DashboardObserver, DashboardRuntimeInfo, OperationRecorder,
-        OperationStatus, start_dashboard_service,
+        OperationStatus, start_dashboard_service_with_operation_log,
     },
     ports::{
         ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
         IdGenerator, IdentityStore, IngestTransaction, IngestTransactionRunner, ModelDecision,
-        ModelDecisionRequest, ModelPort, ReflectionStore, ReflectionTransaction,
+        ModelDecisionRequest, ModelPort, OperationLogStore, ReflectionStore, ReflectionTransaction,
         ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
         StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
@@ -61,21 +63,25 @@ pub async fn run_stdio_server() -> Result<()> {
 }
 
 pub async fn run_stdio_server_with_config(config: AppConfig) -> Result<()> {
-    let (dashboard_observer, _dashboard_handle) = start_configured_dashboard(&config).await?;
-    let server = Server::from_config(config, dashboard_observer).await?;
+    config.validate().map_err(anyhow::Error::msg)?;
+    let store = SqliteStore::bootstrap(&config.database_url).await?;
+    let (dashboard_observer, _dashboard_handle) =
+        start_configured_dashboard(&config, Some(store.clone())).await?;
+    let server = Server::from_parts(config, store, dashboard_observer).await?;
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
 }
 
-pub async fn validate_stdio_runtime(config: &AppConfig) -> Result<(), AppError> {
+pub async fn validate_stdio_runtime(config: &AppConfig) -> Result<SqliteStore, AppError> {
     Runtime::bootstrap(config, DashboardObserver::disabled())
         .await
-        .map(|_| ())
+        .map(|runtime| runtime.store)
 }
 
 async fn start_configured_dashboard(
     config: &AppConfig,
+    operation_log: Option<SqliteStore>,
 ) -> Result<(DashboardObserver, Option<DashboardHandle>)> {
     if !config.dashboard.enabled {
         return Ok((DashboardObserver::disabled(), None));
@@ -90,7 +96,14 @@ async fn start_configured_dashboard(
         read_only: true,
     };
 
-    match start_dashboard_service(config.dashboard.clone(), recorder.clone(), runtime).await {
+    match start_dashboard_service_with_operation_log(
+        config.dashboard.clone(),
+        recorder.clone(),
+        runtime,
+        operation_log,
+    )
+    .await
+    {
         Ok(handle) => {
             let observer = DashboardObserver::enabled(recorder);
             observer.record_dashboard_started(&handle.base_url());
@@ -125,11 +138,12 @@ pub struct Server {
 }
 
 impl Server {
-    async fn from_config(
+    async fn from_parts(
         config: AppConfig,
+        store: SqliteStore,
         dashboard: DashboardObserver,
     ) -> Result<Self, AppError> {
-        let runtime = Runtime::bootstrap(&config, dashboard).await?;
+        let runtime = Runtime::from_store(&config, store, dashboard).await?;
         Ok(Self {
             runtime,
             tool_router: Self::tool_router(),
@@ -139,36 +153,48 @@ impl Server {
 
 #[tool_router]
 impl Server {
-    #[tool(description = "Persist an interaction event and any derived claims.")]
-    async fn ingest_interaction(
-        &self,
-        Parameters(params): Parameters<IngestInteractionParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let auto_reflect_input = AutoReflectInput::from_ingest(&params).map_err(|error| {
-            record_app_error_to_mcp(&self.runtime.dashboard, "ingest_interaction", None, error)
-        })?;
+    #[tool(
+        description = "Persist an interaction event and any derived claims.",
+        input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<IngestInteractionParams>>()
+    )]
+    async fn ingest_interaction(&self, raw_params: JsonObject) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
+        let params = map_tool_error(
+            &self.runtime,
+            "ingest_interaction",
+            None,
+            Some(correlation_id.clone()),
+            decode_tool_params::<IngestInteractionParams>(raw_params),
+        )
+        .await?;
+        let auto_reflect_input = map_tool_error(
+            &self.runtime,
+            "ingest_interaction",
+            None,
+            Some(correlation_id.clone()),
+            AutoReflectInput::from_ingest(&params),
+        )
+        .await?;
         let dashboard_namespace = Some(auto_reflect_input.namespace.as_str().to_string());
         let runtime_hook = runtime_hook_for("ingest_interaction", auto_reflect_input.trigger_type);
         let auto_reflect_trigger_type = auto_reflect_input.trigger_type;
         let auto_reflect_trigger_key = auto_reflect_input.trigger_key();
-        let input = IngestInput::try_from(params).map_err(|error| {
-            record_app_error_to_mcp(
-                &self.runtime.dashboard,
-                "ingest_interaction",
-                dashboard_namespace.clone(),
-                AppError::from(error),
-            )
-        })?;
-        let result = ingest_interaction::execute(&self.runtime, input)
-            .await
-            .map_err(|error| {
-                record_app_error_to_mcp(
-                    &self.runtime.dashboard,
-                    "ingest_interaction",
-                    dashboard_namespace.clone(),
-                    error,
-                )
-            })?;
+        let input = map_tool_error(
+            &self.runtime,
+            "ingest_interaction",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            IngestInput::try_from(params).map_err(AppError::from),
+        )
+        .await?;
+        let result = map_tool_error(
+            &self.runtime,
+            "ingest_interaction",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            ingest_interaction::execute(&self.runtime, input).await,
+        )
+        .await?;
         match auto_reflect_if_needed::execute(
             &self.runtime,
             auto_reflect_input.with_recursion_guard(RecursionGuard::Allow),
@@ -181,6 +207,7 @@ impl Server {
                 Some(result.event_id.as_str()),
                 &self.runtime.dashboard,
                 dashboard_namespace.clone(),
+                Some(correlation_id.clone()),
             ),
             Err(error) => {
                 warn!(
@@ -195,27 +222,49 @@ impl Server {
         }
         self.runtime.dashboard.record_tool_ok(
             "ingest_interaction",
-            dashboard_namespace,
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
             format!("ingest stored event {}", result.event_id),
             &result,
         );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok(
+                    "ingest_interaction",
+                    dashboard_namespace,
+                    Some(correlation_id),
+                )
+                .with_response_summary(serde_json::json!({ "event_id": result.event_id })),
+            )
+            .await;
         structured(result)
     }
 
-    #[tool(description = "Build a self snapshot from the persisted memory store.")]
+    #[tool(
+        description = "Build a self snapshot from the persisted memory store.",
+        input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<BuildSelfSnapshotParams>>()
+    )]
     async fn build_self_snapshot(
         &self,
-        Parameters(params): Parameters<BuildSelfSnapshotParams>,
+        raw_params: JsonObject,
     ) -> Result<CallToolResult, McpError> {
-        let auto_reflect_input =
-            AutoReflectInput::from_build_snapshot(&params).map_err(|error| {
-                record_app_error_to_mcp(
-                    &self.runtime.dashboard,
-                    "build_self_snapshot",
-                    params.auto_reflect_namespace.clone(),
-                    error,
-                )
-            })?;
+        let correlation_id = generated_mcp_correlation_id();
+        let params = map_tool_error(
+            &self.runtime,
+            "build_self_snapshot",
+            None,
+            Some(correlation_id.clone()),
+            decode_tool_params::<BuildSelfSnapshotParams>(raw_params),
+        )
+        .await?;
+        let auto_reflect_input = map_tool_error(
+            &self.runtime,
+            "build_self_snapshot",
+            params.auto_reflect_namespace.clone(),
+            Some(correlation_id.clone()),
+            AutoReflectInput::from_build_snapshot(&params),
+        )
+        .await?;
         let dashboard_namespace = params.auto_reflect_namespace.clone();
         if let Some(auto_reflect_input) = auto_reflect_input {
             let auto_reflect_namespace = Some(auto_reflect_input.namespace.as_str().to_string());
@@ -233,6 +282,7 @@ impl Server {
                     None,
                     &self.runtime.dashboard,
                     auto_reflect_namespace,
+                    Some(correlation_id.clone()),
                 ),
                 Err(error) => {
                     warn!(
@@ -246,52 +296,73 @@ impl Server {
                 }
             }
         }
-        let result = build_self_snapshot::execute(&self.runtime, params.into())
-            .await
-            .map_err(|error| {
-                record_app_error_to_mcp(
-                    &self.runtime.dashboard,
-                    "build_self_snapshot",
-                    dashboard_namespace.clone(),
-                    error,
-                )
-            })?;
+        let result = map_tool_error(
+            &self.runtime,
+            "build_self_snapshot",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            build_self_snapshot::execute(&self.runtime, params.into()).await,
+        )
+        .await?;
         self.runtime.dashboard.record_tool_ok(
             "build_self_snapshot",
-            dashboard_namespace,
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
             format!(
                 "snapshot built with {} evidence links",
                 result.snapshot.evidence.len()
             ),
             &result,
         );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok(
+                    "build_self_snapshot",
+                    dashboard_namespace,
+                    Some(correlation_id),
+                )
+                .with_response_summary(serde_json::json!({
+                    "snapshot_evidence_count": result.snapshot.evidence.len()
+                })),
+            )
+            .await;
         structured(result)
     }
 
-    #[tool(description = "Decide on an action using a provided self snapshot.")]
+    #[tool(
+        description = "Decide on an action using a provided self snapshot.",
+        input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<DecideWithSnapshotParams>>()
+    )]
     async fn decide_with_snapshot(
         &self,
-        Parameters(params): Parameters<DecideWithSnapshotParams>,
+        raw_params: JsonObject,
     ) -> Result<CallToolResult, McpError> {
-        let auto_reflect_input = AutoReflectInput::from_decide(&params).map_err(|error| {
-            record_app_error_to_mcp(
-                &self.runtime.dashboard,
-                "decide_with_snapshot",
-                params.auto_reflect_namespace.clone(),
-                error,
-            )
-        })?;
+        let correlation_id = generated_mcp_correlation_id();
+        let params = map_tool_error(
+            &self.runtime,
+            "decide_with_snapshot",
+            None,
+            Some(correlation_id.clone()),
+            decode_tool_params::<DecideWithSnapshotParams>(raw_params),
+        )
+        .await?;
+        let auto_reflect_input = map_tool_error(
+            &self.runtime,
+            "decide_with_snapshot",
+            params.auto_reflect_namespace.clone(),
+            Some(correlation_id.clone()),
+            AutoReflectInput::from_decide(&params),
+        )
+        .await?;
         let dashboard_namespace = params.auto_reflect_namespace.clone();
-        let result = decide_with_snapshot::execute(&self.runtime, params.into())
-            .await
-            .map_err(|error| {
-                record_app_error_to_mcp(
-                    &self.runtime.dashboard,
-                    "decide_with_snapshot",
-                    dashboard_namespace.clone(),
-                    error,
-                )
-            })?;
+        let result = map_tool_error(
+            &self.runtime,
+            "decide_with_snapshot",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            decide_with_snapshot::execute(&self.runtime, params.into()).await,
+        )
+        .await?;
         if !result.blocked
             && let Some(auto_reflect_input) = auto_reflect_input
         {
@@ -310,6 +381,7 @@ impl Server {
                     None,
                     &self.runtime.dashboard,
                     auto_reflect_namespace,
+                    Some(correlation_id.clone()),
                 ),
                 Err(error) => {
                     warn!(
@@ -330,32 +402,69 @@ impl Server {
         };
         self.runtime.dashboard.record_tool_ok(
             "decide_with_snapshot",
-            dashboard_namespace,
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
             summary,
             &result,
         );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok(
+                    "decide_with_snapshot",
+                    dashboard_namespace,
+                    Some(correlation_id),
+                )
+                .with_response_summary(serde_json::json!({ "blocked": result.blocked })),
+            )
+            .await;
         structured(result)
     }
 
-    #[tool(description = "Record a reflection that supersedes an existing claim.")]
-    async fn run_reflection(
-        &self,
-        Parameters(params): Parameters<RunReflectionParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let input = ReflectionInput::try_from(params).map_err(|error| {
-            record_app_error_to_mcp(&self.runtime.dashboard, "run_reflection", None, error)
-        })?;
-        let result = run_reflection::execute(&self.runtime, input)
-            .await
-            .map_err(|error| {
-                record_app_error_to_mcp(&self.runtime.dashboard, "run_reflection", None, error)
-            })?;
+    #[tool(
+        description = "Record a reflection that supersedes an existing claim.",
+        input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<RunReflectionParams>>()
+    )]
+    async fn run_reflection(&self, raw_params: JsonObject) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
+        let params = map_tool_error(
+            &self.runtime,
+            "run_reflection",
+            None,
+            Some(correlation_id.clone()),
+            decode_tool_params::<RunReflectionParams>(raw_params),
+        )
+        .await?;
+        let input = map_tool_error(
+            &self.runtime,
+            "run_reflection",
+            None,
+            Some(correlation_id.clone()),
+            ReflectionInput::try_from(params),
+        )
+        .await?;
+        let result = map_tool_error(
+            &self.runtime,
+            "run_reflection",
+            None,
+            Some(correlation_id.clone()),
+            run_reflection::execute(&self.runtime, input).await,
+        )
+        .await?;
         self.runtime.dashboard.record_tool_ok(
             "run_reflection",
             None,
+            Some(correlation_id.clone()),
             format!("reflection recorded {}", result.reflection_id),
             &result,
         );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok("run_reflection", None, Some(correlation_id))
+                    .with_response_summary(
+                        serde_json::json!({ "reflection_id": result.reflection_id }),
+                    ),
+            )
+            .await;
         structured(result)
     }
 }
@@ -389,6 +498,16 @@ impl Runtime {
         config.validate().map_err(AppError::Message)?;
 
         let store = SqliteStore::bootstrap(&config.database_url).await?;
+        Self::from_store(config, store, dashboard).await
+    }
+
+    async fn from_store(
+        config: &AppConfig,
+        store: SqliteStore,
+        dashboard: DashboardObserver,
+    ) -> Result<Self, AppError> {
+        config.validate().map_err(AppError::Message)?;
+
         let runtime = Self {
             store,
             model: build_runtime_model(config)?,
@@ -411,6 +530,96 @@ impl Runtime {
             Err(error) => Err(error),
         }
     }
+
+    async fn record_tool_operation(&self, record: ToolOperationRecord) {
+        let entry = OperationLogEntry {
+            operation_id: Uuid::new_v4().to_string(),
+            occurred_at: Utc::now(),
+            namespace: record.namespace,
+            actor_kind: ActorKind::System,
+            actor_id: "mcp-stdio".to_string(),
+            entrypoint: record.entrypoint.to_string(),
+            operation_kind: OperationLogKind::Tool,
+            status: record.status,
+            correlation_id: record.correlation_id,
+            request_summary_json: record.request_summary.map(|value| value.to_string()),
+            response_summary_json: record.response_summary.map(|value| value.to_string()),
+            diagnostic_summary_json: record.diagnostic_summary.map(|value| value.to_string()),
+            redaction_version: 1,
+        };
+
+        if let Err(error) = self.store.append_operation(entry).await {
+            warn!(
+                entrypoint = record.entrypoint,
+                error = %error,
+                "failed to append MCP tool operation log entry"
+            );
+        }
+    }
+}
+
+struct ToolOperationRecord {
+    entrypoint: &'static str,
+    namespace: Option<String>,
+    status: OperationLogStatus,
+    correlation_id: Option<String>,
+    request_summary: Option<serde_json::Value>,
+    response_summary: Option<serde_json::Value>,
+    diagnostic_summary: Option<serde_json::Value>,
+}
+
+impl ToolOperationRecord {
+    fn ok(
+        entrypoint: &'static str,
+        namespace: Option<String>,
+        correlation_id: Option<String>,
+    ) -> Self {
+        Self {
+            entrypoint,
+            namespace,
+            status: OperationLogStatus::Ok,
+            correlation_id,
+            request_summary: None,
+            response_summary: None,
+            diagnostic_summary: None,
+        }
+    }
+
+    fn with_response_summary(mut self, summary: serde_json::Value) -> Self {
+        self.response_summary = Some(summary);
+        self
+    }
+
+    fn failed(
+        entrypoint: &'static str,
+        namespace: Option<String>,
+        correlation_id: Option<String>,
+    ) -> Self {
+        Self {
+            entrypoint,
+            namespace,
+            status: OperationLogStatus::Failed,
+            correlation_id,
+            request_summary: None,
+            response_summary: None,
+            diagnostic_summary: None,
+        }
+    }
+
+    fn with_diagnostic_summary(mut self, summary: serde_json::Value) -> Self {
+        self.diagnostic_summary = Some(summary);
+        self
+    }
+}
+
+fn generated_mcp_correlation_id() -> String {
+    format!("mcp-tool-call-{}", Uuid::new_v4())
+}
+
+fn decode_tool_params<T: DeserializeOwned>(raw_params: JsonObject) -> Result<T, AppError> {
+    serde_json::from_value(serde_json::Value::Object(raw_params)).map_err(|error| {
+        AppError::InvalidParams(format!("failed to deserialize parameters: {error}"))
+    })
 }
 
 fn build_runtime_model(config: &AppConfig) -> Result<RuntimeModel, AppError> {
@@ -601,16 +810,87 @@ fn app_error_to_mcp(error: AppError) -> McpError {
     }
 }
 
-fn record_app_error_to_mcp(
-    dashboard: &DashboardObserver,
-    operation: &str,
+async fn map_tool_error<T>(
+    runtime: &Runtime,
+    operation: &'static str,
     namespace: Option<String>,
+    correlation_id: Option<String>,
+    result: Result<T, AppError>,
+) -> Result<T, McpError> {
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            Err(record_app_error_to_mcp(runtime, operation, namespace, correlation_id, error).await)
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum McpErrorClass {
+    InvalidParams,
+    InternalError,
+}
+
+impl McpErrorClass {
+    fn label(self) -> &'static str {
+        match self {
+            Self::InvalidParams => "invalid params",
+            Self::InternalError => "internal error",
+        }
+    }
+
+    fn code(self) -> i64 {
+        match self {
+            Self::InvalidParams => -32602,
+            Self::InternalError => -32603,
+        }
+    }
+}
+
+fn mcp_error_class(error: &AppError) -> McpErrorClass {
+    match error {
+        AppError::InvalidParams(_) => McpErrorClass::InvalidParams,
+        AppError::Message(_) => McpErrorClass::InternalError,
+    }
+}
+
+async fn record_app_error_to_mcp(
+    runtime: &Runtime,
+    operation: &'static str,
+    namespace: Option<String>,
+    correlation_id: Option<String>,
     error: AppError,
 ) -> McpError {
+    let error_class = mcp_error_class(&error);
     let summary = format!("{operation} failed");
-    let message = error.to_string();
-    dashboard.record_tool_failed(operation, namespace, summary, message);
+    let diagnostic_detail = safe_diagnostic_detail(&error);
+    runtime.dashboard.record_tool_failed(
+        operation,
+        namespace.clone(),
+        correlation_id.clone(),
+        summary,
+        diagnostic_detail.to_string(),
+    );
+    runtime
+        .record_tool_operation(
+            ToolOperationRecord::failed(operation, namespace, correlation_id)
+                .with_diagnostic_summary(serde_json::json!({
+                    "mcp_error_class": error_class.label(),
+                    "mcp_error_code": error_class.code(),
+                    "mcp_error_detail": diagnostic_detail,
+                })),
+        )
+        .await;
     app_error_to_mcp(error)
+}
+
+fn safe_diagnostic_detail(error: &AppError) -> &'static str {
+    match error {
+        AppError::InvalidParams(message) if message.contains("missing field") => "missing field",
+        AppError::InvalidParams(message) if message.contains("invalid type") => "invalid type",
+        AppError::InvalidParams(_) => "invalid params",
+        AppError::Message(_) => "internal error",
+    }
 }
 
 fn log_auto_reflection_success(
@@ -619,6 +899,7 @@ fn log_auto_reflection_success(
     event_id: Option<&str>,
     dashboard: &DashboardObserver,
     namespace: Option<String>,
+    correlation_id: Option<String>,
 ) {
     info!(
         runtime_hook,
@@ -637,6 +918,7 @@ fn log_auto_reflection_success(
     dashboard.record_auto_reflection(
         runtime_hook,
         namespace,
+        correlation_id,
         auto_reflection_status(result),
         auto_reflection_summary(result),
         result,

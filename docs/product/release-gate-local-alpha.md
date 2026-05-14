@@ -26,6 +26,9 @@ Expected evidence:
 - `doctor` reports `status = ok`
 - `doctor` continues to report `self_revision_write_path = run_reflection`
 - `doctor` does not expose provider secrets
+- bootstrap documentation remains doctor-first, and wrapper scripts keep the
+  `[serve|doctor] [config_path]` contract with unsupported modes returning exit
+  code `2`
 
 ## Product Smoke Gate
 
@@ -56,6 +59,75 @@ Required evidence:
 Important limitation: `[config_path]` applies only to `doctor`. `scripts/run-self-revision-demo.sh` currently accepts only an output directory, so the product smoke script keeps the existing deterministic demo contract and does not pass a config path to the demo wrapper.
 
 This gate proves the current local wrapper path, optional config bootstrap health, and the self-revision demo evidence chain. It does not prove fresh-machine install, guided config profiles, backup/restore, GA readiness, production self-governance, remote write admin, remote team service, or multi-tenancy.
+
+## Support Bundle Gate
+
+Local Alpha support bundle behavior now has a first local-only generator:
+
+```bash
+./scripts/generate-support-bundle.sh <output_dir> [config_path]
+```
+
+Review [`support-bundle-local-alpha.md`](support-bundle-local-alpha.md) before
+sharing debugging material. The generator is evidence for local diagnostic
+packaging, not evidence that Local Alpha, production support, or remote upload
+flows are complete.
+
+Required boundary:
+
+- `<output_dir>` must not exist yet or must be empty; generation must fail before
+  writing bundle artifacts if the requested directory already contains files
+- allowed contents are limited to redacted `doctor` shape, redacted config shape,
+  bounded operation summaries, release metadata, product smoke evidence summary,
+  and bundle manifest metadata
+- support bundle generation must not call normal runtime bootstrap, create or
+  migrate SQLite databases, or seed default identity / commitments
+- operation summaries must use read-only local SQLite access and mark themselves
+  unavailable when the database or `operation_log` table is absent
+- excluded contents include API keys, `Authorization` / `Bearer` values, raw
+  provider payloads with secrets, full SQLite databases by default, unredacted
+  TOML files, provider URL userinfo/query secrets, SSH keys, cookies, and
+  browser session data
+- local log excerpts remain excluded until log locations and redaction rules are
+  stable
+- support bundle tests must prove redaction and bounded operation summaries
+- no support bundle flow may upload data or claim production support readiness
+
+Recommended verification when support bundle behavior changes:
+
+```bash
+cargo test --test support_bundle -v
+bash -n scripts/generate-support-bundle.sh
+rm -rf target/support-bundles/manual-check
+./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
+rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/manual-check || true
+find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' \) -print
+```
+
+## Correlation ID Gate
+
+Runtime observability must keep MCP calls traceable without creating a new
+semantic write path. Review
+[`correlation-id-contract.md`](correlation-id-contract.md) when changing MCP
+tool handlers, dashboard projection, operation-log runtime wiring, or support
+bundle summaries.
+
+Required evidence:
+
+- dashboard event detail exposes `correlation_id`
+- each MCP `tools/call` gets a generated `mcp-tool-call-<uuid-v4>` correlation ID
+- distinct MCP calls get distinct correlation IDs
+- best-effort auto-reflection dashboard diagnostics reuse the triggering MCP
+  call correlation ID
+- successful MCP tool calls append operation-log metadata with the same
+  correlation ID
+- local dashboard `GET /api/operation-log` can read durable operation-log
+  entries by bounded filters such as `correlation_id`, with a default and
+  maximum list limit of 100 entries, without changing the existing live
+  `/api/events` in-memory recorder
+- correlation metadata does not write identity, commitments, claims, or
+  reflections outside governed `run_reflection`
 
 ## Self-Revision Evidence Gate
 
@@ -91,7 +163,9 @@ The dashboard remains a local-only, read-only inspection surface for Local Alpha
 Required boundary:
 
 - bind only to localhost or an explicitly local address
-- expose read-only routes for local observation
+- expose read-only routes for local observation, including bounded live events
+  and durable operation-log history for known MCP tool calls whose
+  object-shaped arguments reach project handlers
 - do not expose write actions from the dashboard
 - do not publish the dashboard through a public reverse proxy without a separate gate covering auth, authorization, audit, rollback, and transport risk
 
@@ -100,6 +174,12 @@ Recommended verification when dashboard behavior changes:
 ```bash
 cargo test --test dashboard_config --test dashboard_recorder --test dashboard_projection --test dashboard_http
 cargo test --test mcp_stdio dashboard_enabled_does_not_corrupt_mcp_stdout_and_records_tool_event -v
+cargo test --test mcp_stdio dashboard_exposes_durable_operation_log_history_for_mcp_calls -v
+cargo test --test mcp_stdio mcp_tool_failure_appends_failed_operation_log_without_changing_error_semantics -v
+cargo test --test mcp_stdio handler_reached_missing_fields_append_failed_operation_log_without_changing_error_semantics -v
+cargo test --test mcp_stdio mcp_tool_failure_does_not_persist_provider_error_payload_in_operation_log -v
+cargo test --test mcp_stdio dashboard_failed_tool_event_does_not_expose_provider_error_payload -v
+cargo test --test mcp_stdio non_object_mcp_tool_arguments_do_not_reach_handler_operation_log -v
 ```
 
 ## Daemon Gate
@@ -109,10 +189,29 @@ The daemon remains disabled by default in Local Alpha. `doctor` may report daemo
 Before any daemon write path exists, the daemon must first pass an observe-only gate:
 
 - config defaults keep daemon disabled
-- observe-only mode can run without identity or commitment writes
+- `doctor.daemon_observe_only` reports `mode = "observe_only"`
+- `doctor.daemon_observe_only` keeps `write_gate_approved = false`,
+  `writes_allowed = false`, and `remote_listener_enabled = false`
+- observe-only diagnostics can read local `operation_log` failure/suppression
+  candidates without identity, claim, reflection, event, or commitment writes
+- observe-only mode does not call `run_reflection`
 - daemon-triggered durable writes are blocked until separately gated
 - any future daemon write path still uses governed `run_reflection`
+- no remote listener or remote trigger ingestion is present
 - no background autonomy claim is made from daemon config or doctor output
+
+Recommended verification when daemon observe-only diagnostics change:
+
+```bash
+cargo test --test daemon_config -v
+cargo test --test operation_log -v
+./scripts/agent-llm-mm.sh doctor
+```
+
+The detailed gate is
+[`daemon-observe-only-gate.md`](daemon-observe-only-gate.md). The older future
+daemon trigger policy does not authorize write-capable daemon behavior in Local
+Alpha.
 
 ## Product Wording Gate
 

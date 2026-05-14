@@ -55,4 +55,5 @@ fn detail_projection_preserves_payload_and_read_only_boundary() {
     assert_eq!(detail.operation, "run_reflection");
     assert!(detail.read_only);
     assert_eq!(detail.payload["reflection_id"], "reflection-1");
+    assert_eq!(detail.correlation_id.as_deref(), Some("corr-1"));
 }

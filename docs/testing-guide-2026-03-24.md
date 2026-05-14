@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-09 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-14 fresh 验证更新）
 
 ## 1. 目标
 
@@ -28,13 +28,13 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-05-09`，`cargo test` 全量通过，摘要如下：
+截至 `2026-05-14`，`cargo test` 全量通过，摘要如下：
 
 - `application_use_cases`: 22 passed
-- `bootstrap`: 16 passed
-- `daemon_config`: 3 passed
+- `bootstrap`: 17 passed
+- `daemon_config`: 5 passed
 - `dashboard_config`: 4 passed
-- `dashboard_http`: 5 passed
+- `dashboard_http`: 7 passed
 - `dashboard_projection`: 2 passed
 - `dashboard_recorder`: 2 passed
 - `decision_flow`: 2 passed
@@ -43,14 +43,15 @@
 - `domain_snapshot`: 6 passed
 - `evidence_query_dto`: 2 passed
 - `failure_modes`: 31 passed
-- `mcp_stdio`: 27 passed
+- `mcp_stdio`: 36 passed
 - `openai_compatible_model`: 9 passed
-- `operation_log`: 6 passed
-- `provider_config`: 6 passed
+- `operation_log`: 9 passed
+- `provider_config`: 9 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_store`: 20 passed
+- `support_bundle`: 4 passed
 
-合计：170 个测试通过。
+合计：194 个测试通过。
 
 ---
 
@@ -99,6 +100,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 7. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
 8. 如果改动涉及 demo package，先用 timestamped / scratch output 跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)`；如果要按 Local Alpha 发布口径复核 `latest` 证据链，使用下一条 product smoke
 9. 如果改动涉及 Local Alpha product smoke gate、启动包装脚本或本地产品化证据链，在 repo root 补跑 `./scripts/product-smoke-local.sh [config_path]`；如果当前目录不是 repo root，使用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh`，并在需要配置文件时传入绝对 config path
+10. 如果改动涉及 bootstrap wrapper，确认脚本契约仍是 `[serve|doctor] [config_path]`，unsupported mode 返回 exit code `2`，并补跑 `cargo test --test bootstrap wrapper_scripts_reject_unsupported_modes_with_exit_code_two -v`
 
 如果只想快速回归某个变更，再执行对应的定向测试。若需要一份面向发布前核验的固定检查单，demo / MVP 发布直接使用 [Release Gate](release-gate.md)；Local Alpha / product alpha 发布使用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)。
 
@@ -932,6 +934,59 @@ git diff --check
 
 这组命令只覆盖 Local Alpha product smoke 入口；demo / MVP 发布前仍以 `release-gate.md` 为准，Local Alpha 发布前仍以 `docs/product/release-gate-local-alpha.md` 为准。
 
+### 改 Local Alpha support bundle
+
+```zsh
+cargo test --test support_bundle -v
+bash -n scripts/generate-support-bundle.sh
+rm -rf target/support-bundles/manual-check
+./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
+rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/manual-check || true
+find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' \) -print
+rg -n 'API key|redact|support bundle|excluded|doctor|generate-support-bundle' docs/product/support-bundle-local-alpha.md docs/product/release-gate-local-alpha.md
+git diff --check
+```
+
+这组命令验证首版本地 support bundle 生成器、脚本入口、脱敏边界、read-only operation-log 查询和文档口径。输出目录必须不存在或为空；测试会覆盖非空目录被拒绝，避免旧的本地文件混入可分享支持包。敏感词扫描应无实际泄露；最后一个 `find` 命令不应打印 `.sqlite` 或 `.toml` 文件。该生成器不会创建或迁移缺失 SQLite 数据库，也不会通过 runtime bootstrap seed 默认 identity / commitments；它仍是本地诊断辅助，不代表远程上传、生产支持通道或 Local Alpha 完成。
+
+### 改 daemon observe-only gate
+
+```zsh
+rg -n 'observe-only|run_reflection|forbidden|daemon|remote listener' docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/roadmap.md docs/progress-tracker.md
+git diff --check
+```
+
+这只验证 daemon 观察模式的边界文档。Local Alpha 仍保持 daemon disabled by default；observe-only 阶段不能调用 `run_reflection`，也不能声明后台自治。
+
+### 改 daemon observe-only diagnostics / doctor 输出
+
+```zsh
+cargo test --test daemon_config -v
+cargo test --test operation_log -v
+./scripts/agent-llm-mm.sh doctor
+rg -n 'daemon_observe_only|observe-only|writes_allowed|remote_listener_enabled|operation_log' README.md docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/project-status.md docs/progress-tracker.md
+git diff --check
+```
+
+这组命令验证 `doctor.daemon_observe_only` 的本机只读诊断字段、daemon 默认关闭、observe-only 写入 gate、operation-log status 查询，以及文档口径。`doctor` 的 runtime bootstrap 仍会执行既有 SQLite 初始化和 baseline guard 初始化；observe-only diagnostics 本身只能读取本地 `operation_log` 的 failed / suppressed `tool` 与 `trigger` 候选，不能调用 `run_reflection`、不能新增 identity / commitments / claims / events / reflections 语义写入，也不能声明 daemon 已具备后台自治。
+
+### 改 correlation id / operation log observability
+
+```zsh
+cargo test --test dashboard_projection --test dashboard_http --test mcp_stdio --test operation_log -v
+cargo test --test mcp_stdio mcp_tool_failure_does_not_persist_provider_error_payload_in_operation_log -v
+cargo test --test mcp_stdio dashboard_failed_tool_event_does_not_expose_provider_error_payload -v
+```
+
+这组命令验证 MCP tool call 级 correlation id、dashboard 详情投影、`/api/operation-log` 本机只读 durable history 查询和 handler-level MCP tool operation-log 元数据。失败路径记录不改变 MCP error code / error message 语义，且 durable diagnostic 与 dashboard failure event 只保留安全分类元数据，不落 raw request / provider payload；该链路只是 observability metadata，不代表新增 identity / commitments / reflection 的旁路写入能力。`rmcp` framework-level 解析/路由失败（例如非 object `arguments`）不进入项目 handler，因此不声明为 durable operation-log 覆盖范围。
+
+```zsh
+cargo test --test mcp_stdio non_object_mcp_tool_arguments_do_not_reach_handler_operation_log -v
+rg -n 'correlation_id|mcp-tool-call|run_reflection|operation-log' docs/product/correlation-id-contract.md docs/product/release-gate-local-alpha.md
+git diff --check
+```
+
 ### 改 `src/support/config.rs`
 
 ```zsh
@@ -960,7 +1015,7 @@ demo / MVP 发布前核验不使用这段简表作为最终依据；请按 [Rele
 
 ## 11. 当前结论
 
-截至 `2026-05-09`，推荐把下面五条当作普通提交前基线；demo / MVP 发布前仍以 [Release Gate](release-gate.md) 为准；Local Alpha / product alpha 发布前以 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 为准：
+截至 `2026-05-14`，推荐把下面五条当作普通提交前基线；demo / MVP 发布前仍以 [Release Gate](release-gate.md) 为准；Local Alpha / product alpha 发布前以 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 为准：
 
 ```zsh
 cargo fmt --check

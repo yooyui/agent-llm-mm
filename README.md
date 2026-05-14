@@ -16,8 +16,8 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
-- 最新 fresh 验证：`2026-05-09`
-  - `cargo test` 全量通过，共 170 个测试
+- 最新 fresh 验证：`2026-05-14`
+  - `cargo test` 全量通过，共 194 个测试
   - `doctor` 预检返回 `status = ok`
   - self-revision demo package 可一键生成本地证据链
 
@@ -84,7 +84,20 @@
   - 以 `Memory-chan Live Desk` 清新活力二次元风格展示 MCP tool 调用、runtime operation 和 auto-reflection 事件
   - 面板内嵌生成图物料：`src/interfaces/dashboard/static/memory_chan_hero.png` 与 `src/interfaces/dashboard/static/memory_chan_sidebar.png`
   - 保留 decision / snapshot 投影字段用于后续扩展
+  - MCP tool 调用会生成 `mcp-tool-call-<uuid-v4>` correlation id，并在 dashboard 成功/失败事件、auto-reflection 诊断事件和 detail projection 中保留
+  - 已知 MCP tool 调用在 object-shaped arguments 进入项目 handler 后，成功与 handler-reached 失败都会追加 tool-level `operation_log` 元数据，便于按 correlation id 排查；framework-level 解析/路由失败不在该 handler-level 记录范围内。这只是 observability metadata，不是新的 identity / commitment / reflection 写路径，也不改变 MCP error 语义
+  - 本机只读 dashboard API 已提供 `GET /api/operation-log` 与 `GET /api/operation-log/{id}` durable history 查询，可按 `limit`、`namespace`、`kind`、`correlation_id` 做受限排障；history 列表默认最多返回 100 条，单次查询最大 100 条
   - 不改变 MCP tool 列表，不污染 MCP `stdout`
+- local support bundle generator
+  - 提供首版本机排障材料生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path]`
+  - `<output_dir>` 必须不存在或为空，避免旧的本地文件混入可分享支持包目录
+  - 输出 redacted `doctor` shape、config shape、bounded operation summaries、release metadata、product smoke summary 和 manifest
+  - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不包含 provider payload、不上传数据
+  - 该能力只是 Local Alpha 诊断辅助，不代表生产支持通道、远程上传能力或 Local Alpha 已完成
+- observe-only daemon diagnostics
+  - `doctor` 输出新增 `daemon_observe_only` 本机只读诊断字段，用于展示 observe-only 模式、数据源、候选计数、cooldown 状态、并发占用和读取错误
+  - 当 `[daemon].enabled = true` 时，diagnostics 只读取本地 `operation_log` 中 `tool` / `trigger` 的 `failed` 与 `suppressed` 候选，并保持 `write_gate_approved = false`、`writes_allowed = false`、`remote_listener_enabled = false`
+  - 这只是 daemon 写能力前的观察 gate，不调用 `run_reflection`，不新增 identity / commitments / reflection durable write path，也不代表后台自治或 Local Alpha 已完成
 - `namespace` 最小闭环
   - `self`
   - `world`
@@ -159,6 +172,14 @@
 ```
 
 该命令会启动本地 demo stub provider、跑完整 canonical scenario，并把 artifact 输出到 `target/reports/self-revision-demo/...`。
+
+如果要生成本地排障支持包，可以运行：
+
+```zsh
+./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+```
+
+输出目录必须不存在或为空；生成器会拒绝非空目录，避免旧的本地文件被误当作支持包内容分享。该支持包只包含脱敏 JSON 摘要，不会复制完整 SQLite 数据库、raw TOML 或 provider payload。
 
 ## 文档导航
 

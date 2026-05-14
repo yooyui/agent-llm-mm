@@ -1,13 +1,17 @@
 use agent_llm_mm::{
+    adapters::sqlite::SqliteStore,
+    domain::operation_log::{ActorKind, OperationLogEntry, OperationLogKind, OperationLogStatus},
     interfaces::dashboard::{
         DashboardRuntimeInfo, EventQuery, OperationEvent, OperationKind, OperationRecorder,
-        OperationStatus, start_dashboard_service,
+        OperationStatus, start_dashboard_service, start_dashboard_service_with_operation_log,
     },
+    ports::OperationLogStore,
     support::config::DashboardConfig,
 };
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use reqwest::{Client, Method, StatusCode, header};
 use serde_json::json;
+use tempfile::tempdir;
 
 fn config(base_path: &str) -> DashboardConfig {
     DashboardConfig {
@@ -176,6 +180,143 @@ async fn dashboard_honors_configured_base_path() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dashboard_serves_read_only_operation_log_history() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(temp_dir.path().join("dashboard-history.sqlite"));
+    let store = SqliteStore::bootstrap(&database_url)
+        .await
+        .expect("store should bootstrap");
+    store
+        .append_operation(OperationLogEntry {
+            operation_id: "op-log-1".to_string(),
+            occurred_at: Utc::now(),
+            namespace: Some("self".to_string()),
+            actor_kind: ActorKind::System,
+            actor_id: "mcp-stdio".to_string(),
+            entrypoint: "ingest_interaction".to_string(),
+            operation_kind: OperationLogKind::Tool,
+            status: OperationLogStatus::Ok,
+            correlation_id: Some("corr-history-1".to_string()),
+            request_summary_json: None,
+            response_summary_json: Some(r#"{"event_id":"event-1"}"#.to_string()),
+            diagnostic_summary_json: None,
+            redaction_version: 1,
+        })
+        .await
+        .expect("operation log append should succeed");
+
+    let handle = start_dashboard_service_with_operation_log(
+        config("/"),
+        recorder_with_event(),
+        runtime(),
+        Some(store),
+    )
+    .await
+    .expect("dashboard starts");
+    let base_url = handle.base_url();
+    let client = Client::new();
+
+    let history: serde_json::Value = client
+        .get(format!(
+            "{base_url}/api/operation-log?correlation_id=corr-history-1&limit=5"
+        ))
+        .send()
+        .await
+        .expect("operation log response")
+        .json()
+        .await
+        .expect("operation log json");
+
+    let entries = history.as_array().expect("operation log array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["id"], "op-log-1");
+    assert_eq!(entries[0]["operation"], "ingest_interaction");
+    assert_eq!(entries[0]["kind"], "tool");
+    assert_eq!(entries[0]["status"], "ok");
+    assert_eq!(entries[0]["namespace"], "self");
+    assert_eq!(entries[0]["correlation_id"], "corr-history-1");
+    assert_eq!(entries[0]["read_only"], true);
+
+    let detail: serde_json::Value = client
+        .get(format!("{base_url}/api/operation-log/op-log-1"))
+        .send()
+        .await
+        .expect("operation log detail response")
+        .json()
+        .await
+        .expect("operation log detail json");
+    assert_eq!(detail["id"], "op-log-1");
+    assert_eq!(detail["correlation_id"], "corr-history-1");
+    assert_eq!(detail["read_only"], true);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dashboard_bounds_operation_log_history_limit() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(temp_dir.path().join("dashboard-history-limit.sqlite"));
+    let store = SqliteStore::bootstrap(&database_url)
+        .await
+        .expect("store should bootstrap");
+    let now = Utc::now();
+
+    for index in 0..101 {
+        store
+            .append_operation(OperationLogEntry {
+                operation_id: format!("op-log-{index:03}"),
+                occurred_at: now + Duration::milliseconds(index),
+                namespace: Some("self".to_string()),
+                actor_kind: ActorKind::System,
+                actor_id: "mcp-stdio".to_string(),
+                entrypoint: "ingest_interaction".to_string(),
+                operation_kind: OperationLogKind::Tool,
+                status: OperationLogStatus::Ok,
+                correlation_id: Some("corr-history-limit".to_string()),
+                request_summary_json: None,
+                response_summary_json: Some(r#"{"event_id":"event-1"}"#.to_string()),
+                diagnostic_summary_json: None,
+                redaction_version: 1,
+            })
+            .await
+            .expect("operation log append should succeed");
+    }
+
+    let handle = start_dashboard_service_with_operation_log(
+        config("/"),
+        recorder_with_event(),
+        runtime(),
+        Some(store),
+    )
+    .await
+    .expect("dashboard starts");
+    let base_url = handle.base_url();
+    let client = Client::new();
+
+    let history: serde_json::Value = client
+        .get(format!(
+            "{base_url}/api/operation-log?correlation_id=corr-history-limit"
+        ))
+        .send()
+        .await
+        .expect("operation log response")
+        .json()
+        .await
+        .expect("operation log json");
+
+    assert_eq!(
+        history.as_array().expect("operation log array").len(),
+        100,
+        "operation-log history should apply a default bounded limit"
+    );
+
+    let oversized = client
+        .get(format!("{base_url}/api/operation-log?limit=101"))
+        .send()
+        .await
+        .expect("oversized operation log response");
+    assert_eq!(oversized.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dashboard_rejects_write_methods_on_read_only_routes() {
     let recorder = recorder_with_event();
     let handle = start_dashboard_service(config("/"), recorder, runtime())
@@ -190,6 +331,8 @@ async fn dashboard_rejects_write_methods_on_read_only_routes() {
             "/api/summary",
             "/api/events",
             "/api/events/op_1",
+            "/api/operation-log",
+            "/api/operation-log/op-log-1",
             "/api/events/stream",
             "/api/health",
         ] {
@@ -206,6 +349,10 @@ async fn dashboard_rejects_write_methods_on_read_only_routes() {
             );
         }
     }
+}
+
+fn sqlite_url(path: std::path::PathBuf) -> String {
+    format!("sqlite://{}", path.to_string_lossy().replace('\\', "/"))
 }
 
 #[test]
