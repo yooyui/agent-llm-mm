@@ -1,7 +1,9 @@
 use serde::Serialize;
 
 use crate::{
+    domain::operation_log::{OperationLogKind, OperationLogStatus},
     interfaces,
+    ports::{OperationLogQuery, OperationLogStore},
     support::config::{AppConfig, ModelProviderKind, TransportKind},
 };
 
@@ -20,9 +22,25 @@ pub struct DoctorReport {
     pub daemon_enabled: bool,
     pub daemon_poll_interval_ms: u64,
     pub daemon_max_concurrent_tasks: u32,
+    pub daemon_observe_only: DaemonObserveOnlyDiagnostics,
     pub auto_reflection_runtime_hooks: Vec<String>,
     pub self_revision_write_path: &'static str,
     pub status: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct DaemonObserveOnlyDiagnostics {
+    pub mode: &'static str,
+    pub local_only: bool,
+    pub write_gate_approved: bool,
+    pub writes_allowed: bool,
+    pub remote_listener_enabled: bool,
+    pub data_sources: Vec<String>,
+    pub trigger_candidates_observed: usize,
+    pub trigger_candidates_suppressed: usize,
+    pub cooldown_status: &'static str,
+    pub in_flight_task_count: usize,
+    pub read_errors: Vec<String>,
 }
 
 pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
@@ -31,9 +49,10 @@ pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
     let base_url = config.doctor_base_url();
     let model = config.doctor_model();
 
-    match config.transport {
+    let runtime = match config.transport {
         TransportKind::Stdio => interfaces::mcp::validate_stdio_runtime(&config).await?,
-    }
+    };
+    let daemon_observe_only = build_daemon_observe_only_diagnostics(&config, &runtime).await;
 
     Ok(DoctorReport {
         transport: config.transport,
@@ -49,6 +68,7 @@ pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
         daemon_enabled: config.daemon.enabled,
         daemon_poll_interval_ms: config.daemon.poll_interval_ms,
         daemon_max_concurrent_tasks: config.daemon.max_concurrent_tasks,
+        daemon_observe_only,
         auto_reflection_runtime_hooks: interfaces::mcp::server::AUTO_REFLECTION_RUNTIME_HOOKS
             .iter()
             .map(|hook| hook.to_string())
@@ -56,4 +76,64 @@ pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
         self_revision_write_path: interfaces::mcp::server::SELF_REVISION_WRITE_PATH,
         status: "ok",
     })
+}
+
+async fn build_daemon_observe_only_diagnostics(
+    config: &AppConfig,
+    operation_log: &impl OperationLogStore,
+) -> DaemonObserveOnlyDiagnostics {
+    let mut read_errors = Vec::new();
+    let (trigger_candidates_observed, trigger_candidates_suppressed) = if config.daemon.enabled {
+        (
+            count_trigger_candidates(operation_log, OperationLogStatus::Failed, &mut read_errors)
+                .await,
+            count_trigger_candidates(
+                operation_log,
+                OperationLogStatus::Suppressed,
+                &mut read_errors,
+            )
+            .await,
+        )
+    } else {
+        (0, 0)
+    };
+
+    DaemonObserveOnlyDiagnostics {
+        mode: "observe_only",
+        local_only: true,
+        write_gate_approved: false,
+        writes_allowed: false,
+        remote_listener_enabled: false,
+        data_sources: vec!["daemon_config".to_string(), "operation_log".to_string()],
+        trigger_candidates_observed,
+        trigger_candidates_suppressed,
+        cooldown_status: "observe_only",
+        in_flight_task_count: 0,
+        read_errors,
+    }
+}
+
+async fn count_trigger_candidates(
+    operation_log: &impl OperationLogStore,
+    status: OperationLogStatus,
+    read_errors: &mut Vec<String>,
+) -> usize {
+    let mut count = 0;
+    for kind in [OperationLogKind::Tool, OperationLogKind::Trigger] {
+        match operation_log
+            .query_operations(OperationLogQuery {
+                operation_kind: Some(kind.as_str().to_string()),
+                status: Some(status.as_str().to_string()),
+                limit: Some(25),
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(entries) => {
+                count += entries.len();
+            }
+            Err(error) => read_errors.push(format!("operation_log:{}:{}", kind.as_str(), error)),
+        }
+    }
+    count
 }

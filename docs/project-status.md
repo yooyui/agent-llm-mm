@@ -129,6 +129,14 @@ Implementation notes:
 - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不上传数据，也不新增 identity / commitments / reflection 的 durable write path
 - local support bundle 仍只是 Local Alpha 诊断辅助；它不代表生产支持通道、远程上传能力、observe-only daemon diagnostics 或 Local Alpha 完整 gate 已完成
 
+### 11. Observe-only daemon diagnostics
+
+- `doctor` 已输出 `daemon_observe_only` 本机只读诊断字段
+- 该字段固定声明 `mode = "observe_only"`、`local_only = true`、`write_gate_approved = false`、`writes_allowed = false`、`remote_listener_enabled = false`
+- 当 `[daemon].enabled = true` 时，诊断会读取本地 `operation_log` 中 `operation_kind = tool / trigger` 且 `status = failed / suppressed` 的有界候选计数，当前每个 kind/status 读取最多 25 条
+- 诊断还暴露 `data_sources`、`cooldown_status`、`in_flight_task_count` 和 `read_errors`，用于本机 preflight 排查
+- 这不是 daemon 写能力：不会启动 daemon loop，不调用 `run_reflection`，不写 identity / commitments / claims / events / reflections，也不代表后台自治或 Local Alpha 已完成
+
 ## 部分实现
 
 ### 1. `decide_with_snapshot`
@@ -216,7 +224,7 @@ Implementation notes:
 
 - `application_use_cases`: 22
 - `bootstrap`: 17
-- `daemon_config`: 3
+- `daemon_config`: 5
 - `dashboard_config`: 4
 - `dashboard_http`: 7
 - `dashboard_projection`: 2
@@ -229,12 +237,12 @@ Implementation notes:
 - `failure_modes`: 31
 - `mcp_stdio`: 36
 - `openai_compatible_model`: 9
-- `operation_log`: 7
+- `operation_log`: 9
 - `provider_config`: 9
 - `self_revision_demo_runner`: 2
 - `sqlite_store`: 20
 - `support_bundle`: 4
-- 合计：190 个测试通过
+- 合计：194 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 

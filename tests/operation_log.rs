@@ -126,6 +126,79 @@ async fn operation_log_redacts_summary_json_before_persisting() {
 }
 
 #[tokio::test]
+async fn operation_log_queries_by_status() {
+    let store = bootstrap_store().await;
+
+    let mut failed_tool = sample_entry("op-failed", Some("self"));
+    failed_tool.status = OperationLogStatus::Failed;
+    let mut ok_tool = sample_entry("op-ok", Some("self"));
+    ok_tool.status = OperationLogStatus::Ok;
+    let mut suppressed_tool = sample_entry("op-suppressed", Some("self"));
+    suppressed_tool.status = OperationLogStatus::Suppressed;
+
+    store.append_operation(failed_tool).await.unwrap();
+    store.append_operation(ok_tool).await.unwrap();
+    store.append_operation(suppressed_tool).await.unwrap();
+
+    let results = store
+        .query_operations(OperationLogQuery {
+            status: Some(OperationLogStatus::Failed.as_str().to_string()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].operation_id, "op-failed");
+    assert_eq!(results[0].status, OperationLogStatus::Failed);
+}
+
+#[tokio::test]
+async fn operation_log_combines_kind_status_correlation_and_limit_filters() {
+    let store = bootstrap_store().await;
+
+    let mut first = sample_entry("op-first", Some("self"));
+    first.occurred_at = Utc.with_ymd_and_hms(2026, 5, 14, 10, 0, 0).unwrap();
+    first.status = OperationLogStatus::Failed;
+    first.correlation_id = Some("corr-shared".to_string());
+    let mut second = sample_entry("op-second", Some("self"));
+    second.occurred_at = Utc.with_ymd_and_hms(2026, 5, 14, 10, 1, 0).unwrap();
+    second.status = OperationLogStatus::Failed;
+    second.correlation_id = Some("corr-shared".to_string());
+    let mut wrong_status = sample_entry("op-wrong-status", Some("self"));
+    wrong_status.occurred_at = Utc.with_ymd_and_hms(2026, 5, 14, 10, 2, 0).unwrap();
+    wrong_status.status = OperationLogStatus::Ok;
+    wrong_status.correlation_id = Some("corr-shared".to_string());
+    let mut wrong_kind = sample_entry("op-wrong-kind", Some("self"));
+    wrong_kind.occurred_at = Utc.with_ymd_and_hms(2026, 5, 14, 10, 3, 0).unwrap();
+    wrong_kind.operation_kind = OperationLogKind::Trigger;
+    wrong_kind.status = OperationLogStatus::Failed;
+    wrong_kind.correlation_id = Some("corr-shared".to_string());
+
+    store.append_operation(first).await.unwrap();
+    store.append_operation(second).await.unwrap();
+    store.append_operation(wrong_status).await.unwrap();
+    store.append_operation(wrong_kind).await.unwrap();
+
+    let results = store
+        .query_operations(OperationLogQuery {
+            operation_kind: Some(OperationLogKind::Tool.as_str().to_string()),
+            status: Some(OperationLogStatus::Failed.as_str().to_string()),
+            correlation_id: Some("corr-shared".to_string()),
+            limit: Some(1),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].operation_id, "op-second");
+    assert_eq!(results[0].operation_kind, OperationLogKind::Tool);
+    assert_eq!(results[0].status, OperationLogStatus::Failed);
+    assert_eq!(results[0].correlation_id.as_deref(), Some("corr-shared"));
+}
+
+#[tokio::test]
 async fn operation_log_queries_by_correlation_id() {
     let store = bootstrap_store().await;
 

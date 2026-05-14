@@ -65,6 +65,30 @@ authority:
 Diagnostics may be logged or displayed as local observation data, but they must
 not be treated as identity or commitment updates.
 
+Current Local Alpha implementation exposes these diagnostics through
+`doctor.daemon_observe_only`. The report is local-only and observe-only:
+
+- `mode = "observe_only"`
+- `local_only = true`
+- `write_gate_approved = false`
+- `writes_allowed = false`
+- `remote_listener_enabled = false`
+- `data_sources` includes `daemon_config` and `operation_log`
+- `trigger_candidates_observed` counts bounded local `operation_log` entries
+  with `operation_kind` in `tool` / `trigger` and `status = failed`, capped
+  at 25 rows per kind/status read
+- `trigger_candidates_suppressed` counts bounded local `operation_log` entries
+  with `operation_kind` in `tool` / `trigger` and `status = suppressed`,
+  capped at 25 rows per kind/status read
+- `cooldown_status = "observe_only"`
+- `in_flight_task_count = 0`
+- `read_errors` records operation-log read failures as diagnostics, not as
+  semantic memory updates
+
+This `doctor` field is a preflight diagnostic surface. It does not start a
+daemon loop, does not call `run_reflection`, and does not authorize daemon
+writes.
+
 ## Exit Gate Before Write-Capable Daemon Work
 
 Before any daemon can trigger governed self-revision, a separate gate must prove:

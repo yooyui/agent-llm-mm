@@ -40,6 +40,7 @@ Completed locally and validated:
 - [x] Task E2: Correlation ID Contract.
 - [x] Task E3: Durable Operation-Log Dashboard History Query.
 - [x] Task F1: Daemon Observe-Only Gate Doc.
+- [x] Task F2: Observe-Only Daemon Diagnostics.
 
 Completed as read-only evidence:
 
@@ -47,10 +48,10 @@ Completed as read-only evidence:
 
 Next execution queue:
 
-- [ ] Build observe-only daemon diagnostics behind the no-write gate.
+- [x] Build observe-only daemon diagnostics behind the no-write gate.
 - [x] Add durable operation-log entries for failure paths without changing MCP error semantics.
 
-Current Local Alpha state remains: validated local MVP entering productization. Product Smoke, Data Safety, Support Bundle Generator, Daemon Observe-Only Gate, Correlation ID Contract, Durable Operation-Log Dashboard History, and failure-path durable operation-log metadata now have working local paths or reviewed design gates, but Local Alpha is not complete until observe-only daemon diagnostics and the full Local Alpha gate have fresh evidence.
+Current Local Alpha state remains: validated local MVP entering productization. Product Smoke, Data Safety, Support Bundle Generator, Daemon Observe-Only Gate, Correlation ID Contract, Durable Operation-Log Dashboard History, failure-path durable operation-log metadata, and observe-only daemon diagnostics now have working local paths or reviewed design gates, but Local Alpha is not complete until the full Local Alpha gate has fresh evidence.
 
 ## File Map
 
@@ -693,6 +694,55 @@ git add docs/product/daemon-observe-only-gate.md docs/product/release-gate-local
 git commit -m "docs: gate observe-only daemon work"
 ```
 
+### Task F2: Observe-Only Daemon Diagnostics
+
+**Owner:** worker.
+
+**Purpose:** Expose daemon preflight diagnostics without starting a daemon loop or creating a daemon write path.
+
+**Files:**
+
+- Modify: `src/support/doctor.rs`
+- Modify: `src/interfaces/mcp/server.rs`
+- Modify: `src/ports/operation_log_store.rs`
+- Modify: `src/adapters/sqlite/store.rs`
+- Modify: `tests/daemon_config.rs`
+- Modify: `tests/operation_log.rs`
+- Modify: `README.md`
+- Modify: `docs/project-status.md`
+- Modify: `docs/progress-tracker.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/product/daemon-observe-only-gate.md`
+- Modify: `docs/product/release-gate-local-alpha.md`
+- Modify: `docs/testing-guide-2026-03-24.md`
+
+**Checklist:**
+
+- [x] Add `doctor.daemon_observe_only` with `mode = observe_only`.
+- [x] Keep `write_gate_approved = false`, `writes_allowed = false`, and `remote_listener_enabled = false`.
+- [x] Read only local `daemon_config` and `operation_log` diagnostics.
+- [x] Count bounded failed / suppressed `tool` and `trigger` candidates by status, currently capped at 25 rows per kind/status read.
+- [x] Prove diagnostics do not write semantic memory tables after existing doctor bootstrap.
+- [x] Preserve `run_reflection` as the only durable identity / commitment / reflection write path.
+- [x] Keep daemon disabled by default and avoid any background autonomy claim.
+
+**Verification:**
+
+```bash
+cargo test --test daemon_config -v
+cargo test --test operation_log -v
+./scripts/agent-llm-mm.sh doctor
+rg -n 'daemon_observe_only|observe-only|writes_allowed|remote_listener_enabled|operation_log' README.md docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/project-status.md docs/progress-tracker.md
+git diff --check
+```
+
+**Commit:**
+
+```bash
+git add src/support/doctor.rs src/interfaces/mcp/server.rs src/ports/operation_log_store.rs src/adapters/sqlite/store.rs tests/daemon_config.rs tests/operation_log.rs README.md docs/project-status.md docs/progress-tracker.md docs/roadmap.md docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/testing-guide-2026-03-24.md docs/superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md
+git commit -m "feat: add observe-only daemon diagnostics"
+```
+
 ## Recommended Execution Order
 
 1. [x] Task A1: Local Alpha PRD
@@ -709,6 +759,7 @@ git commit -m "docs: gate observe-only daemon work"
 12. [x] Task E3: Durable Operation-Log Dashboard History Query
 13. [x] Task D3: Local Support Bundle Generator
 14. [x] Task E4: Failure-Path Durable Operation-Log Entries
+15. [x] Task F2: Observe-Only Daemon Diagnostics
 
 This order keeps the first three commits documentation-heavy, then moves into scripts and tests, then only touches runtime behavior after product gates are clear.
 

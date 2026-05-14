@@ -73,10 +73,10 @@ pub async fn run_stdio_server_with_config(config: AppConfig) -> Result<()> {
     Ok(())
 }
 
-pub async fn validate_stdio_runtime(config: &AppConfig) -> Result<(), AppError> {
+pub async fn validate_stdio_runtime(config: &AppConfig) -> Result<SqliteStore, AppError> {
     Runtime::bootstrap(config, DashboardObserver::disabled())
         .await
-        .map(|_| ())
+        .map(|runtime| runtime.store)
 }
 
 async fn start_configured_dashboard(

@@ -1539,6 +1539,9 @@ impl OperationLogStore for SqliteStore {
         if query.operation_kind.is_some() {
             predicates.push("operation_kind = ?");
         }
+        if query.status.is_some() {
+            predicates.push("status = ?");
+        }
         if query.correlation_id.is_some() {
             predicates.push("correlation_id = ?");
         }
@@ -1569,6 +1572,9 @@ impl OperationLogStore for SqliteStore {
         }
         if let Some(ref kind) = query.operation_kind {
             query_builder = query_builder.bind(kind.clone());
+        }
+        if let Some(ref status) = query.status {
+            query_builder = query_builder.bind(status.clone());
         }
         if let Some(ref correlation_id) = query.correlation_id {
             query_builder = query_builder.bind(correlation_id.clone());

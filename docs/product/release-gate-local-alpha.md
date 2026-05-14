@@ -189,12 +189,24 @@ The daemon remains disabled by default in Local Alpha. `doctor` may report daemo
 Before any daemon write path exists, the daemon must first pass an observe-only gate:
 
 - config defaults keep daemon disabled
-- observe-only mode can run without identity or commitment writes
+- `doctor.daemon_observe_only` reports `mode = "observe_only"`
+- `doctor.daemon_observe_only` keeps `write_gate_approved = false`,
+  `writes_allowed = false`, and `remote_listener_enabled = false`
+- observe-only diagnostics can read local `operation_log` failure/suppression
+  candidates without identity, claim, reflection, event, or commitment writes
 - observe-only mode does not call `run_reflection`
 - daemon-triggered durable writes are blocked until separately gated
 - any future daemon write path still uses governed `run_reflection`
 - no remote listener or remote trigger ingestion is present
 - no background autonomy claim is made from daemon config or doctor output
+
+Recommended verification when daemon observe-only diagnostics change:
+
+```bash
+cargo test --test daemon_config -v
+cargo test --test operation_log -v
+./scripts/agent-llm-mm.sh doctor
+```
 
 The detailed gate is
 [`daemon-observe-only-gate.md`](daemon-observe-only-gate.md). The older future

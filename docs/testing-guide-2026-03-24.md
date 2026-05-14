@@ -32,7 +32,7 @@
 
 - `application_use_cases`: 22 passed
 - `bootstrap`: 17 passed
-- `daemon_config`: 3 passed
+- `daemon_config`: 5 passed
 - `dashboard_config`: 4 passed
 - `dashboard_http`: 7 passed
 - `dashboard_projection`: 2 passed
@@ -45,13 +45,13 @@
 - `failure_modes`: 31 passed
 - `mcp_stdio`: 36 passed
 - `openai_compatible_model`: 9 passed
-- `operation_log`: 7 passed
+- `operation_log`: 9 passed
 - `provider_config`: 9 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_store`: 20 passed
 - `support_bundle`: 4 passed
 
-合计：190 个测试通过。
+合计：194 个测试通过。
 
 ---
 
@@ -958,6 +958,18 @@ git diff --check
 ```
 
 这只验证 daemon 观察模式的边界文档。Local Alpha 仍保持 daemon disabled by default；observe-only 阶段不能调用 `run_reflection`，也不能声明后台自治。
+
+### 改 daemon observe-only diagnostics / doctor 输出
+
+```zsh
+cargo test --test daemon_config -v
+cargo test --test operation_log -v
+./scripts/agent-llm-mm.sh doctor
+rg -n 'daemon_observe_only|observe-only|writes_allowed|remote_listener_enabled|operation_log' README.md docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/project-status.md docs/progress-tracker.md
+git diff --check
+```
+
+这组命令验证 `doctor.daemon_observe_only` 的本机只读诊断字段、daemon 默认关闭、observe-only 写入 gate、operation-log status 查询，以及文档口径。`doctor` 的 runtime bootstrap 仍会执行既有 SQLite 初始化和 baseline guard 初始化；observe-only diagnostics 本身只能读取本地 `operation_log` 的 failed / suppressed `tool` 与 `trigger` 候选，不能调用 `run_reflection`、不能新增 identity / commitments / claims / events / reflections 语义写入，也不能声明 daemon 已具备后台自治。
 
 ### 改 correlation id / operation log observability
 

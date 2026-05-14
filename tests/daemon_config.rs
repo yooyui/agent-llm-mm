@@ -1,4 +1,12 @@
-use agent_llm_mm::support::config::{AppConfig, DaemonConfig};
+use agent_llm_mm::{
+    adapters::sqlite::SqliteStore,
+    domain::operation_log::{ActorKind, OperationLogEntry, OperationLogKind, OperationLogStatus},
+    ports::OperationLogStore,
+    support::config::{AppConfig, DaemonConfig, TransportKind},
+};
+use chrono::Utc;
+use sqlx::sqlite::SqlitePool;
+use tempfile::tempdir;
 
 #[test]
 fn daemon_defaults_to_disabled() {
@@ -30,4 +38,161 @@ async fn doctor_reports_daemon_config_without_starting_daemon() {
     assert!(!report.daemon_enabled);
     assert_eq!(report.daemon_poll_interval_ms, 60_000);
     assert_eq!(report.daemon_max_concurrent_tasks, 1);
+}
+
+#[tokio::test]
+async fn doctor_reports_observe_only_daemon_diagnostics_without_semantic_writes() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(temp_dir.path().join("daemon-observe-only.sqlite"));
+    let config = AppConfig {
+        transport: TransportKind::Stdio,
+        database_url: database_url.clone(),
+        daemon: DaemonConfig {
+            enabled: true,
+            poll_interval_ms: 250,
+            max_concurrent_tasks: 1,
+        },
+        ..Default::default()
+    };
+
+    let _ = agent_llm_mm::run_doctor(config.clone())
+        .await
+        .expect("initial doctor bootstrap should pass");
+    let before = semantic_counts(&database_url).await;
+
+    let report = agent_llm_mm::run_doctor(config)
+        .await
+        .expect("doctor should report observe-only diagnostics");
+    let after = semantic_counts(&database_url).await;
+
+    assert!(report.daemon_enabled);
+    assert_eq!(report.daemon_observe_only.mode, "observe_only");
+    assert!(report.daemon_observe_only.local_only);
+    assert!(!report.daemon_observe_only.write_gate_approved);
+    assert!(!report.daemon_observe_only.writes_allowed);
+    assert!(!report.daemon_observe_only.remote_listener_enabled);
+    assert_eq!(report.daemon_observe_only.in_flight_task_count, 0);
+    assert_eq!(report.daemon_observe_only.trigger_candidates_observed, 0);
+    assert_eq!(report.daemon_observe_only.read_errors, Vec::<String>::new());
+    assert!(
+        report
+            .daemon_observe_only
+            .data_sources
+            .contains(&"daemon_config".to_string())
+    );
+    assert!(
+        report
+            .daemon_observe_only
+            .data_sources
+            .contains(&"operation_log".to_string())
+    );
+    assert_eq!(
+        before, after,
+        "observe-only daemon diagnostics must not write semantic memory tables"
+    );
+}
+
+#[tokio::test]
+async fn doctor_observe_only_daemon_diagnostics_count_local_operation_candidates() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(temp_dir.path().join("daemon-operation-candidates.sqlite"));
+    let store = SqliteStore::bootstrap(&database_url).await.unwrap();
+    store
+        .append_operation(operation_entry(
+            "op-failed-tool",
+            OperationLogKind::Tool,
+            OperationLogStatus::Failed,
+        ))
+        .await
+        .unwrap();
+    store
+        .append_operation(operation_entry(
+            "op-suppressed-trigger",
+            OperationLogKind::Trigger,
+            OperationLogStatus::Suppressed,
+        ))
+        .await
+        .unwrap();
+    for index in 0..30 {
+        store
+            .append_operation(operation_entry(
+                &format!("op-ok-tool-{index}"),
+                OperationLogKind::Tool,
+                OperationLogStatus::Ok,
+            ))
+            .await
+            .unwrap();
+        store
+            .append_operation(operation_entry(
+                &format!("op-ok-trigger-{index}"),
+                OperationLogKind::Trigger,
+                OperationLogStatus::Ok,
+            ))
+            .await
+            .unwrap();
+    }
+
+    let report = agent_llm_mm::run_doctor(AppConfig {
+        database_url,
+        daemon: DaemonConfig {
+            enabled: true,
+            poll_interval_ms: 250,
+            max_concurrent_tasks: 1,
+        },
+        ..Default::default()
+    })
+    .await
+    .expect("doctor should read local operation-log diagnostics");
+
+    assert_eq!(report.daemon_observe_only.trigger_candidates_observed, 1);
+    assert_eq!(report.daemon_observe_only.trigger_candidates_suppressed, 1);
+    assert_eq!(report.daemon_observe_only.cooldown_status, "observe_only");
+    assert_eq!(report.daemon_observe_only.read_errors, Vec::<String>::new());
+}
+
+fn sqlite_url(path: impl AsRef<std::path::Path>) -> String {
+    format!(
+        "sqlite://{}",
+        path.as_ref().to_string_lossy().replace('\\', "/")
+    )
+}
+
+async fn semantic_counts(database_url: &str) -> (i64, i64, i64, i64, i64) {
+    let pool = SqlitePool::connect(database_url).await.unwrap();
+    let events = table_count(&pool, "events").await;
+    let claims = table_count(&pool, "claims").await;
+    let reflections = table_count(&pool, "reflections").await;
+    let identity_claims = table_count(&pool, "identity_claims").await;
+    let commitments = table_count(&pool, "commitments").await;
+    (events, claims, reflections, identity_claims, commitments)
+}
+
+async fn table_count(pool: &SqlitePool, table: &str) -> i64 {
+    let sql = format!("SELECT COUNT(*) FROM {table}");
+    sqlx::query_scalar::<_, i64>(&sql)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+fn operation_entry(
+    operation_id: &str,
+    operation_kind: OperationLogKind,
+    status: OperationLogStatus,
+) -> OperationLogEntry {
+    OperationLogEntry {
+        operation_id: operation_id.to_string(),
+        occurred_at: Utc::now(),
+        namespace: Some("self".to_string()),
+        actor_kind: ActorKind::System,
+        actor_id: "daemon-observe-only-test".to_string(),
+        entrypoint: operation_id.to_string(),
+        operation_kind,
+        status,
+        correlation_id: Some(format!("corr-{operation_id}")),
+        request_summary_json: None,
+        response_summary_json: None,
+        diagnostic_summary_json: None,
+        redaction_version: 1,
+    }
 }

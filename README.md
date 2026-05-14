@@ -17,7 +17,7 @@
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
 - 最新 fresh 验证：`2026-05-14`
-  - `cargo test` 全量通过，共 190 个测试
+  - `cargo test` 全量通过，共 194 个测试
   - `doctor` 预检返回 `status = ok`
   - self-revision demo package 可一键生成本地证据链
 
@@ -94,6 +94,10 @@
   - 输出 redacted `doctor` shape、config shape、bounded operation summaries、release metadata、product smoke summary 和 manifest
   - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不包含 provider payload、不上传数据
   - 该能力只是 Local Alpha 诊断辅助，不代表生产支持通道、远程上传能力或 Local Alpha 已完成
+- observe-only daemon diagnostics
+  - `doctor` 输出新增 `daemon_observe_only` 本机只读诊断字段，用于展示 observe-only 模式、数据源、候选计数、cooldown 状态、并发占用和读取错误
+  - 当 `[daemon].enabled = true` 时，diagnostics 只读取本地 `operation_log` 中 `tool` / `trigger` 的 `failed` 与 `suppressed` 候选，并保持 `write_gate_approved = false`、`writes_allowed = false`、`remote_listener_enabled = false`
+  - 这只是 daemon 写能力前的观察 gate，不调用 `run_reflection`，不新增 identity / commitments / reflection durable write path，也不代表后台自治或 Local Alpha 已完成
 - `namespace` 最小闭环
   - `self`
   - `world`

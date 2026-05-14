@@ -8,6 +8,7 @@ pub struct OperationLogQuery {
     pub operation_id: Option<String>,
     pub namespace: Option<String>,
     pub operation_kind: Option<String>,
+    pub status: Option<String>,
     pub correlation_id: Option<String>,
     pub limit: Option<usize>,
     pub after: Option<DateTime<Utc>>,
