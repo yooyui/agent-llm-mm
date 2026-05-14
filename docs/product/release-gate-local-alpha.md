@@ -164,7 +164,8 @@ Required boundary:
 
 - bind only to localhost or an explicitly local address
 - expose read-only routes for local observation, including bounded live events
-  and durable operation-log history
+  and durable operation-log history for known MCP tool calls whose
+  object-shaped arguments reach project handlers
 - do not expose write actions from the dashboard
 - do not publish the dashboard through a public reverse proxy without a separate gate covering auth, authorization, audit, rollback, and transport risk
 
@@ -174,6 +175,11 @@ Recommended verification when dashboard behavior changes:
 cargo test --test dashboard_config --test dashboard_recorder --test dashboard_projection --test dashboard_http
 cargo test --test mcp_stdio dashboard_enabled_does_not_corrupt_mcp_stdout_and_records_tool_event -v
 cargo test --test mcp_stdio dashboard_exposes_durable_operation_log_history_for_mcp_calls -v
+cargo test --test mcp_stdio mcp_tool_failure_appends_failed_operation_log_without_changing_error_semantics -v
+cargo test --test mcp_stdio handler_reached_missing_fields_append_failed_operation_log_without_changing_error_semantics -v
+cargo test --test mcp_stdio mcp_tool_failure_does_not_persist_provider_error_payload_in_operation_log -v
+cargo test --test mcp_stdio dashboard_failed_tool_event_does_not_expose_provider_error_payload -v
+cargo test --test mcp_stdio non_object_mcp_tool_arguments_do_not_reach_handler_operation_log -v
 ```
 
 ## Daemon Gate

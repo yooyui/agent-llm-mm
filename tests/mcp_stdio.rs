@@ -37,6 +37,41 @@ async fn server_exposes_expected_tools_over_stdio() {
     );
 }
 
+#[tokio::test]
+async fn server_preserves_tool_input_schemas_over_stdio() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let tools = client.list_all_tools().await.unwrap();
+    let ingest_schema = tools
+        .iter()
+        .find(|tool| tool.name == "ingest_interaction")
+        .map(|tool| &tool.input_schema)
+        .expect("ingest_interaction tool schema");
+
+    let required_fields = ingest_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .expect("ingest schema should expose required fields")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+
+    assert!(
+        required_fields.contains(&"event"),
+        "ingest schema should preserve the event parameter: {ingest_schema:?}"
+    );
+    assert!(
+        required_fields.contains(&"claim_drafts"),
+        "ingest schema should preserve the claim_drafts parameter: {ingest_schema:?}"
+    );
+    assert!(
+        ingest_schema
+            .get("properties")
+            .and_then(|properties| properties.get("event"))
+            .is_some(),
+        "ingest schema should include event property details: {ingest_schema:?}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ingest_interaction_returns_success_even_when_best_effort_auto_reflection_fails() {
     let stub = test_support::StubServer::spawn(
@@ -1719,6 +1754,180 @@ timeout_ms = 30000
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mcp_tool_failure_does_not_persist_provider_error_payload_in_operation_log() {
+    let provider_payload_secret = "sk-provider-payload-should-not-persist";
+    let stub = test_support::StubServer::spawn(
+        500,
+        json!({
+            "error": {
+                "message": provider_payload_secret
+            }
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "decide_with_snapshot",
+            json!({
+                "task": "summarize current memory",
+                "action": "read_identity_core",
+                "snapshot": {
+                    "identity": ["identity:self=architect"],
+                    "commitments": [],
+                    "claims": ["self.role is architect"],
+                    "evidence": ["event:evt-1"],
+                    "episodes": ["episode:task-6"]
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+    let error = response
+        .get("error")
+        .expect("provider error should still be returned as MCP error");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32603));
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let row = sqlx::query(
+        "SELECT status, diagnostic_summary_json \
+         FROM operation_log WHERE entrypoint = 'decide_with_snapshot' \
+         ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("provider-backed failed MCP tool call should write operation log entry");
+
+    assert_eq!(row.get::<String, _>("status"), "failed");
+    let diagnostic_summary = row
+        .get::<Option<String>, _>("diagnostic_summary_json")
+        .expect("failed provider operation should include diagnostic summary");
+    assert!(
+        !diagnostic_summary.contains(provider_payload_secret),
+        "operation log must not persist raw provider error payload: {diagnostic_summary}"
+    );
+    assert!(
+        diagnostic_summary.contains("internal error"),
+        "diagnostic summary should preserve only the MCP error class: {diagnostic_summary}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dashboard_failed_tool_event_does_not_expose_provider_error_payload() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
+    let port = listener.local_addr().expect("local addr").port();
+    drop(listener);
+    let provider_payload_secret = "sk-provider-dashboard-payload-should-not-persist";
+    let stub = test_support::StubServer::spawn(
+        500,
+        json!({
+            "error": {
+                "message": provider_payload_secret
+            }
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+
+[dashboard]
+enabled = true
+host = "127.0.0.1"
+port = {port}
+event_capacity = 50
+required = true
+"#,
+        stub.base_url()
+    );
+    let mut client = test_support::spawn_stdio_client_with_config(config)
+        .await
+        .expect("client");
+    let _ = client.list_all_tools().await.expect("list tools");
+
+    let response = client
+        .call_tool(
+            "decide_with_snapshot",
+            json!({
+                "task": "summarize current memory",
+                "action": "read_identity_core",
+                "snapshot": {
+                    "identity": ["identity:self=architect"],
+                    "commitments": [],
+                    "claims": ["self.role is architect"],
+                    "evidence": ["event:evt-1"],
+                    "episodes": ["episode:task-6"]
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+    let error = response
+        .get("error")
+        .expect("provider error should still be returned as MCP error");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32603));
+
+    let events: serde_json::Value =
+        reqwest::get(format!("http://127.0.0.1:{port}/api/events?limit=10"))
+            .await
+            .expect("dashboard events response")
+            .json()
+            .await
+            .expect("dashboard events json");
+    let failed_event = events
+        .as_array()
+        .expect("events array")
+        .iter()
+        .find(|event| {
+            event.get("operation").and_then(Value::as_str) == Some("decide_with_snapshot")
+                && event.get("status").and_then(Value::as_str) == Some("failed")
+        })
+        .expect("dashboard should record the failed MCP tool operation");
+    let failed_event_json = failed_event.to_string();
+    assert!(
+        !failed_event_json.contains(provider_payload_secret),
+        "dashboard failed event must not expose raw provider payload: {failed_event:?}"
+    );
+    assert!(
+        failed_event_json.contains("internal error"),
+        "dashboard failed event should keep a bounded error class: {failed_event:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dashboard_enabled_does_not_corrupt_mcp_stdout_and_records_tool_event() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
     let port = listener.local_addr().expect("local addr").port();
@@ -1986,6 +2195,158 @@ async fn mcp_tool_call_appends_operation_log_with_correlation_id() {
             .as_deref()
             .is_some_and(|correlation_id| correlation_id.starts_with("mcp-tool-call-")),
         "operation log entry should include generated MCP correlation id"
+    );
+}
+
+#[tokio::test]
+async fn mcp_tool_failure_appends_failed_operation_log_without_changing_error_semantics() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "This should fail because the namespace is incompatible."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "namespace": "user/default",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": null
+            }),
+        )
+        .await
+        .unwrap();
+
+    let error = response
+        .get("error")
+        .expect("invalid params should still return an MCP error");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let row = sqlx::query(
+        "SELECT entrypoint, operation_kind, status, correlation_id, diagnostic_summary_json \
+         FROM operation_log WHERE entrypoint = 'ingest_interaction' \
+         ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("failed MCP tool call should write an operation log entry");
+
+    assert_eq!(row.get::<String, _>("entrypoint"), "ingest_interaction");
+    assert_eq!(row.get::<String, _>("operation_kind"), "tool");
+    assert_eq!(row.get::<String, _>("status"), "failed");
+    let correlation_id = row.get::<Option<String>, _>("correlation_id");
+    assert!(
+        correlation_id
+            .as_deref()
+            .is_some_and(|correlation_id| correlation_id.starts_with("mcp-tool-call-")),
+        "failed operation log entry should include generated MCP correlation id"
+    );
+    let diagnostic_summary = row
+        .get::<Option<String>, _>("diagnostic_summary_json")
+        .expect("failed operation should include diagnostic summary");
+    assert!(
+        diagnostic_summary.contains("invalid params"),
+        "diagnostic summary should preserve the error class: {diagnostic_summary}"
+    );
+}
+
+#[tokio::test]
+async fn handler_reached_missing_fields_append_failed_operation_log_without_changing_error_semantics()
+ {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool("ingest_interaction", json!({}))
+        .await
+        .unwrap();
+
+    let error = response
+        .get("error")
+        .expect("handler-reached missing fields should still return an MCP error");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let row = sqlx::query(
+        "SELECT entrypoint, operation_kind, status, correlation_id, diagnostic_summary_json \
+         FROM operation_log WHERE entrypoint = 'ingest_interaction' \
+         ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("handler-reached missing fields should write a failed operation log entry");
+
+    assert_eq!(row.get::<String, _>("entrypoint"), "ingest_interaction");
+    assert_eq!(row.get::<String, _>("operation_kind"), "tool");
+    assert_eq!(row.get::<String, _>("status"), "failed");
+    let correlation_id = row.get::<Option<String>, _>("correlation_id");
+    assert!(
+        correlation_id
+            .as_deref()
+            .is_some_and(|correlation_id| correlation_id.starts_with("mcp-tool-call-")),
+        "failed operation log entry should include generated MCP correlation id"
+    );
+    let diagnostic_summary = row
+        .get::<Option<String>, _>("diagnostic_summary_json")
+        .expect("failed operation should include diagnostic summary");
+    assert!(
+        diagnostic_summary.contains("invalid params"),
+        "diagnostic summary should preserve the MCP error class: {diagnostic_summary}"
+    );
+    assert!(
+        diagnostic_summary.contains("missing field"),
+        "diagnostic summary should preserve bounded parameter-shape detail: {diagnostic_summary}"
+    );
+}
+
+#[tokio::test]
+async fn non_object_mcp_tool_arguments_do_not_reach_handler_operation_log() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool("ingest_interaction", json!("not-an-object"))
+        .await;
+
+    if let Ok(response) = response {
+        assert!(
+            response.get("error").is_some(),
+            "non-object arguments should not produce a successful tool result: {response:?}"
+        );
+    }
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let entry_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM operation_log WHERE entrypoint = 'ingest_interaction'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("operation log count should be queryable");
+
+    assert_eq!(
+        entry_count, 0,
+        "framework-level non-object arguments should not be reported as handler operation logs"
     );
 }
 
@@ -2814,6 +3175,8 @@ mod test_support {
     #[derive(Debug, Deserialize)]
     pub struct Tool {
         pub name: String,
+        #[serde(rename = "inputSchema")]
+        pub input_schema: Value,
     }
 
     impl StdioClient {

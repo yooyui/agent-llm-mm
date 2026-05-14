@@ -43,14 +43,14 @@ Completed locally and validated:
 
 Completed as read-only evidence:
 
-- [x] Task E1: Runtime Operation Log Wiring Review. Current finding: operation log domain model and SQLite persistence exist. Successful MCP tool calls now append operation-log entries with generated correlation ids, dashboard events/projections preserve correlation ids, and dashboard now exposes a local read-only durable operation-log history query surface.
+- [x] Task E1: Runtime Operation Log Wiring Review. Current finding: operation log domain model and SQLite persistence exist. Known MCP tool calls whose object-shaped arguments reach project handlers now append operation-log entries for success and handler-reached failures with generated correlation ids, dashboard events/projections preserve correlation ids, dashboard failure events use bounded diagnostic classes instead of provider payloads, and dashboard now exposes a local read-only durable operation-log history query surface. Framework-level parse/router failures remain outside this handler-level operation-log coverage.
 
 Next execution queue:
 
 - [ ] Build observe-only daemon diagnostics behind the no-write gate.
-- [ ] Add durable operation-log entries for failure paths without changing MCP error semantics.
+- [x] Add durable operation-log entries for failure paths without changing MCP error semantics.
 
-Current Local Alpha state remains: validated local MVP entering productization. Product Smoke, Data Safety, Support Bundle Generator, Daemon Observe-Only Gate, Correlation ID Contract, and Durable Operation-Log Dashboard History now have working local paths or reviewed design gates, but Local Alpha is not complete until observe-only daemon diagnostics, failure-path durable operation logs, and the full Local Alpha gate have fresh evidence.
+Current Local Alpha state remains: validated local MVP entering productization. Product Smoke, Data Safety, Support Bundle Generator, Daemon Observe-Only Gate, Correlation ID Contract, Durable Operation-Log Dashboard History, and failure-path durable operation-log metadata now have working local paths or reviewed design gates, but Local Alpha is not complete until observe-only daemon diagnostics and the full Local Alpha gate have fresh evidence.
 
 ## File Map
 
@@ -532,7 +532,7 @@ git commit -m "docs: classify durable observability gaps"
 
 Boundary:
 
-- Failure dashboard events carry generated correlation ids, but failure-path durable operation-log writes are not part of this task.
+- Failure dashboard events carry generated correlation ids; durable failure operation-log writes are covered by Task E4.
 - Correlation ids are observability metadata only; `run_reflection` remains the only durable identity / commitment write path.
 
 **Verification:**
@@ -601,6 +601,61 @@ git add src/interfaces/dashboard/http.rs src/interfaces/dashboard/mod.rs src/int
 git commit -m "feat: expose dashboard operation log history"
 ```
 
+### Task E4: Failure-Path Durable Operation-Log Entries
+
+**Owner:** worker.
+
+**Purpose:** Make failed MCP tool calls visible in durable local operation-log
+history without changing MCP error semantics.
+
+**Files:**
+
+- Modify: `src/interfaces/mcp/server.rs`
+- Modify: `tests/mcp_stdio.rs`
+- Modify: `README.md`
+- Modify: `docs/project-status.md`
+- Modify: `docs/progress-tracker.md`
+- Modify: `docs/product/release-gate-local-alpha.md`
+- Modify: `docs/testing-guide-2026-03-24.md`
+
+**Checklist:**
+
+- [x] Write a failing test proving an invalid MCP tool call returns the same
+  MCP error code while appending a durable `operation_log` entry with
+  `status = failed`.
+- [x] Record failed MCP tool operation metadata through the same
+  `mcp-tool-call-<uuid-v4>` correlation id used by dashboard failure events.
+- [x] Keep diagnostic summaries bounded to MCP error class/code and safe
+  static detail categories, not raw request payloads or provider payloads.
+- [x] Preserve `run_reflection` as the only durable identity / commitment /
+  reflection write path.
+
+**Boundary:**
+
+- This task records MCP tool failure metadata only.
+- It does not convert best-effort auto-reflection failures into MCP errors.
+- It does not add dashboard write actions, remote management, auth, daemon
+  behavior, or provider-payload logging.
+
+**Verification:**
+
+```bash
+cargo test --test mcp_stdio mcp_tool_failure_appends_failed_operation_log_without_changing_error_semantics -v
+cargo test --test mcp_stdio handler_reached_missing_fields_append_failed_operation_log_without_changing_error_semantics -v
+cargo test --test mcp_stdio mcp_tool_failure_does_not_persist_provider_error_payload_in_operation_log -v
+cargo test --test mcp_stdio dashboard_failed_tool_event_does_not_expose_provider_error_payload -v
+cargo test --test mcp_stdio non_object_mcp_tool_arguments_do_not_reach_handler_operation_log -v
+cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -v
+cargo test --test dashboard_projection --test dashboard_http --test mcp_stdio --test operation_log -v
+```
+
+**Commit:**
+
+```bash
+git add src/interfaces/mcp/server.rs tests/mcp_stdio.rs README.md docs/project-status.md docs/progress-tracker.md docs/product/release-gate-local-alpha.md docs/testing-guide-2026-03-24.md docs/superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md
+git commit -m "feat: log failed MCP operations"
+```
+
 ## Milestone F: Observe-Only Daemon Gate
 
 ### Task F1: Daemon Observe-Only Gate Doc
@@ -653,6 +708,7 @@ git commit -m "docs: gate observe-only daemon work"
 11. [x] Task E2: Correlation ID Contract
 12. [x] Task E3: Durable Operation-Log Dashboard History Query
 13. [x] Task D3: Local Support Bundle Generator
+14. [x] Task E4: Failure-Path Durable Operation-Log Entries
 
 This order keeps the first three commits documentation-heavy, then moves into scripts and tests, then only touches runtime behavior after product gates are clear.
 

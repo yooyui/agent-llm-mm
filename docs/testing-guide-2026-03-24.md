@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-09 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-14 fresh 验证更新）
 
 ## 1. 目标
 
@@ -28,13 +28,13 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-05-09`，`cargo test` 全量通过，摘要如下：
+截至 `2026-05-14`，`cargo test` 全量通过，摘要如下：
 
 - `application_use_cases`: 22 passed
-- `bootstrap`: 16 passed
+- `bootstrap`: 17 passed
 - `daemon_config`: 3 passed
 - `dashboard_config`: 4 passed
-- `dashboard_http`: 5 passed
+- `dashboard_http`: 7 passed
 - `dashboard_projection`: 2 passed
 - `dashboard_recorder`: 2 passed
 - `decision_flow`: 2 passed
@@ -43,14 +43,15 @@
 - `domain_snapshot`: 6 passed
 - `evidence_query_dto`: 2 passed
 - `failure_modes`: 31 passed
-- `mcp_stdio`: 27 passed
+- `mcp_stdio`: 36 passed
 - `openai_compatible_model`: 9 passed
-- `operation_log`: 6 passed
-- `provider_config`: 6 passed
+- `operation_log`: 7 passed
+- `provider_config`: 9 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_store`: 20 passed
+- `support_bundle`: 4 passed
 
-合计：170 个测试通过。
+合计：190 个测试通过。
 
 ---
 
@@ -962,11 +963,17 @@ git diff --check
 
 ```zsh
 cargo test --test dashboard_projection --test dashboard_http --test mcp_stdio --test operation_log -v
+cargo test --test mcp_stdio mcp_tool_failure_does_not_persist_provider_error_payload_in_operation_log -v
+cargo test --test mcp_stdio dashboard_failed_tool_event_does_not_expose_provider_error_payload -v
+```
+
+这组命令验证 MCP tool call 级 correlation id、dashboard 详情投影、`/api/operation-log` 本机只读 durable history 查询和 handler-level MCP tool operation-log 元数据。失败路径记录不改变 MCP error code / error message 语义，且 durable diagnostic 与 dashboard failure event 只保留安全分类元数据，不落 raw request / provider payload；该链路只是 observability metadata，不代表新增 identity / commitments / reflection 的旁路写入能力。`rmcp` framework-level 解析/路由失败（例如非 object `arguments`）不进入项目 handler，因此不声明为 durable operation-log 覆盖范围。
+
+```zsh
+cargo test --test mcp_stdio non_object_mcp_tool_arguments_do_not_reach_handler_operation_log -v
 rg -n 'correlation_id|mcp-tool-call|run_reflection|operation-log' docs/product/correlation-id-contract.md docs/product/release-gate-local-alpha.md
 git diff --check
 ```
-
-这组命令验证 MCP tool call 级 correlation id、dashboard 详情投影、`/api/operation-log` 本机只读 durable history 查询和 operation-log 元数据。该链路只是 observability metadata，不代表新增 identity / commitments / reflection 的旁路写入能力。
 
 ### 改 `src/support/config.rs`
 
@@ -996,7 +1003,7 @@ demo / MVP 发布前核验不使用这段简表作为最终依据；请按 [Rele
 
 ## 11. 当前结论
 
-截至 `2026-05-09`，推荐把下面五条当作普通提交前基线；demo / MVP 发布前仍以 [Release Gate](release-gate.md) 为准；Local Alpha / product alpha 发布前以 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 为准：
+截至 `2026-05-14`，推荐把下面五条当作普通提交前基线；demo / MVP 发布前仍以 [Release Gate](release-gate.md) 为准；Local Alpha / product alpha 发布前以 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 为准：
 
 ```zsh
 cargo fmt --check

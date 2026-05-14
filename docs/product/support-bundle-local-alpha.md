@@ -126,7 +126,6 @@ product release. Remaining Local Alpha gaps include:
 - the full Local Alpha release gate still needs fresh evidence for the same
   release candidate
 - observe-only daemon diagnostics remain a later task
-- failure-path durable operation-log entries remain a later task
 - this bundle is not a remote upload flow, support ticket integration, or
   production support readiness claim
 
