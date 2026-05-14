@@ -36,6 +36,7 @@ Completed locally and validated:
 - [x] Task C2: Product Smoke Script.
 - [x] Task D1: SQLite Backup and Restore Runbook.
 - [x] Task D2: Support Bundle Design.
+- [x] Task D3: Local Support Bundle Generator.
 - [x] Task E2: Correlation ID Contract.
 - [x] Task E3: Durable Operation-Log Dashboard History Query.
 - [x] Task F1: Daemon Observe-Only Gate Doc.
@@ -46,10 +47,10 @@ Completed as read-only evidence:
 
 Next execution queue:
 
-- [ ] Implement the support bundle script after operation-log history and log locations are stable.
 - [ ] Build observe-only daemon diagnostics behind the no-write gate.
+- [ ] Add durable operation-log entries for failure paths without changing MCP error semantics.
 
-Current Local Alpha state remains: validated local MVP entering productization. Product Smoke, Data Safety, Support Bundle Design, Daemon Observe-Only Gate, Correlation ID Contract, and Durable Operation-Log Dashboard History now have working local paths or reviewed design gates, but Local Alpha is not complete until support bundle automation, observe-only daemon diagnostics, and the full Local Alpha gate have fresh evidence.
+Current Local Alpha state remains: validated local MVP entering productization. Product Smoke, Data Safety, Support Bundle Generator, Daemon Observe-Only Gate, Correlation ID Contract, and Durable Operation-Log Dashboard History now have working local paths or reviewed design gates, but Local Alpha is not complete until observe-only daemon diagnostics, failure-path durable operation logs, and the full Local Alpha gate have fresh evidence.
 
 ## File Map
 
@@ -76,11 +77,13 @@ Likely script and test files:
 - Modify: `scripts/agent-llm-mm.sh`
 - Modify: `scripts/agent-llm-mm.ps1`
 - Create: `scripts/product-smoke-local.sh`
+- Create: `scripts/generate-support-bundle.sh`
 - Create: `scripts/backup-sqlite.sh`
 - Create: `scripts/restore-sqlite.sh`
 - Create: `tests/product_smoke.rs` if Rust-level smoke helpers are needed
 - Modify: `tests/bootstrap.rs`
 - Modify: `tests/provider_config.rs`
+- Create: `tests/support_bundle.rs`
 - Modify: `tests/operation_log.rs`
 - Modify: `tests/daemon_config.rs`
 - Modify: `tests/dashboard_http.rs`
@@ -392,6 +395,76 @@ git add docs/product/support-bundle-local-alpha.md docs/product/release-gate-loc
 git commit -m "docs: design local support bundle"
 ```
 
+### Task D3: Local Support Bundle Generator
+
+**Owner:** worker, with spec and code quality review.
+
+**Purpose:** Generate the first local-only redacted diagnostic support bundle
+after durable operation-log history became available.
+
+**Files:**
+
+- Create: `src/support/support_bundle.rs`
+- Create: `src/bin/generate_support_bundle.rs`
+- Create: `scripts/generate-support-bundle.sh`
+- Create: `tests/support_bundle.rs`
+- Modify: `src/support/mod.rs`
+- Modify: `docs/product/support-bundle-local-alpha.md`
+- Modify: `docs/product/release-gate-local-alpha.md`
+- Modify: `docs/testing-guide-2026-03-24.md`
+- Modify: `README.md`, `docs/project-status.md`, `docs/progress-tracker.md`,
+  `docs/document-map.md`, `docs/roadmap.md`, `docs/development-macos.md`
+
+**Checklist:**
+
+- [x] Generate `manifest.json`, `doctor.json`, `config-shape.json`,
+  `operation-summaries.json`, `release-metadata.json`, and
+  `product-smoke-summary.json`.
+- [x] Keep the bundle local-only with `upload_performed = false`.
+- [x] Redact SQLite database paths to `sqlite://<local-path>`.
+- [x] Represent provider credentials as a boolean rather than a secret value.
+- [x] Emit provider URL shape without userinfo or query string values.
+- [x] Exclude full SQLite databases, raw TOML, provider payloads, auth headers,
+  bearer values, cookies, browser session data, and SSH keys by default.
+- [x] Limit operation summaries to metadata-only durable entries.
+- [x] Read operation summaries through a read-only SQLite connection.
+- [x] Do not create, migrate, or bootstrap a missing SQLite database during
+  support bundle generation.
+- [x] Do not seed default identity or commitments while generating a support
+  bundle.
+- [x] Keep `run_reflection` as the only durable identity / commitments /
+  reflection write path.
+- [x] Keep logs excluded until log locations and log redaction rules are stable.
+- [x] Reject non-empty output directories before writing bundle artifacts so
+  stale local files cannot be shared as part of the support bundle.
+
+**Boundary:**
+
+- This is not a production support channel.
+- This does not upload data.
+- This does not complete Local Product Alpha by itself.
+- This does not add observe-only daemon diagnostics.
+- This does not add failure-path durable operation-log entries.
+
+**Verification:**
+
+```bash
+cargo test --test support_bundle -v
+bash -n scripts/generate-support-bundle.sh
+rm -rf target/support-bundles/manual-check
+./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
+rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/manual-check || true
+find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' \) -print
+```
+
+**Commit:**
+
+```bash
+git add src/support/mod.rs src/support/support_bundle.rs src/bin/generate_support_bundle.rs scripts/generate-support-bundle.sh tests/support_bundle.rs README.md docs/project-status.md docs/progress-tracker.md docs/document-map.md docs/roadmap.md docs/development-macos.md docs/product/support-bundle-local-alpha.md docs/product/release-gate-local-alpha.md docs/testing-guide-2026-03-24.md docs/superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md
+git commit -m "feat: add local support bundle generator"
+```
+
 ## Milestone E: Durable Observability
 
 ### Task E1: Runtime Operation Log Wiring Review
@@ -579,6 +652,7 @@ git commit -m "docs: gate observe-only daemon work"
 10. [x] Task F1: Daemon Observe-Only Gate Doc
 11. [x] Task E2: Correlation ID Contract
 12. [x] Task E3: Durable Operation-Log Dashboard History Query
+13. [x] Task D3: Local Support Bundle Generator
 
 This order keeps the first three commits documentation-heavy, then moves into scripts and tests, then only touches runtime behavior after product gates are clear.
 

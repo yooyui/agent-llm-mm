@@ -933,14 +933,21 @@ git diff --check
 
 这组命令只覆盖 Local Alpha product smoke 入口；demo / MVP 发布前仍以 `release-gate.md` 为准，Local Alpha 发布前仍以 `docs/product/release-gate-local-alpha.md` 为准。
 
-### 改 Local Alpha support bundle design
+### 改 Local Alpha support bundle
 
 ```zsh
-rg -n 'API key|redact|support bundle|excluded|doctor' docs/product/support-bundle-local-alpha.md docs/product/release-gate-local-alpha.md
+cargo test --test support_bundle -v
+bash -n scripts/generate-support-bundle.sh
+rm -rf target/support-bundles/manual-check
+./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
+rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/manual-check || true
+find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' \) -print
+rg -n 'API key|redact|support bundle|excluded|doctor|generate-support-bundle' docs/product/support-bundle-local-alpha.md docs/product/release-gate-local-alpha.md
 git diff --check
 ```
 
-这只验证 support bundle 的设计 gate。当前没有一键 support bundle 生成脚本；不要把该文档写成自动化能力已完成。
+这组命令验证首版本地 support bundle 生成器、脚本入口、脱敏边界、read-only operation-log 查询和文档口径。输出目录必须不存在或为空；测试会覆盖非空目录被拒绝，避免旧的本地文件混入可分享支持包。敏感词扫描应无实际泄露；最后一个 `find` 命令不应打印 `.sqlite` 或 `.toml` 文件。该生成器不会创建或迁移缺失 SQLite 数据库，也不会通过 runtime bootstrap seed 默认 identity / commitments；它仍是本地诊断辅助，不代表远程上传、生产支持通道或 Local Alpha 完成。
 
 ### 改 daemon observe-only gate
 

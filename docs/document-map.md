@@ -40,7 +40,7 @@
 - [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
   - Local Alpha / product alpha release gate，区分 MVP gate 与产品 gate，收口最低命令、product smoke evidence、self-revision demo 8 个 artifact、dashboard local-only、daemon disabled / observe-only 和产品文案边界
 - [product/support-bundle-local-alpha.md](product/support-bundle-local-alpha.md)
-  - Local Alpha 支持包设计 gate，定义可分享内容、排除内容、脱敏术语和后续自动化测试期望；当前不代表一键 support bundle 脚本已实现
+  - Local Alpha 支持包 gate，定义首版本地生成器、可分享内容、排除内容、脱敏术语、验证命令和剩余限制；当前不代表生产支持通道或 Local Alpha 已完成
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
   - daemon observe-only gate，定义 Local Alpha 阶段只读诊断边界、forbidden behavior、required diagnostics 和进入写能力前的退出 gate
 - [product/correlation-id-contract.md](product/correlation-id-contract.md)
@@ -75,7 +75,7 @@
 - [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
   - 判断 Local Alpha 是否可对外表述前阅读；它是产品 alpha gate，不替代 `release-gate.md` 的 MVP gate
 - [product/support-bundle-local-alpha.md](product/support-bundle-local-alpha.md)
-  - 设计本地排障材料或支持包前阅读，避免泄露 API keys、raw provider payloads 或完整 SQLite 数据库
+  - 生成或设计本地排障材料前阅读，避免泄露 API keys、raw provider payloads、provider URL secrets、raw TOML 或完整 SQLite 数据库
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
   - 任何 daemon 代码或文档推进前阅读，确认 observe-only 阶段不调用 `run_reflection`、不写 identity / commitments、不开远程监听
 - [product/correlation-id-contract.md](product/correlation-id-contract.md)
@@ -113,7 +113,7 @@
 - [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
   - Local Alpha release gate；产品化发布前从这里确认 product smoke、self-revision demo、dashboard local-only、daemon observe-only 和 remote write / multi-tenancy 文案边界
 - [product/support-bundle-local-alpha.md](product/support-bundle-local-alpha.md)
-  - Local Alpha support bundle 设计；目前是设计 gate，不是自动化生成脚本
+  - Local Alpha support bundle gate；当前已有 `./scripts/generate-support-bundle.sh <output_dir> [config_path]` 首版本地生成器，但仍不是远程上传或生产支持能力
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
   - Local Alpha daemon observe-only gate；防止 daemon work 提前进入写能力或后台自治声明
 - [product/correlation-id-contract.md](product/correlation-id-contract.md)

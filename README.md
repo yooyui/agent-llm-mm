@@ -88,6 +88,12 @@
   - 成功的 MCP tool 调用会追加 tool-level `operation_log` 元数据，便于按 correlation id 排查；这只是 observability metadata，不是新的 identity / commitment / reflection 写路径
   - 本机只读 dashboard API 已提供 `GET /api/operation-log` 与 `GET /api/operation-log/{id}` durable history 查询，可按 `limit`、`namespace`、`kind`、`correlation_id` 做受限排障；history 列表默认最多返回 100 条，单次查询最大 100 条
   - 不改变 MCP tool 列表，不污染 MCP `stdout`
+- local support bundle generator
+  - 提供首版本机排障材料生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path]`
+  - `<output_dir>` 必须不存在或为空，避免旧的本地文件混入可分享支持包目录
+  - 输出 redacted `doctor` shape、config shape、bounded operation summaries、release metadata、product smoke summary 和 manifest
+  - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不包含 provider payload、不上传数据
+  - 该能力只是 Local Alpha 诊断辅助，不代表生产支持通道、远程上传能力或 Local Alpha 已完成
 - `namespace` 最小闭环
   - `self`
   - `world`
@@ -162,6 +168,14 @@
 ```
 
 该命令会启动本地 demo stub provider、跑完整 canonical scenario，并把 artifact 输出到 `target/reports/self-revision-demo/...`。
+
+如果要生成本地排障支持包，可以运行：
+
+```zsh
+./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+```
+
+输出目录必须不存在或为空；生成器会拒绝非空目录，避免旧的本地文件被误当作支持包内容分享。该支持包只包含脱敏 JSON 摘要，不会复制完整 SQLite 数据库、raw TOML 或 provider payload。
 
 ## 文档导航
 

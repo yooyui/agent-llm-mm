@@ -62,22 +62,48 @@ This gate proves the current local wrapper path, optional config bootstrap healt
 
 ## Support Bundle Gate
 
-Local Alpha support bundle behavior is currently a design contract, not an
-implemented generator. Review
-[`support-bundle-local-alpha.md`](support-bundle-local-alpha.md) before sharing
-debugging material.
+Local Alpha support bundle behavior now has a first local-only generator:
+
+```bash
+./scripts/generate-support-bundle.sh <output_dir> [config_path]
+```
+
+Review [`support-bundle-local-alpha.md`](support-bundle-local-alpha.md) before
+sharing debugging material. The generator is evidence for local diagnostic
+packaging, not evidence that Local Alpha, production support, or remote upload
+flows are complete.
 
 Required boundary:
 
-- allowed contents are limited to `doctor` output, redacted config shape, bounded
-  operation summaries after durable log wiring exists, log excerpts after log
-  locations are stable, release metadata, and product smoke evidence summaries
+- `<output_dir>` must not exist yet or must be empty; generation must fail before
+  writing bundle artifacts if the requested directory already contains files
+- allowed contents are limited to redacted `doctor` shape, redacted config shape,
+  bounded operation summaries, release metadata, product smoke evidence summary,
+  and bundle manifest metadata
+- support bundle generation must not call normal runtime bootstrap, create or
+  migrate SQLite databases, or seed default identity / commitments
+- operation summaries must use read-only local SQLite access and mark themselves
+  unavailable when the database or `operation_log` table is absent
 - excluded contents include API keys, `Authorization` / `Bearer` values, raw
   provider payloads with secrets, full SQLite databases by default, unredacted
-  TOML files, SSH keys, cookies, and browser session data
-- future automation must have redaction tests before it is treated as a product
-  feature
+  TOML files, provider URL userinfo/query secrets, SSH keys, cookies, and
+  browser session data
+- local log excerpts remain excluded until log locations and redaction rules are
+  stable
+- support bundle tests must prove redaction and bounded operation summaries
 - no support bundle flow may upload data or claim production support readiness
+
+Recommended verification when support bundle behavior changes:
+
+```bash
+cargo test --test support_bundle -v
+bash -n scripts/generate-support-bundle.sh
+rm -rf target/support-bundles/manual-check
+./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
+rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/manual-check || true
+find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' \) -print
+```
 
 ## Correlation ID Gate
 
