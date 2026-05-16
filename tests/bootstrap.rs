@@ -9,7 +9,7 @@ use agent_llm_mm::{
 use std::{
     collections::HashMap,
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
     sync::{Mutex, OnceLock},
     time::Duration,
@@ -191,8 +191,9 @@ fn wrapper_scripts_reject_unsupported_modes_with_exit_code_two() {
             String::from_utf8_lossy(&shell_output.stderr)
         );
         assert!(
-            String::from_utf8_lossy(&shell_output.stderr)
-                .contains("usage: ./scripts/agent-llm-mm.sh [serve|doctor] [config_path]"),
+            String::from_utf8_lossy(&shell_output.stderr).contains(
+                "usage: ./scripts/agent-llm-mm.sh [serve|doctor|bootstrap-local] [config_path]"
+            ),
             "shell wrapper should print supported mode/config path contract"
         );
     }
@@ -210,7 +211,7 @@ fn wrapper_scripts_reject_unsupported_modes_with_exit_code_two() {
         );
         assert!(
             String::from_utf8_lossy(&powershell_output.stderr).contains(
-                "usage: pwsh -File .\\scripts\\agent-llm-mm.ps1 [serve|doctor] [config_path]"
+                "usage: pwsh -File .\\scripts\\agent-llm-mm.ps1 [serve|doctor|bootstrap-local] [config_path]"
             ),
             "PowerShell wrapper should print supported mode/config path contract"
         );
@@ -220,14 +221,299 @@ fn wrapper_scripts_reject_unsupported_modes_with_exit_code_two() {
         "PowerShell wrapper should reject unsupported modes with exit code 2"
     );
     assert!(
-        script.contains("usage: ./scripts/agent-llm-mm.sh [serve|doctor] [config_path]"),
+        script.contains(
+            "usage: ./scripts/agent-llm-mm.sh [serve|doctor|bootstrap-local] [config_path]"
+        ),
         "shell wrapper should document the supported mode/config path contract"
     );
     assert!(
         powershell.contains(
-            "usage: pwsh -File .\\scripts\\agent-llm-mm.ps1 [serve|doctor] [config_path]"
+            "usage: pwsh -File .\\scripts\\agent-llm-mm.ps1 [serve|doctor|bootstrap-local] [config_path]"
         ),
         "PowerShell wrapper should document the supported mode/config path contract"
+    );
+    assert!(
+        script.contains("agent-llm-mm.local.toml"),
+        "shell wrapper should document the default bootstrap-local target"
+    );
+    assert!(
+        powershell.contains("agent-llm-mm.local.toml"),
+        "PowerShell wrapper should document the default bootstrap-local target"
+    );
+    assert!(
+        script.contains("cd \"$project_root\"")
+            && powershell.contains("Push-Location $projectRoot"),
+        "wrapper scripts should resolve relative bootstrap-local targets from the repository root"
+    );
+}
+
+#[test]
+fn bash_bootstrap_local_copies_dev_example_to_requested_target() {
+    if !command_exists("bash") {
+        return;
+    }
+    let temp_dir = tempdir().expect("temp dir");
+    let target = temp_dir.path().join("agent llm mm.local.toml");
+
+    let output = Command::new("bash")
+        .args([
+            "scripts/agent-llm-mm.sh",
+            "bootstrap-local",
+            target.to_str().expect("utf-8 target"),
+        ])
+        .output()
+        .expect("shell wrapper should run");
+
+    assert!(
+        output.status.success(),
+        "bootstrap-local should create missing target; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        read_file(&target),
+        read_file("examples/agent-llm-mm.dev.example.toml")
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("Next commands:"),
+        "bootstrap-local should print next commands"
+    );
+    let escaped_target = target.to_string_lossy().replace(' ', "\\ ");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(&format!("doctor {escaped_target}")),
+        "bootstrap-local should print a shell-safe doctor command for paths with spaces; stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("serve {escaped_target}")),
+        "bootstrap-local should print a shell-safe serve command for paths with spaces; stdout={stdout}"
+    );
+}
+
+#[test]
+fn bash_bootstrap_local_resolves_relative_targets_from_repo_root() {
+    if !command_exists("bash") {
+        return;
+    }
+    let temp_dir = tempdir().expect("temp dir");
+    let repo_root = std::env::current_dir().expect("repo root");
+    let unique_name = temp_dir
+        .path()
+        .file_name()
+        .expect("temp dir name")
+        .to_string_lossy();
+    let relative_target = format!("target/bootstrap-local-relative-{unique_name}.toml");
+    let repo_target = repo_root.join(&relative_target);
+    let caller_target = temp_dir.path().join(&relative_target);
+    let _ = fs::remove_file(&repo_target);
+
+    let output = Command::new("bash")
+        .arg(repo_root.join("scripts/agent-llm-mm.sh"))
+        .args(["bootstrap-local", relative_target.as_str()])
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("shell wrapper should run");
+
+    assert!(
+        output.status.success(),
+        "bootstrap-local should resolve relative targets from the repository root; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        repo_target.exists(),
+        "relative bootstrap-local target should be created under the repository root"
+    );
+    assert!(
+        !caller_target.exists(),
+        "relative bootstrap-local target should not be created under the caller cwd"
+    );
+    assert_eq!(
+        read_file(&repo_target),
+        read_file("examples/agent-llm-mm.dev.example.toml")
+    );
+
+    fs::remove_file(repo_target).expect("cleanup repo-relative target");
+}
+
+#[test]
+fn bash_bootstrap_local_refuses_to_overwrite_existing_target() {
+    if !command_exists("bash") {
+        return;
+    }
+    let temp_dir = tempdir().expect("temp dir");
+    let target = temp_dir.path().join("agent-llm-mm.local.toml");
+    fs::write(&target, "existing config").expect("seed target");
+
+    let output = Command::new("bash")
+        .args([
+            "scripts/agent-llm-mm.sh",
+            "bootstrap-local",
+            target.to_str().expect("utf-8 target"),
+        ])
+        .output()
+        .expect("shell wrapper should run");
+
+    assert!(
+        !output.status.success(),
+        "bootstrap-local should reject existing target"
+    );
+    assert_eq!(read_file(&target), "existing config");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("already exists"),
+        "bootstrap-local should explain overwrite refusal"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn bash_bootstrap_local_refuses_dangling_symlink_target() {
+    if !command_exists("bash") {
+        return;
+    }
+    let temp_dir = tempdir().expect("temp dir");
+    let target = temp_dir.path().join("agent-llm-mm.local.toml");
+    let missing_destination = temp_dir.path().join("missing-destination.toml");
+    std::os::unix::fs::symlink(&missing_destination, &target).expect("seed dangling symlink");
+
+    let output = Command::new("bash")
+        .args([
+            "scripts/agent-llm-mm.sh",
+            "bootstrap-local",
+            target.to_str().expect("utf-8 target"),
+        ])
+        .output()
+        .expect("shell wrapper should run");
+
+    assert!(
+        !output.status.success(),
+        "bootstrap-local should reject dangling symlink targets"
+    );
+    assert!(
+        target
+            .symlink_metadata()
+            .expect("symlink metadata")
+            .file_type()
+            .is_symlink(),
+        "bootstrap-local must not replace a dangling symlink target"
+    );
+    assert!(
+        !target.exists(),
+        "test target should remain a dangling symlink"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("already exists"),
+        "bootstrap-local should treat dangling symlinks as occupied targets"
+    );
+}
+
+#[test]
+fn bootstrap_local_copy_uses_no_clobber_primitives() {
+    let script = fs::read_to_string("scripts/agent-llm-mm.sh").expect("script should be readable");
+    let powershell = fs::read_to_string("scripts/agent-llm-mm.ps1")
+        .expect("PowerShell script should be readable");
+
+    assert!(
+        script.contains("noclobber"),
+        "shell bootstrap-local should use no-clobber creation instead of check-then-copy"
+    );
+    assert!(
+        powershell.contains("[System.IO.File]::Copy") && powershell.contains("$false"),
+        "PowerShell bootstrap-local should use File.Copy with overwrite=false"
+    );
+    assert!(
+        powershell.contains("$quotedTargetPath"),
+        "PowerShell bootstrap-local should quote generated next commands"
+    );
+}
+
+#[test]
+fn bash_bootstrap_local_rejects_missing_parent_directory() {
+    if !command_exists("bash") {
+        return;
+    }
+    let temp_dir = tempdir().expect("temp dir");
+    let target = temp_dir
+        .path()
+        .join("missing-parent")
+        .join("agent-llm-mm.local.toml");
+
+    let output = Command::new("bash")
+        .args([
+            "scripts/agent-llm-mm.sh",
+            "bootstrap-local",
+            target.to_str().expect("utf-8 target"),
+        ])
+        .output()
+        .expect("shell wrapper should run");
+
+    assert!(
+        !output.status.success(),
+        "bootstrap-local should reject missing parent directories"
+    );
+    assert!(
+        !target.exists(),
+        "bootstrap-local must not create missing parent directories"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("parent directory does not exist"),
+        "bootstrap-local should explain missing parent directory"
+    );
+}
+
+#[test]
+fn powershell_bootstrap_local_matches_bash_behavior_when_pwsh_exists() {
+    if !command_exists("pwsh") {
+        return;
+    }
+    let temp_dir = tempdir().expect("temp dir");
+    let target = temp_dir.path().join("agent-llm-mm.local.toml");
+
+    let create_output = Command::new("pwsh")
+        .args([
+            "-NoProfile",
+            "-File",
+            "scripts/agent-llm-mm.ps1",
+            "bootstrap-local",
+            target.to_str().expect("utf-8 target"),
+        ])
+        .output()
+        .expect("PowerShell wrapper should run");
+
+    assert!(
+        create_output.status.success(),
+        "PowerShell bootstrap-local should create missing target; stderr={}",
+        String::from_utf8_lossy(&create_output.stderr)
+    );
+    assert_eq!(
+        read_file(&target),
+        read_file("examples/agent-llm-mm.dev.example.toml")
+    );
+    assert!(
+        String::from_utf8_lossy(&create_output.stdout).contains("Next commands:"),
+        "PowerShell bootstrap-local should print next commands"
+    );
+
+    let overwrite_output = Command::new("pwsh")
+        .args([
+            "-NoProfile",
+            "-File",
+            "scripts/agent-llm-mm.ps1",
+            "bootstrap-local",
+            target.to_str().expect("utf-8 target"),
+        ])
+        .output()
+        .expect("PowerShell wrapper should run");
+
+    assert!(
+        !overwrite_output.status.success(),
+        "PowerShell bootstrap-local should reject existing target"
+    );
+    assert_eq!(
+        read_file(&target),
+        read_file("examples/agent-llm-mm.dev.example.toml")
+    );
+    assert!(
+        String::from_utf8_lossy(&overwrite_output.stderr).contains("already exists"),
+        "PowerShell bootstrap-local should explain overwrite refusal"
     );
 }
 
@@ -236,6 +522,10 @@ fn command_exists(command: &str) -> bool {
         .arg("--version")
         .output()
         .is_ok_and(|output| output.status.success())
+}
+
+fn read_file(path: impl Into<PathBuf>) -> String {
+    fs::read_to_string(path.into()).expect("file should be readable")
 }
 
 #[tokio::test]

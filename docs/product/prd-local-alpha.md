@@ -49,40 +49,48 @@ Local Product Alpha 不承诺生产级高可用、远程团队管理、无人值
 - durable write path replacement：不绕过或替换 `run_reflection` 作为 identity / commitments 的 durable write path。
 - GA / production-ready claims：不声明 GA、生产级可用、完整安全边界或正式团队服务。
 
-## 6. 用户工作流
+## 6. First-Run Contract
 
-### 6.1 首次本机启动
+A Local Alpha user can clone or unpack the repository, create one local config from the safe dev example via `bootstrap-local` or manual copy, run `doctor`, and start `serve` without editing source files. The supported first-run path is bootstrap / config first and doctor second: users must be able to validate config, provider shape, database path, dashboard status, daemon status, and runtime hooks before starting the MCP service.
+
+`bootstrap-local` is a local config helper, not an installer or production bootstrapper. It must not create secrets, overwrite an existing config, run `doctor`, start `serve`, enable daemon behavior, or imply that Local Alpha, Beta, remote/team mode, multi-tenancy, GA, or production-ready status is complete.
+
+Wrapper scripts resolve relative `bootstrap-local` targets from the repository root, matching the existing wrapper behavior of entering the project root before handling modes. Platform docs should recommend absolute target paths when the script is invoked from another working directory.
+
+## 7. 用户工作流
+
+### 7.1 首次本机启动
 
 1. 用户阅读 `README.md` 和对应平台开发文档。
-2. 用户复制或准备本地配置文件，显式选择 provider 和 SQLite `database_url`。
+2. 用户运行 `bootstrap-local` 生成本机配置，或手工复制一个 example profile，显式选择 provider 和 SQLite `database_url`。
 3. 用户运行 `./scripts/agent-llm-mm.sh doctor` 检查配置、provider、database、dashboard 和 runtime hook 状态。
 4. 用户运行 `./scripts/agent-llm-mm.sh serve`，把服务作为本机 MCP `stdio` 子进程接入 AI 客户端。
 
-### 6.2 验证 self-revision MVP 证据链
+### 7.2 验证 self-revision MVP 证据链
 
 1. 用户运行 `./scripts/run-self-revision-demo.sh`。
 2. 用户查看 `target/reports/self-revision-demo/latest/` 下的 `doctor.json`、snapshot before / after、decision before / after、timeline、SQLite summary 和 report。
 3. 用户确认 demo 只证明当前 MVP 边界，不代表 daemon、remote admin 或完整自治已经实现。
 
-### 6.3 本机观测
+### 7.3 本机观测
 
 1. 用户仅在需要时通过配置启用 `[dashboard]`。
 2. dashboard 绑定本机地址并保持 read-only。
 3. 用户通过 dashboard 检查 MCP tool 调用、runtime operation 和 auto-reflection 事件，不通过 dashboard 执行写操作。
 
-### 6.4 数据安全
+### 7.4 数据安全
 
 1. 用户为正式数据、手工测试数据和 demo 数据配置不同 SQLite 文件。
 2. 用户在升级、迁移或实验前备份 SQLite 数据库。
 3. 用户恢复时优先恢复到新路径，再切换 `database_url` 验证。
 
-### 6.5 故障排查
+### 7.5 故障排查
 
 1. 用户先运行 `doctor` 判断 provider、database、dashboard 和 runtime hook 状态。
 2. 用户复核平台文档和 release / product gate 文档中的验证命令。
 3. 维护者使用 demo artifacts、operation evidence 和 git diff 来判断是否是配置问题、provider 问题、数据问题或实现回归。
 
-## 7. Alpha Exit Gate
+## 8. Alpha Exit Gate
 
 Local Product Alpha 只有在以下条件全部满足后，才可以从“validated local MVP entering productization”升级为“local product alpha”：
 
@@ -96,7 +104,7 @@ Local Product Alpha 只有在以下条件全部满足后，才可以从“valida
 - self-revision demo artifacts 可从当前安装路径重新生成，并能证明 before / after decision shift。
 - 产品文档没有声明 remote write admin、multi-tenancy、production self-governance、all-entry auto-reflection、GA 或 production-ready。
 
-## 8. 验收命令
+## 9. 验收命令
 
 Task A1 的文档验收命令：
 
@@ -107,11 +115,10 @@ git diff --check
 
 Local Product Alpha 后续完整 gate 应在 `docs/product/release-gate-local-alpha.md` 中单独定义；在该文档落地前，本 PRD 不替代 release gate。
 
-## 9. 文档入口
+## 10. 文档入口
 
 - 仓库首页：[`README.md`](../../README.md)
 - 文档总览：[`docs/document-map.md`](../document-map.md)
 - 当前实现状态：[`docs/project-status.md`](../project-status.md)
 - 正式产品化路线图：[`docs/superpowers/plans/2026-05-09-productization-roadmap.md`](../superpowers/plans/2026-05-09-productization-roadmap.md)
 - Local Product Alpha 任务列表：[`docs/superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md`](../superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md)
-

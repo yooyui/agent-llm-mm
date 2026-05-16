@@ -8,6 +8,7 @@
 - `cargo` 可用
 - 已安装 PowerShell 7
 - 当前仓库内提供 Windows 入口脚本：
+  - `pwsh -File .\scripts\agent-llm-mm.ps1 bootstrap-local`
   - `pwsh -File .\scripts\agent-llm-mm.ps1 doctor`
   - `pwsh -File .\scripts\agent-llm-mm.ps1 serve`
 
@@ -21,7 +22,21 @@ Set-Location 'D:\Code\agent_llm_mm'
 
 ## 3. 准备本地配置
 
-先选择一个 profile，再复制为本机私有配置文件：
+优先用本地 bootstrap helper 生成本机私有配置文件：
+
+```powershell
+pwsh -File .\scripts\agent-llm-mm.ps1 bootstrap-local
+```
+
+`bootstrap-local` 只把 `examples/agent-llm-mm.dev.example.toml` 复制到 `agent-llm-mm.local.toml`，不会生成 secret、不会覆盖已有配置、不会运行 `doctor`、不会启动 `serve` 或 daemon。如果需要自定义目标路径：
+
+```powershell
+pwsh -File .\scripts\agent-llm-mm.ps1 bootstrap-local .\agent-llm-mm.local.toml
+```
+
+显式目标路径可以是绝对路径或相对路径；相对路径按仓库根目录解析，不按调用者当前目录解析。跨目录调用脚本时建议传绝对路径，避免把配置写到非预期位置。
+
+如果目标配置已存在，脚本会拒绝覆盖；这种情况下请手工编辑已有文件，或先选择一个新的目标路径。也可以继续手工选择 profile 并复制为本机配置：
 
 ```powershell
 Copy-Item .\examples\agent-llm-mm.dev.example.toml .\agent-llm-mm.local.toml
@@ -47,7 +62,7 @@ database_url = "sqlite:///D:/agent-llm-mm/dev.sqlite"
 
 ## 4. 本机预检
 
-本地产品化启动顺序是 doctor-first：先让 `doctor` 证明配置、SQLite 路径、provider 形态和 daemon 默认状态可用，再启动 `serve`。PowerShell 入口脚本的契约固定为 `[serve|doctor] [config_path]`；没有 `doctor-config` 或 `serve-config` alias，传入其它 mode 会返回 exit code `2`。
+本地产品化启动顺序是 bootstrap / config first, doctor second：先准备本机配置，再让 `doctor` 证明配置、SQLite 路径、provider 形态和 daemon 默认状态可用，最后启动 `serve`。PowerShell 入口脚本的契约固定为 `[serve|doctor|bootstrap-local] [config_path]`；没有 `doctor-config` 或 `serve-config` alias，传入其它 mode 会返回 exit code `2`。
 
 ```powershell
 pwsh -File .\scripts\agent-llm-mm.ps1 doctor
@@ -98,6 +113,7 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 
 发布前请按 [Release Gate](release-gate.md) 跑完整 gate；本节只是 Windows 日常验证入口。Release gate 中的 `./scripts/agent-llm-mm.sh doctor` 在 Windows 上对应 `pwsh -File .\scripts\agent-llm-mm.ps1 doctor`。
 如果判断 Local Product Alpha / product alpha 口径，还必须改用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)；普通 `doctor` 通过不等于 Local Alpha 完成。
+当前 macOS 本机验证环境没有 `pwsh`，所以 PowerShell `bootstrap-local` 行为需要 Windows runner 或 Windows 实机补充 runtime parity 证据；Rust bootstrap 测试仍保留脚本文本契约和 no-clobber 静态断言。
 
 ## 7.1 本地接入排障
 

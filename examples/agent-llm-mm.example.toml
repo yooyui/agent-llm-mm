@@ -5,6 +5,10 @@
 # - examples/agent-llm-mm.prod-local.example.toml: formal local data
 # - examples/agent-llm-mm.demo.example.toml: deterministic self-revision demo
 #
+# `bootstrap-local` copies the dev example as the safest first-run template.
+# Relative bootstrap-local targets are resolved from the repository root.
+# It does not create secrets, overwrite local config, run doctor, or start serve.
+#
 # Do not reuse one database_url for formal data, manual tests, and demos.
 
 transport = "stdio"

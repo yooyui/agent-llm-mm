@@ -1,4 +1,9 @@
 # Example snippet for .codex/config.toml
+#
+# First create a local config with `./scripts/agent-llm-mm.sh bootstrap-local`.
+# If you pass a target path from another working directory, prefer an absolute path;
+# relative bootstrap-local targets are repository-root relative.
+# or by manually copying an example profile, then point AGENT_LLM_MM_CONFIG at it.
 
 # macOS native shell entrypoint:
 [mcp_servers.agent-llm-mm]

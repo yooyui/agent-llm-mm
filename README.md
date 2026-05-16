@@ -17,10 +17,11 @@
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
 - 最新 fresh 验证：`2026-05-16`
-  - `cargo test` 全量通过，共 194 个测试
+  - `cargo test` 全量通过，共 201 个测试
   - `doctor` 预检返回 `status = ok`
   - Local Alpha product smoke 通过 staging / promote 流程刷新本地证据链
   - Local Alpha support bundle 生成本地脱敏诊断 JSON，未包含 `.sqlite` 或 `.toml` 文件
+  - Local first-run bootstrap helper 已加入脚本入口，用于安全创建本机 dev 配置模板
 
 ## 先看这些
 
@@ -100,6 +101,13 @@
   - 输出 redacted `doctor` shape、config shape、bounded operation summaries、release metadata、product smoke summary 和 manifest
   - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不包含 provider payload、不上传数据
   - 该能力只是 Local Alpha 诊断辅助，不代表生产支持通道、远程上传能力或 Local Alpha 已完成
+- local first-run bootstrap helper
+  - `./scripts/agent-llm-mm.sh bootstrap-local [config_path]` 和 PowerShell 等价入口可从 dev 示例生成本机配置模板
+  - 默认目标是 `agent-llm-mm.local.toml`，也可显式传入目标路径
+  - 如果显式目标是相对路径，入口脚本会按仓库根目录解析；跨目录调用时建议传绝对路径
+  - 目标已存在时拒绝覆盖，父目录不存在时拒绝创建，避免误写用户配置
+  - 只复制 `examples/agent-llm-mm.dev.example.toml`，不生成 secret，不运行 `doctor`，不启动 `serve` 或 daemon
+  - 该能力只是 first-run 配置引导，不是 installer、packager、远程 bootstrapper 或 Local Alpha 完整 gate 证明
 - observe-only daemon diagnostics
   - `doctor` 输出新增 `daemon_observe_only` 本机只读诊断字段，用于展示 observe-only 模式、数据源、候选计数、cooldown 状态、并发占用和读取错误
   - 当 `[daemon].enabled = true` 时，diagnostics 只读取本地 `operation_log` 中 `tool` / `trigger` 的 `failed` 与 `suppressed` 候选，并保持 `write_gate_approved = false`、`writes_allowed = false`、`remote_listener_enabled = false`
@@ -115,6 +123,7 @@
   - 支持本地 `chat/completions` 风格兼容接口
 - 本机接入链路
   - 平台入口见对应平台文档
+  - first-run 配置可先用 `bootstrap-local` 生成本机 dev 模板，再运行 `doctor` 和 `serve`
   - MCP `stdio` 当前暴露 4 个工具：
     - `ingest_interaction`
     - `build_self_snapshot`

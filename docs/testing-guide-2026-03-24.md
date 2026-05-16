@@ -31,7 +31,7 @@
 截至 `2026-05-16`，`cargo test` 全量通过，摘要如下：
 
 - `application_use_cases`: 22 passed
-- `bootstrap`: 17 passed
+- `bootstrap`: 24 passed
 - `daemon_config`: 5 passed
 - `dashboard_config`: 4 passed
 - `dashboard_http`: 7 passed
@@ -51,7 +51,7 @@
 - `sqlite_store`: 20 passed
 - `support_bundle`: 4 passed
 
-合计：194 个测试通过。
+合计：201 个测试通过。
 
 ---
 
@@ -100,7 +100,9 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 7. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
 8. 如果改动涉及 demo package，先用 timestamped / scratch output 跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)`；如果要按 Local Alpha 发布口径复核 `latest` 证据链，使用下一条 product smoke
 9. 如果改动涉及 Local Alpha product smoke gate、启动包装脚本或本地产品化证据链，在 repo root 补跑 `./scripts/product-smoke-local.sh [config_path]`；如果当前目录不是 repo root，使用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh`，并在需要配置文件时传入绝对 config path
-10. 如果改动涉及 bootstrap wrapper，确认脚本契约仍是 `[serve|doctor] [config_path]`，unsupported mode 返回 exit code `2`，并补跑 `cargo test --test bootstrap wrapper_scripts_reject_unsupported_modes_with_exit_code_two -v`
+10. 如果改动涉及 bootstrap wrapper，确认脚本契约仍是 `[serve|doctor|bootstrap-local] [config_path]`，unsupported mode 返回 exit code `2`，`bootstrap-local` 不覆盖已有配置、不生成 secret、不运行 `doctor` 或 `serve`，相对目标路径按仓库根目录解析，输出的下一步命令能处理含空格路径，并补跑 `cargo test --test bootstrap -v`
+
+如果当前机器没有 `pwsh`，PowerShell runtime 行为测试会跳过；这种情况下只代表 Rust 测试覆盖了 PowerShell 脚本文本契约和 no-clobber 静态断言，Windows runner 或 Windows 实机验证仍需单独记录。
 
 如果只想快速回归某个变更，再执行对应的定向测试。若需要一份面向发布前核验的固定检查单，demo / MVP 发布直接使用 [Release Gate](release-gate.md)；Local Alpha / product alpha 发布使用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)。
 

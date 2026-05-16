@@ -26,11 +26,19 @@ Expected evidence:
 - `doctor` reports `status = ok`
 - `doctor` continues to report `self_revision_write_path = run_reflection`
 - `doctor` does not expose provider secrets
-- bootstrap documentation remains doctor-first, and wrapper scripts keep the
-  `[serve|doctor] [config_path]` contract with unsupported modes returning exit
-  code `2`
+- bootstrap documentation remains config-first then doctor-second, and wrapper
+  scripts keep the `[serve|doctor|bootstrap-local] [config_path]` contract with
+  unsupported modes returning exit code `2`
+- `bootstrap-local` must refuse to overwrite an existing config, must copy only
+  the safe dev example profile, and must not create secrets, run `doctor`, start
+  `serve`, enable daemon behavior, or claim installer / production readiness
+- relative `bootstrap-local` targets are documented and tested as repository-root
+  relative; cross-directory examples should prefer absolute config paths
+- PowerShell runtime parity must have either a Windows runner / Windows machine
+  execution record, or an explicit note that local verification only covered
+  static script contract assertions because `pwsh` was unavailable
 
-### Fresh Evidence: 2026-05-16
+### Fresh Evidence: 2026-05-16 Formal Product Readiness Slice
 
 Ran from branch `codex/formal-product-readiness-implementation` in an isolated
 worktree:
@@ -52,6 +60,40 @@ Result:
 - `./scripts/agent-llm-mm.sh doctor`: passed with `status = ok`
 - `doctor.self_revision_write_path = "run_reflection"`
 - `doctor.daemon_observe_only.writes_allowed = false`
+
+This evidence predates the `bootstrap-local` first-run helper and is retained as
+historical formal product readiness evidence, not as proof of the expanded
+first-run bootstrap contract.
+
+### Fresh Evidence: 2026-05-16 First-Run Bootstrap Slice
+
+Ran from branch `codex/install-first-run-capability` in an isolated worktree:
+
+```bash
+cargo test --test bootstrap -v
+git diff --check
+```
+
+Result:
+
+- `cargo test --test bootstrap -v`: passed, 24 tests
+- `git diff --check`: passed
+
+Manual spot checks for this slice passed:
+
+- `bootstrap-local` created a missing target from
+  `examples/agent-llm-mm.dev.example.toml`
+- `bootstrap-local` refused existing targets
+- `bootstrap-local` refused missing parent directories
+- `bootstrap-local` refused dangling symlink targets on Unix
+- relative targets resolved from the repository root, not the caller working
+  directory
+- printed bash next commands quoted paths with spaces
+
+Windows / PowerShell limitation: if the verification host lacks `pwsh`, this
+slice can only cover the PowerShell wrapper through static contract assertions;
+Windows runner or Windows machine evidence remains required before claiming
+runtime parity.
 
 ## Product Smoke Gate
 

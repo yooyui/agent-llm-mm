@@ -1,5 +1,7 @@
 # Demo-only config template for `scripts/run-self-revision-demo.sh`.
 # The runner writes a concrete copy with a temporary database path and stub base URL.
+# Do not use this as the default `bootstrap-local` template; it is only for
+# deterministic demo evidence and intentionally keeps demo data separate.
 
 transport = "stdio"
 database_url = "sqlite:///absolute/path/to/demo.sqlite"
