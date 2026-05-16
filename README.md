@@ -17,11 +17,11 @@
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
 - 最新 fresh 验证：`2026-05-16`
-  - `cargo test` 全量通过，共 217 个测试
+  - `cargo test` 全量通过，共 221 个测试
   - `doctor` 预检返回 `status = ok`
   - Local Alpha product smoke 通过 staging / promote 流程刷新本地证据链
   - Local Alpha support bundle 生成本地脱敏诊断 JSON，未包含 `.sqlite` 或 `.toml` 文件
-  - Local first-run bootstrap helper 已加入脚本入口，用于安全创建本机 dev 配置模板
+  - Local first-run bootstrap smoke 已加入脚本入口，用于模拟 `bootstrap-local -> doctor` 的本地首启证据
 
 ## 先看这些
 
@@ -102,13 +102,15 @@
   - 可在显式传入 `--log-file <path>` 时输出 bounded / redacted `local-log-excerpts.json`，但不会自动扫描日志目录或复制原始 `.log` 文件
   - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不包含 provider payload、不上传数据
   - 该能力只是 Local Alpha 诊断辅助，不代表生产支持通道、远程上传能力或 Local Alpha 已完成
-- local first-run bootstrap helper
+- local first-run bootstrap helper / smoke
   - `./scripts/agent-llm-mm.sh bootstrap-local [config_path]` 和 PowerShell 等价入口可从 dev 示例生成本机配置模板
   - 默认目标是 `agent-llm-mm.local.toml`，也可显式传入目标路径
   - 如果显式目标是相对路径，入口脚本会按仓库根目录解析；跨目录调用时建议传绝对路径
   - 目标已存在时拒绝覆盖，父目录不存在时拒绝创建，避免误写用户配置
   - 只复制 `examples/agent-llm-mm.dev.example.toml`，不生成 secret，不运行 `doctor`，不启动 `serve` 或 daemon
-  - 该能力只是 first-run 配置引导，不是 installer、packager、远程 bootstrapper 或 Local Alpha 完整 gate 证明
+  - `./scripts/first-run-bootstrap-smoke-local.sh [output_dir]` 会在隔离输出目录里模拟 `bootstrap-local -> doctor`，生成 `doctor.json` 与 `summary.json`，并把 SQLite 指向该输出目录
+  - 该 smoke 会清理 config/database 环境变量干扰，不写真实 HOME，不启动 `serve`，不调用 product smoke，不触发 daemon 写能力
+  - 该能力只是 first-run 配置引导和本地 fresh-machine simulation evidence，不是 installer、packager、远程 bootstrapper、真实 fresh-machine / Windows runner 证据或 Local Alpha 完整 gate 证明
 - observe-only daemon diagnostics
   - `doctor` 输出新增 `daemon_observe_only` 本机只读诊断字段，用于展示 observe-only 模式、数据源、候选计数、cooldown 状态、并发占用和读取错误
   - 当 `[daemon].enabled = true` 时，diagnostics 只读取本地 `operation_log` 中 `tool` / `trigger` 的 `failed` 与 `suppressed` 候选，并保持 `write_gate_approved = false`、`writes_allowed = false`、`remote_listener_enabled = false`

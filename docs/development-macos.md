@@ -91,6 +91,20 @@ cargo run --quiet --bin agent_llm_mm -- doctor
 - `provider`
 - `status`
 
+如需记录“本地首启模拟”证据，可以运行：
+
+```zsh
+./scripts/first-run-bootstrap-smoke-local.sh
+```
+
+也可以传入一个不存在或为空的输出目录：
+
+```zsh
+./scripts/first-run-bootstrap-smoke-local.sh target/first-run-bootstrap-smoke/manual-check
+```
+
+该脚本会在隔离输出目录内调用 `bootstrap-local`，把生成配置的 `database_url` 改成同目录下的 `first-run.sqlite`，再运行 `doctor` 并写出 `doctor.json` / `summary.json`。它会清理 `AGENT_LLM_MM_CONFIG` / `AGENT_LLM_MM_DATABASE_URL` 干扰，不写真实 HOME，不启动 `serve`，不调用 `product-smoke-local.sh`，也不证明真实 fresh-machine install 或 Windows runtime parity。
+
 ## 5. 启动 MCP 服务
 
 ```zsh

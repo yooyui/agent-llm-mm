@@ -81,6 +81,8 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor .\agent-llm-mm.local.toml
 - `provider`
 - `status`
 
+当前仓库新增的 `scripts/first-run-bootstrap-smoke-local.sh` 是 bash 本地首启模拟脚本；在 Windows 上只能从 Git Bash、WSL，或等价 bash 环境运行。它用于模拟 `bootstrap-local -> doctor`，不会替代 PowerShell runtime parity 证据。Windows install/bootstrap gate 仍需要 Windows runner 或 Windows 实机记录。
+
 ## 5. 启动 MCP 服务
 
 ```powershell

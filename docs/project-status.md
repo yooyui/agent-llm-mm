@@ -66,6 +66,8 @@
 
 `bootstrap-local` 是 Local Alpha first-run 配置引导器：默认把 `examples/agent-llm-mm.dev.example.toml` 复制到 `agent-llm-mm.local.toml`，或复制到显式传入的目标路径。显式目标为相对路径时按仓库根目录解析；跨目录调用建议传绝对路径。它拒绝覆盖已有配置，父目录不存在时拒绝继续，不生成 secret，不运行 `doctor`，不启动 `serve` 或 daemon，也不代表安装包、远程 bootstrapper、GA 或 production-ready 能力。
 
+`first-run-bootstrap-smoke-local.sh` 是 Local Alpha first-run 本地模拟证据脚本：它在不存在或为空的隔离输出目录里运行 `bootstrap-local`，把生成配置的 `database_url` 改成同目录 SQLite，再运行 `doctor` 并写出 `doctor.json` / `summary.json`。它会清理 `AGENT_LLM_MM_CONFIG` / `AGENT_LLM_MM_DATABASE_URL` 干扰，不写真实 HOME，不启动 `serve`，不调用 product smoke 或 demo wrapper，也不代表真实 fresh-machine install、Windows runner parity、installer、远程 bootstrapper、GA 或 production-ready 能力。
+
 ### 6. `openai-compatible` provider
 
 - 已实现 `openai-compatible` 模型适配器
@@ -241,6 +243,7 @@ Implementation notes:
 - `domain_snapshot`: 6
 - `evidence_query_dto`: 2
 - `failure_modes`: 31
+- `first_run_bootstrap_smoke`: 4
 - `mcp_stdio`: 36
 - `openai_compatible_model`: 9
 - `operation_log`: 9
@@ -248,12 +251,12 @@ Implementation notes:
 - `self_revision_demo_runner`: 2
 - `sqlite_store`: 20
 - `support_bundle`: 20
-- 合计：217 个测试通过
+- 合计：221 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`
 - Local Alpha support bundle 生成允许的 JSON 文件，敏感词扫描无未脱敏命中，且未包含 `.sqlite`、`.toml` 或原始 `.log` 文件
-- `bootstrap-local` 已提供 first-run dev 配置模板生成路径，但 fresh-machine install / Windows runner 实机验证仍需单独记录；当前本机没有 `pwsh` 时，PowerShell runtime parity 只能视为待补证据
+- `first-run-bootstrap-smoke-local.sh` 已提供 `bootstrap-local -> doctor` 的本地 fresh-machine simulation evidence，包含 env 隔离、输出目录隔离、`doctor.json` / `summary.json` 和 isolated SQLite 证据；但真实 fresh-machine install / Windows runner 实机验证仍需单独记录，当前本机没有 `pwsh` 时，PowerShell runtime parity 只能视为待补证据
 
 ## 对外描述建议
 

@@ -34,6 +34,14 @@ Expected evidence:
   `serve`, enable daemon behavior, or claim installer / production readiness
 - relative `bootstrap-local` targets are documented and tested as repository-root
   relative; cross-directory examples should prefer absolute config paths
+- first-run bootstrap smoke evidence must prove a local-only
+  `bootstrap-local -> doctor` simulation in an isolated output directory, with
+  `fresh_machine_simulation = true` and `real_fresh_machine_evidence = false`
+- first-run bootstrap smoke must clear config/database environment overrides,
+  rewrite the generated dev config to an isolated SQLite path, write
+  `doctor.json` and `summary.json`, refuse non-empty evidence directories before
+  writing artifacts, and must not start `serve`, call product smoke, call the
+  demo wrapper, invoke remote commands, or trigger daemon/reflection writes
 - PowerShell runtime parity must have either a Windows runner / Windows machine
   execution record, or an explicit note that local verification only covered
   static script contract assertions because `pwsh` was unavailable
@@ -94,6 +102,32 @@ Windows / PowerShell limitation: if the verification host lacks `pwsh`, this
 slice can only cover the PowerShell wrapper through static contract assertions;
 Windows runner or Windows machine evidence remains required before claiming
 runtime parity.
+
+### Fresh Evidence: 2026-05-16 First-Run Bootstrap Smoke Slice
+
+Ran from branch `codex/support-bundle-log-excerpts` in an isolated worktree:
+
+```bash
+bash -n scripts/first-run-bootstrap-smoke-local.sh
+cargo test --test first_run_bootstrap_smoke -v
+```
+
+Result:
+
+- `bash -n scripts/first-run-bootstrap-smoke-local.sh`: passed
+- `cargo test --test first_run_bootstrap_smoke -v`: passed, 4 tests
+- success-path smoke generated local-only `doctor.json`, `summary.json`,
+  `agent-llm-mm.local.toml`, and an isolated `first-run.sqlite`
+- env-isolation coverage proved `AGENT_LLM_MM_DATABASE_URL`, `HOME`, and
+  `XDG_DATA_HOME` did not redirect the smoke database or receive writes
+- non-empty output directories were rejected before config, SQLite, doctor, or
+  summary artifacts were written
+- static coverage confirmed the helper does not call `serve`,
+  `product-smoke-local.sh`, `run-self-revision-demo.sh`, or remote-copy commands
+
+This is local fresh-machine simulation evidence. It does not prove a real
+fresh-machine install, Windows runner parity, installer packaging, remote
+bootstrap, Local Alpha completion, Beta, or GA readiness.
 
 ## Product Smoke Gate
 

@@ -153,6 +153,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 
 - Modify: `scripts/agent-llm-mm.sh`
 - Modify: `scripts/agent-llm-mm.ps1`
+- Add: `scripts/first-run-bootstrap-smoke-local.sh`
 - Modify: `docs/development-macos.md`
 - Modify: `docs/development-windows.md`
 - Modify: `docs/product/prd-local-alpha.md`
@@ -160,6 +161,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 - Modify: `examples/agent-llm-mm.demo.example.toml`
 - Modify: `examples/codex-mcp-config.toml`
 - Test: `tests/bootstrap.rs`
+- Test: `tests/first_run_bootstrap_smoke.rs`
 - Test: `tests/provider_config.rs`
 
 **Implementation steps:**
@@ -224,6 +226,31 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   ```
 
   If PowerShell is not available locally, document that Windows parity requires a Windows runner or manual Windows verification.
+
+- [x] **Step 6: Add local first-run bootstrap smoke simulation**
+
+  Added `scripts/first-run-bootstrap-smoke-local.sh` as local-only
+  `bootstrap-local -> doctor` simulation evidence. It creates or uses an empty
+  isolated output directory, rewrites the generated dev config to an isolated
+  SQLite path, clears config/database environment overrides for bootstrap and
+  doctor, writes `doctor.json` and `summary.json`, and refuses non-empty output
+  directories before writing smoke artifacts.
+
+  This step explicitly remains simulation evidence:
+
+  - `summary.json.fresh_machine_simulation = true`
+  - `summary.json.real_fresh_machine_evidence = false`
+  - no `serve`, product smoke, demo wrapper, remote command, or daemon/reflection
+    write path is invoked
+  - Windows runner / Windows machine evidence is still required for runtime
+    parity
+
+  Verification:
+
+  ```bash
+  bash -n scripts/first-run-bootstrap-smoke-local.sh
+  cargo test --test first_run_bootstrap_smoke -v
+  ```
 
 ## Workstream 3: Automatic Self-Revision Runtime Coverage
 
@@ -809,6 +836,7 @@ cargo test
 For Local Alpha evidence work, also run:
 
 ```bash
+./scripts/first-run-bootstrap-smoke-local.sh
 ./scripts/product-smoke-local.sh
 rm -rf target/support-bundles/manual-check
 ./scripts/generate-support-bundle.sh target/support-bundles/manual-check

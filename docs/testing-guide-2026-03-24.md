@@ -43,6 +43,7 @@
 - `domain_snapshot`: 6 passed
 - `evidence_query_dto`: 2 passed
 - `failure_modes`: 31 passed
+- `first_run_bootstrap_smoke`: 4 passed
 - `mcp_stdio`: 36 passed
 - `openai_compatible_model`: 9 passed
 - `operation_log`: 9 passed
@@ -51,7 +52,7 @@
 - `sqlite_store`: 20 passed
 - `support_bundle`: 20 passed
 
-合计：217 个测试通过。
+合计：221 个测试通过。
 
 ---
 
@@ -101,6 +102,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 8. 如果改动涉及 demo package，先用 timestamped / scratch output 跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)`；如果要按 Local Alpha 发布口径复核 `latest` 证据链，使用下一条 product smoke
 9. 如果改动涉及 Local Alpha product smoke gate、启动包装脚本或本地产品化证据链，在 repo root 补跑 `./scripts/product-smoke-local.sh [config_path]`；如果当前目录不是 repo root，使用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh`，并在需要配置文件时传入绝对 config path
 10. 如果改动涉及 bootstrap wrapper，确认脚本契约仍是 `[serve|doctor|bootstrap-local] [config_path]`，unsupported mode 返回 exit code `2`，`bootstrap-local` 不覆盖已有配置、不生成 secret、不运行 `doctor` 或 `serve`，相对目标路径按仓库根目录解析，输出的下一步命令能处理含空格路径，并补跑 `cargo test --test bootstrap -v`
+11. 如果改动涉及 first-run bootstrap smoke、本地首启证据或 `bootstrap-local -> doctor` 产品化路径，补跑 `bash -n scripts/first-run-bootstrap-smoke-local.sh` 和 `cargo test --test first_run_bootstrap_smoke -v`
 
 如果当前机器没有 `pwsh`，PowerShell runtime 行为测试会跳过；这种情况下只代表 Rust 测试覆盖了 PowerShell 脚本文本契约和 no-clobber 静态断言，Windows runner 或 Windows 实机验证仍需单独记录。
 
@@ -580,6 +582,29 @@ cd /tmp && /path/to/agent-llm-mm/scripts/product-smoke-local.sh /path/to/agent-l
 - `target/reports/self-revision-demo/latest` 下 8 个 required demo artifacts 均存在且非空
 
 限制说明：`scripts/run-self-revision-demo.sh` 当前只接受第 1 个参数作为 output dir，不接受 config path。因此 product smoke 的 config path 只覆盖 `doctor`，self-revision demo 仍使用现有 deterministic demo 契约。这条 product smoke 是 Local Alpha gate 的产品化入口，不替代 demo / MVP 的 [Release Gate](release-gate.md)，也不表示 GA / production-ready。
+
+---
+
+### 6.12 Local first-run bootstrap smoke
+
+如果改动涉及 `bootstrap-local`、本地配置引导、`doctor` 配置路径、默认数据库环境变量隔离，或 Local Alpha first-run 证据，需要补跑：
+
+```zsh
+bash -n scripts/first-run-bootstrap-smoke-local.sh
+cargo test --test first_run_bootstrap_smoke -v
+./scripts/first-run-bootstrap-smoke-local.sh target/first-run-bootstrap-smoke/manual-check
+```
+
+通过标准：
+
+- 输出目录不存在或为空时脚本成功；非空目录会在写任何 artifact 前拒绝
+- 脚本生成 `agent-llm-mm.local.toml`、`doctor.json`、`summary.json` 和同目录下的 `first-run.sqlite`
+- `doctor.json.status = "ok"`、`provider = "mock"`、`self_revision_write_path = "run_reflection"`
+- `doctor.json.daemon_enabled = false`，且 `daemon_observe_only.writes_allowed = false`
+- `summary.json.fresh_machine_simulation = true`，`real_fresh_machine_evidence = false`
+- 脚本会清理 `AGENT_LLM_MM_CONFIG` / `AGENT_LLM_MM_DATABASE_URL` 干扰，不写真实 HOME，不启动 `serve`，不调用 `product-smoke-local.sh` 或 demo wrapper，不调用远端命令
+
+这条 smoke 只证明当前 checkout 内的本地首启模拟链路，不替代 product smoke、真实 fresh-machine install、Windows runner parity、installer、packager、remote bootstrapper 或 GA 证据。
 
 ---
 
