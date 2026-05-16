@@ -29,6 +29,7 @@
 - [Release Gate Runbook](docs/release-gate.md)
 - [Local Product Alpha PRD](docs/product/prd-local-alpha.md)
 - [正式产品化路线图](docs/superpowers/plans/2026-05-09-productization-roadmap.md)
+- [正式产品化 12 项后续工作规划](docs/superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
 - [未来路线图](docs/roadmap.md)
 - [文档总览](docs/document-map.md)
 
@@ -192,6 +193,7 @@
 - [发布准备评估](docs/release-readiness.md)
 - [Release Gate Runbook](docs/release-gate.md)
 - [Local Product Alpha PRD](docs/product/prd-local-alpha.md)
+- [正式产品化 12 项后续工作规划](docs/superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
 - [协作说明](CONTRIBUTING.md)
 - [macOS 开发与接入指南](docs/development-macos.md)
 - [Windows 开发与接入指南](docs/development-windows.md)

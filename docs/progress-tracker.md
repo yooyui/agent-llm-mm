@@ -58,4 +58,4 @@
 
 ## 未来规划索引
 
-完整自治、生产级 self-governing、远程管理、认证/多租户、以及”所有入口自动反思”的 daemon 均进入正式产品化路线图，但必须按 local alpha、durable observability、controlled beta、remote/team mode 和 GA gate 分阶段推进。详见 [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md) 和 [Future Autonomy Productization Spec Index](superpowers/specs/2026-04-27-future-autonomy-productization-index.md)。
+完整自治、生产级 self-governing、远程管理、认证/多租户、以及”所有入口自动反思”的 daemon 均进入正式产品化路线图，但必须按 local alpha、durable observability、controlled beta、remote/team mode 和 GA gate 分阶段推进。详见 [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md)、[Formal Product Readiness 12 Workstreams](superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md) 和 [Future Autonomy Productization Spec Index](superpowers/specs/2026-04-27-future-autonomy-productization-index.md)。

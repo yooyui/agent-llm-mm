@@ -27,6 +27,7 @@
 当前权威规划：
 
 - [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md)
+- [Formal Product Readiness 12 Workstreams](superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
 - [Local Alpha Support Bundle Design](product/support-bundle-local-alpha.md)
 - [Daemon Observe-Only Gate](product/daemon-observe-only-gate.md)
 - [Correlation ID Contract](product/correlation-id-contract.md)

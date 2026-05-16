@@ -53,6 +53,8 @@
   - MVP release gate 之后的正式产品化路线图，按 local alpha、durable observability、controlled beta、remote/team mode 和 GA readiness 分阶段推进
 - [2026-05-09-local-product-alpha-development-tasks.md](superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md)
   - 正式产品化第一轮 Local Product Alpha 的开发任务列表，包含 PRD、release gate、配置 profile、smoke、数据安全、观测和 daemon gate
+- [2026-05-16-formal-product-readiness-12-workstreams.md](superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
+  - 把当前 12 项待完善产品化工作拆成可执行 workstream，覆盖 Local Alpha gate、安装配置、runtime coverage、daemon、可观测性、decision protocol、evidence 语义、数据生命周期、provider、安全远程、发布工程和多层 memory 方向
 - [../NOTICE](../NOTICE)
   - 项目版权、独立项目声明，以及 dashboard 生成图物料的归属说明
 
@@ -86,6 +88,8 @@
   - 正式产品化阶段规划
 - [2026-05-09-local-product-alpha-development-tasks.md](superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md)
   - Local Product Alpha 开发执行清单
+- [2026-05-16-formal-product-readiness-12-workstreams.md](superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
+  - 当前 12 项待完善工作的执行规划，适合继续拆给 subagent 或作为后续本地提交批次的任务总表
 
 ## 5. 发布物料
 
@@ -161,6 +165,8 @@
   - MVP 之后的正式产品化路线图，当前下一阶段开发应优先参考
 - [2026-05-09-local-product-alpha-development-tasks.md](superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md)
   - 正式产品化第一轮任务列表，适合拆给 subagent 或按 milestone 执行
+- [2026-05-16-formal-product-readiness-12-workstreams.md](superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
+  - 12 项后续完善工作的正式产品化执行规划，连接 Local Alpha gate、Beta、remote/team 和 GA readiness 前置工作
 
 ## 8. 阅读建议
 
@@ -170,5 +176,5 @@
 - 如果你想确认 runtime hooks、diagnostics 和 durable write path：读 `project-status.md`，再读 `local-mcp-integration-2026-03-26.md`
 - 如果你要接入新 provider：先读 `provider-contract.md`，再按 `testing-guide-2026-03-24.md` 的 provider 验证顺序执行
 - 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md`、`testing-guide-2026-03-24.md` 与 `release-gate.md`
-- 如果你要把项目推进成正式产品：先读 `superpowers/plans/2026-05-09-productization-roadmap.md`，再读 `product/prd-local-alpha.md` 确认 Local Product Alpha 的 scope、non-goals 和 exit gate，然后读 `product/release-gate-local-alpha.md` 确认产品 alpha gate，最后按 `superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md` 执行第一轮任务
+- 如果你要把项目推进成正式产品：先读 `superpowers/plans/2026-05-09-productization-roadmap.md`，再读 `product/prd-local-alpha.md` 确认 Local Product Alpha 的 scope、non-goals 和 exit gate，然后读 `product/release-gate-local-alpha.md` 确认产品 alpha gate；第一轮按 `superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md` 执行，后续 12 项完善工作按 `superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md` 拆分推进
 - 如果你想追溯设计来源：最后读原始讨论资料和历史快照
