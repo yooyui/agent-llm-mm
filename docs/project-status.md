@@ -68,14 +68,21 @@
 
 `first-run-bootstrap-smoke-local.sh` 是 Local Alpha first-run 本地模拟证据脚本：它在不存在或为空的隔离输出目录里运行 `bootstrap-local`，把生成配置的 `database_url` 改成同目录 SQLite，再运行 `doctor` 并写出 `doctor.json` / `summary.json`。它会清理 `AGENT_LLM_MM_CONFIG` / `AGENT_LLM_MM_DATABASE_URL` 干扰，不写真实 HOME，不启动 `serve`，不调用 product smoke 或 demo wrapper，也不代表真实 fresh-machine install、Windows runner parity、installer、远程 bootstrapper、GA 或 production-ready 能力。
 
-### 6. `openai-compatible` provider
+### 6. SQLite backup / restore 本地门禁
+
+- `scripts/backup-sqlite.sh` 与 `scripts/restore-sqlite.sh` 已纳入 `tests/sqlite_backup_restore.rs` 脚本级回归测试
+- 当前门禁覆盖：backup -> restore-to-new-path roundtrip、restore 拒绝覆盖已有目标、backup 拒绝 live database 目录树内备份、in-memory SQLite 拒绝、invalid percent encoding 拒绝和 `..` restore target 拒绝
+- restore 仍默认写入新 SQLite 路径；正式 `database_url` 是否切换必须在 restored DB 跑过 `doctor` 后由人工决定
+- 这只是 Local Alpha 本地 data lifecycle gate，不是远程备份、云同步、定时 daemon、生产灾备、admin/auth 或团队模式能力
+
+### 7. `openai-compatible` provider
 
 - 已实现 `openai-compatible` 模型适配器
 - 已支持通过本地 TOML 配置文件选择 provider
 - runtime 已能按配置在 `mock` 与 `openai-compatible` 间切换
 - `doctor` 会输出 provider / base_url / model，但不会泄露 API key
 
-### 7. automatic self-revision MVP
+### 8. automatic self-revision MVP
 
 - 已新增 `self_revision` 领域契约，包含 trigger type、proposal rationale 和 machine patch 最小结构
 - `ModelPort` 已支持 `propose_self_revision`
@@ -104,7 +111,7 @@ Implementation notes:
 
 这代表“自动 self-revision MVP”已经存在，但它仍然是受限、保守、局部接线的 demo 能力。
 
-### 8. self-revision demo package
+### 9. self-revision demo package
 
 - 已新增 deterministic `openai-compatible` stub provider binary
 - 已新增 demo runner binary，复用真实 MCP `stdio` 服务和现有 4 个 MCP tool 跑 canonical scenario
@@ -112,7 +119,7 @@ Implementation notes:
 - 运行后会生成 `doctor.json`、snapshot before / after、decision before / after、timeline、SQLite summary 和 Markdown report
 - 该 demo 只证明当前 MVP 的可重复证据链，不新增 MCP tool、daemon、Web UI 或新的 durable write path
 
-### 9. Local read-only dashboard service
+### 10. Local read-only dashboard service
 
 - 已支持通过 `[dashboard]` 配置随 `serve` 启动只读 HTTP 面板
 - 面板展示运行时 operation 事件，并保持 MCP `stdio` 输出不被污染
@@ -125,7 +132,7 @@ Implementation notes:
 - dashboard 已提供本机只读 `GET /api/operation-log` 与 `GET /api/operation-log/{id}` durable history JSON API，可按 `limit`、`namespace`、`kind`、`correlation_id` 做受限查询；history 列表默认最多返回 100 条，单次查询最大 100 条
 - correlation id 与 operation-log 元数据仅用于观测排障，不替代 `run_reflection`，也不写 identity / commitments / reflection audit
 
-### 10. Local support bundle generator
+### 11. Local support bundle generator
 
 - 已新增首版本机支持包生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>]`
 - 生成器输出 `manifest.json`、`doctor.json`、`config-shape.json`、`operation-summaries.json`、`release-metadata.json`、`product-smoke-summary.json` 和 `local-log-excerpts.json`
@@ -135,7 +142,7 @@ Implementation notes:
 - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不上传数据，也不新增 identity / commitments / reflection 的 durable write path
 - local support bundle 仍只是 Local Alpha 诊断辅助；它不代表生产支持通道、远程上传能力、observe-only daemon diagnostics 或 Local Alpha 完整 gate 已完成
 
-### 11. Observe-only daemon diagnostics
+### 12. Observe-only daemon diagnostics
 
 - `doctor` 已输出 `daemon_observe_only` 本机只读诊断字段
 - 该字段固定声明 `mode = "observe_only"`、`local_only = true`、`write_gate_approved = false`、`writes_allowed = false`、`remote_listener_enabled = false`
@@ -249,14 +256,16 @@ Implementation notes:
 - `operation_log`: 9
 - `provider_config`: 9
 - `self_revision_demo_runner`: 2
+- `sqlite_backup_restore`: 6
 - `sqlite_store`: 20
 - `support_bundle`: 20
-- 合计：221 个测试通过
+- 合计：227 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`
 - Local Alpha support bundle 生成允许的 JSON 文件，敏感词扫描无未脱敏命中，且未包含 `.sqlite`、`.toml` 或原始 `.log` 文件
 - `first-run-bootstrap-smoke-local.sh` 已提供 `bootstrap-local -> doctor` 的本地 fresh-machine simulation evidence，包含 env 隔离、输出目录隔离、`doctor.json` / `summary.json` 和 isolated SQLite 证据；但真实 fresh-machine install / Windows runner 实机验证仍需单独记录，当前本机没有 `pwsh` 时，PowerShell runtime parity 只能视为待补证据
+- SQLite backup / restore 本地脚本门禁已覆盖 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份、拒绝 in-memory / invalid URL 和拒绝 `..` restore target；这不是远程备份、云同步或生产灾备证明
 
 ## 对外描述建议
 

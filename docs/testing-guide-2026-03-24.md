@@ -49,10 +49,11 @@
 - `operation_log`: 9 passed
 - `provider_config`: 9 passed
 - `self_revision_demo_runner`: 2 passed
+- `sqlite_backup_restore`: 6 passed
 - `sqlite_store`: 20 passed
 - `support_bundle`: 20 passed
 
-合计：221 个测试通过。
+合计：227 个测试通过。
 
 ---
 
@@ -103,6 +104,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 9. 如果改动涉及 Local Alpha product smoke gate、启动包装脚本或本地产品化证据链，在 repo root 补跑 `./scripts/product-smoke-local.sh [config_path]`；如果当前目录不是 repo root，使用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh`，并在需要配置文件时传入绝对 config path
 10. 如果改动涉及 bootstrap wrapper，确认脚本契约仍是 `[serve|doctor|bootstrap-local] [config_path]`，unsupported mode 返回 exit code `2`，`bootstrap-local` 不覆盖已有配置、不生成 secret、不运行 `doctor` 或 `serve`，相对目标路径按仓库根目录解析，输出的下一步命令能处理含空格路径，并补跑 `cargo test --test bootstrap -v`
 11. 如果改动涉及 first-run bootstrap smoke、本地首启证据或 `bootstrap-local -> doctor` 产品化路径，补跑 `bash -n scripts/first-run-bootstrap-smoke-local.sh` 和 `cargo test --test first_run_bootstrap_smoke -v`
+12. 如果改动涉及 SQLite 备份、恢复、schema migration 前置检查或 data lifecycle gate，补跑 `bash -n scripts/backup-sqlite.sh scripts/restore-sqlite.sh` 和 `cargo test --test sqlite_backup_restore -v`
 
 如果当前机器没有 `pwsh`，PowerShell runtime 行为测试会跳过；这种情况下只代表 Rust 测试覆盖了 PowerShell 脚本文本契约和 no-clobber 静态断言，Windows runner 或 Windows 实机验证仍需单独记录。
 
@@ -222,7 +224,27 @@ cargo test --test sqlite_store
 - 修改了 `src/adapters/sqlite/store.rs`
 - 修改了 `Namespace` / `ClaimDraft` 相关规则
 
-### 6.2 MCP `stdio` 端到端
+### 6.2 SQLite backup / restore 脚本门禁
+
+```zsh
+bash -n scripts/backup-sqlite.sh scripts/restore-sqlite.sh
+cargo test --test sqlite_backup_restore -v
+```
+
+这个门禁执行 bash 脚本；没有 `bash` 的平台会按现有脚本测试模式跳过 Rust 测试里的脚本调用。Windows 上需要 Git Bash、WSL 或等价 bash 环境来实际验证脚本行为。
+
+重点覆盖：
+
+- `backup-sqlite.sh` 生成本地备份后，`restore-sqlite.sh` 可以恢复到新的 SQLite 路径并保留数据内容
+- restore 拒绝覆盖已有目标文件
+- backup 拒绝把备份目录放到 live database 目录树内
+- backup / restore 拒绝 in-memory SQLite 文件语义
+- SQLite file URL 的 invalid percent encoding 会被拒绝
+- restore 目标路径里的 `..` 组件会被拒绝，避免恢复写入绕过调用方指定的新路径边界
+
+该门禁仍是本地脚本回归，不代表远程备份、云同步、定时 daemon、生产灾备、admin/auth 或团队模式能力。
+
+### 6.3 MCP `stdio` 端到端
 
 ```zsh
 cargo test --test mcp_stdio
@@ -261,7 +283,7 @@ cargo test --test mcp_stdio
 - 修改了 `src/interfaces/mcp/server.rs`
 - 修改了应用层输入校验或错误映射
 
-### 6.3 Provider 合规预检
+### 6.4 Provider 合规预检
 
 新增 provider 前先阅读 [Provider Readiness Checklist](provider-contract.md)。下面这组命令只是当前共享 provider 路径的最小验证；如果 checklist 里仍有 `partial` 或 `gap` 且新 provider 依赖该行为，新增 provider 的同一变更必须补齐对应专用回归或记录明确例外。
 
@@ -315,7 +337,7 @@ cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openai_compatib
 
 - self-revision proposal 的 malformed JSON 仍只通过 proposal 解析路径间接覆盖；新增 provider 前需要按 provider contract 补齐更明确的 self-revision proposal 错误断言
 
-### 6.4 领域不变量
+### 6.5 领域不变量
 
 ```zsh
 cargo test --test domain_invariants --test domain_snapshot
@@ -328,7 +350,7 @@ cargo test --test domain_invariants --test domain_snapshot
 - namespace 默认派生和 owner 匹配
 - snapshot evidence 预算与 gate 行为
 
-### 6.5 应用层编排
+### 6.6 应用层编排
 
 ```zsh
 cargo test --test application_use_cases --test failure_modes
@@ -357,7 +379,7 @@ cargo test --test application_use_cases --test failure_modes
 - `reflection_rejects_missing_replacement_evidence_event_ids`
 - `reflection_rejects_empty_identity_update_even_with_supporting_evidence`
 
-### 6.6 automatic self-revision runtime coverage
+### 6.7 automatic self-revision runtime coverage
 
 ```zsh
 cargo test --test mcp_stdio ingest_interaction_can_trigger_conflict_auto_reflection_when_explicit_conflict_hints_present -v
@@ -397,7 +419,7 @@ cargo test --test mcp_stdio ingest_interaction_auto_reflects_once_and_does_not_r
 - `ingest_interaction:failure` 当前对应 `failure` 或 `rollback` trigger hints，加上 failure evidence threshold。
 - `build_self_snapshot:periodic` 属于 snapshot tool flow，但 best-effort reflection attempt 发生在 `build_self_snapshot::execute` 之前；它不是后台 scheduler。
 
-### 6.7 automatic self-revision diagnostics
+### 6.8 automatic self-revision diagnostics
 
 ```zsh
 cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_for_recursion_guard_skip -v
@@ -433,7 +455,7 @@ cargo test --test bootstrap doctor_reports_self_revision_runtime_coverage -v
 - `selected_evidence_event_ids` 只表示已进入 handled durable write 的实际证据子集；`rejected`、`suppressed`、`not_triggered`、`skipped` 没有 durable write selection，应通过 `evidence_window_size` 读取本次触发窗口规模。
 - `durable_write_path = run_reflection` 只是说明一旦进入 durable write，唯一允许的落盘路径仍是 `run_reflection`；它不代表新增 MCP tool、后台 daemon、额外 hook 或独立 self-revision worker。
 
-### 6.8 self-revision evidence policy
+### 6.9 self-revision evidence policy
 
 ```zsh
 cargo test --test failure_modes auto_reflection_rejects_model_proposed_evidence_outside_trigger_window -v
@@ -461,7 +483,7 @@ cargo test --test openai_compatible_model openai_compatible_model_parses_self_re
 - record-only / no-op proposal 是否同样不能绕过 no-match query rejection
 - `proposed_evidence_query` 当前是否仍不会在 id 为空时自动 widening / ranking
 
-### 6.9 automatic self-revision MVP 定向验证
+### 6.10 automatic self-revision MVP 定向验证
 
 这是当前 self-revision MVP 的最低定向回归集。只要你改了下面任一部分，就至少补跑这 7 条：
 
@@ -507,7 +529,7 @@ cargo test --test provider_config -v
 - 不要把这组测试解读成“所有 MCP 入口都会自动反思”
 - 当前 auto-reflection 仍通过已有 `run_reflection` 写入 identity / commitments，不存在新的 durable write 通道
 
-### 6.10 self-revision demo package
+### 6.11 self-revision demo package
 
 如果改动涉及下面任一部分，需要补跑 demo package 定向验证：
 
@@ -545,7 +567,7 @@ cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner -
 
 ---
 
-### 6.11 Local Alpha product smoke script
+### 6.12 Local Alpha product smoke script
 
 如果改动涉及 Local Alpha 发布 gate、本地启动包装、`doctor` 配置传递，或 self-revision demo 证据链的产品化入口，需要补跑 product smoke：
 
@@ -585,7 +607,7 @@ cd /tmp && /path/to/agent-llm-mm/scripts/product-smoke-local.sh /path/to/agent-l
 
 ---
 
-### 6.12 Local first-run bootstrap smoke
+### 6.13 Local first-run bootstrap smoke
 
 如果改动涉及 `bootstrap-local`、本地配置引导、`doctor` 配置路径、默认数据库环境变量隔离，或 Local Alpha first-run 证据，需要补跑：
 

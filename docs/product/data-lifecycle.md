@@ -74,7 +74,9 @@ skipped.
 ## Restore
 
 Default restore rule: restore to a new path first. Do not restore over the
-current formal SQLite file.
+current formal SQLite file. Restore rejects in-memory SQLite targets, invalid
+SQLite URL percent encoding, unsafe path characters, `..` target path
+components, and any target path that already exists.
 
 ```bash
 ./scripts/restore-sqlite.sh \
@@ -172,6 +174,7 @@ For migration implementation or verification:
 Useful local checks:
 
 ```bash
+cargo test --test sqlite_backup_restore
 cargo test --test sqlite_store
 git diff --check
 ./scripts/agent-llm-mm.sh doctor /absolute/path/to/restore-check.toml
@@ -180,6 +183,7 @@ git diff --check
 On Windows, keep the platform command shape separate:
 
 ```powershell
+cargo test --test sqlite_backup_restore
 cargo test --test sqlite_store
 git diff --check
 pwsh -File .\scripts\agent-llm-mm.ps1 doctor .\restore-check.toml

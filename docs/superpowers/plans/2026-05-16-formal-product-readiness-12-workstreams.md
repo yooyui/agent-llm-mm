@@ -556,12 +556,13 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 - Modify: `docs/development-macos.md`
 - Modify: `docs/development-windows.md`
 - Create: `docs/product/data-lifecycle.md`
+- Test: `tests/sqlite_backup_restore.rs`
 - Test: `tests/sqlite_store.rs`
 - Test: future migration tests under `tests/`
 
 **Implementation steps:**
 
-- [ ] **Step 1: Create the data lifecycle doc**
+- [x] **Step 1: Create the data lifecycle doc**
 
   Create `docs/product/data-lifecycle.md` with:
 
@@ -572,19 +573,13 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - retention expectations for events, claims, reflections, operation log, and demo artifacts
   - migration verification checklist
 
-- [ ] **Step 2: Add backup / restore verification commands**
+- [x] **Step 2: Add backup / restore verification commands**
 
-  Document commands for SQLite backup:
-
-  ```bash
-  sqlite3 /path/to/agent-llm-mm.sqlite ".backup '/path/to/backup.sqlite'"
-  shasum -a 256 /path/to/backup.sqlite
-  ```
-
-  Document restore verification:
+  Documented and regression-tested local SQLite backup / restore helpers:
 
   ```bash
-  AGENT_LLM_MM_DATABASE_URL="sqlite:///path/to/restored-copy.sqlite" ./scripts/agent-llm-mm.sh doctor
+  bash -n scripts/backup-sqlite.sh scripts/restore-sqlite.sh
+  cargo test --test sqlite_backup_restore -v
   ```
 
 - [ ] **Step 3: Add migration tests when schema changes**
@@ -596,7 +591,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - data preservation check
   - rollback / failure note if rollback is not supported
 
-- [ ] **Step 4: Link data lifecycle docs**
+- [x] **Step 4: Link data lifecycle docs**
 
   Link `docs/product/data-lifecycle.md` from:
 

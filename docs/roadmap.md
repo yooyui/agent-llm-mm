@@ -16,6 +16,8 @@
 
 2026-05-16 后续补齐了 Local Alpha first-run bootstrap helper：`bootstrap-local` 可安全复制 dev 示例配置到本机私有 config，拒绝覆盖已有文件，不生成 secret，不运行 `doctor` / `serve`，不启动 daemon；相对目标路径按仓库根目录解析。随后新增的 `first-run-bootstrap-smoke-local.sh` 可在隔离输出目录里模拟 `bootstrap-local -> doctor`，生成 `doctor.json` / `summary.json` 和 isolated SQLite 证据，并清理 config/database 环境变量干扰。该能力收窄 fresh-machine setup 的本地模拟证据，但仍需要真实 fresh-machine / Windows runner 证据后才能声明 Local Alpha install/bootstrap gate 完成。
 
+2026-05-16 又补齐了 Local Alpha SQLite backup / restore 本地回归门禁：`cargo test --test sqlite_backup_restore -v` 覆盖 backup -> restore-to-new-path roundtrip、restore 拒绝覆盖、backup 拒绝 live DB 子目录、in-memory / invalid URL 拒绝和 `..` restore target 拒绝。该门禁把 data lifecycle 从纯文档规则推进为可回归验证的本地脚本边界，但仍不是远程备份、云同步、定时备份或生产灾备。
+
 ## 下一阶段：正式产品化
 
 目标：
@@ -26,6 +28,7 @@
 - 在 auth、authorization、audit、rollback 和隔离测试完成前，不暴露可写远程管理能力
 - Local Product Alpha 的支持包已有首版本地生成器：只允许分享脱敏 `doctor` shape、配置 shape、受限 operation summaries、release metadata、product smoke summary、manifest，以及显式 `--log-file <path>` 触发的 bounded / redacted `local-log-excerpts.json`；它仍不自动发现日志位置或复制原始日志文件
 - Local Product Alpha 的 first-run 配置引导已有 `bootstrap-local` 脚本入口和本地 `bootstrap-local -> doctor` smoke simulation；下一步应补真实 fresh-machine install / Windows runner evidence，而不是把 helper 表述为 installer 或 production bootstrapper
+- Local Product Alpha 的 data lifecycle 已有本地 backup / restore 脚本和回归门禁；restore 仍默认写到新路径，正式 `database_url` 切换必须由人工在 `doctor` 验证后决定
 - daemon 先经过 observe-only gate：Local Alpha 阶段不调用 `run_reflection`、不写 identity / commitments、不启动 remote listener；当前 `doctor.daemon_observe_only` 只提供本机只读 preflight 诊断和 operation-log failed / suppressed 候选计数
 - correlation ID 先用于 observability：成功/失败 MCP tool call、dashboard event 和 operation-log metadata 可按 `mcp-tool-call-<uuid-v4>` 串联，但不新增语义写路径
 

@@ -201,6 +201,10 @@ Required boundary:
   migration or formal data path changes
 - restore defaults to a new path first; never overwrite a formal database as
   the first restore step
+- `cargo test --test sqlite_backup_restore` covers the local backup/restore
+  script gate: backup-to-restore roundtrip, restore overwrite refusal, live DB
+  subdirectory backup refusal, in-memory database refusal, invalid SQLite URL
+  percent-encoding refusal, and `..` restore target refusal
 - support bundle summaries are not full database exports
 - demo SQLite artifacts are demo evidence, not formal user data export
 - migration work validates against a test or restored database before changing

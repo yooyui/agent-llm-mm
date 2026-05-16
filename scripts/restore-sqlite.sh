@@ -145,6 +145,19 @@ reject_unsupported_file_path_chars() {
   fi
 }
 
+reject_parent_directory_component() {
+  local label="$1"
+  local path="$2"
+  local part
+
+  IFS='/' read -r -a parts <<< "$path"
+  for part in "${parts[@]}"; do
+    if [[ "$part" == ".." ]]; then
+      fail "${label} must not contain '..' path components: ${path}"
+    fi
+  done
+}
+
 reserve_new_file() {
   local file="$1"
 
@@ -178,6 +191,7 @@ require_non_empty "backup file" "$backup_file"
 require_non_empty "target database path" "$target_path"
 reject_unsupported_file_path_chars "backup file" "$backup_file"
 reject_unsupported_file_path_chars "target database path" "$target_path"
+reject_parent_directory_component "target database path" "$target_path"
 
 [[ -f "$backup_file" ]] || fail "backup file does not exist: ${backup_file}"
 
