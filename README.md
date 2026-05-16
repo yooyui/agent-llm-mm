@@ -97,9 +97,10 @@
   - 本机只读 dashboard API 已提供 `GET /api/operation-log` 与 `GET /api/operation-log/{id}` durable history 查询，可按 `limit`、`namespace`、`kind`、`correlation_id` 做受限排障；history 列表默认最多返回 100 条，单次查询最大 100 条
   - 不改变 MCP tool 列表，不污染 MCP `stdout`
 - local support bundle generator
-  - 提供首版本机排障材料生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>]`
+  - 提供首版本机排障材料生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>] [--correlation-id <id>]`
   - `<output_dir>` 必须不存在或为空，避免旧的本地文件混入可分享支持包目录
   - 输出 redacted `doctor` shape、config shape、bounded operation summaries、release metadata、product smoke summary 和 manifest
+  - 可在显式传入生成型 `--correlation-id mcp-tool-call-<uuid-v4>` 时，仅导出该 correlation id 对应的 operation-log metadata，并把 filter 形状写入 `operation-summaries.json`
   - 可在显式传入 `--log-file <path>` 时输出 bounded / redacted `local-log-excerpts.json`，但不会自动扫描日志目录或复制原始 `.log` 文件
   - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不包含 provider payload、不上传数据
   - 该能力只是 Local Alpha 诊断辅助，不代表生产支持通道、远程上传能力或 Local Alpha 已完成
@@ -201,9 +202,11 @@
 
 ```zsh
 ./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+# 可选：只导出某次 MCP tool call 的 operation-log metadata
+./scripts/generate-support-bundle.sh target/support-bundles/manual-correlation-check --correlation-id mcp-tool-call-018fbc89-9ac1-4f5d-8b2a-1f6f5f27b205
 ```
 
-输出目录必须不存在或为空；生成器会拒绝非空目录，避免旧的本地文件被误当作支持包内容分享。该支持包只包含脱敏 JSON 摘要，不会复制完整 SQLite 数据库、raw TOML、provider payload 或原始 `.log` 文件。需要日志排障时必须显式传入 `--log-file <path>`，生成器只输出受限的 `local-log-excerpts.json`。
+输出目录必须不存在或为空；生成器会拒绝非空目录，避免旧的本地文件被误当作支持包内容分享。该支持包只包含脱敏 JSON 摘要，不会复制完整 SQLite 数据库、raw TOML、provider payload 或原始 `.log` 文件。需要日志排障时必须显式传入 `--log-file <path>`，生成器只输出受限的 `local-log-excerpts.json`。需要聚焦某次工具调用时可显式传入生成型 `--correlation-id mcp-tool-call-<uuid-v4>`，生成器只过滤 operation-log metadata，不输出 raw request / response / diagnostic payload。
 
 ## 文档导航
 

@@ -84,6 +84,7 @@ async fn support_bundle_generates_redacted_local_diagnostics() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: None,
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -198,6 +199,7 @@ async fn support_bundle_does_not_create_or_bootstrap_missing_database() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: None,
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate without bootstrapping db");
@@ -223,6 +225,222 @@ async fn support_bundle_does_not_create_or_bootstrap_missing_database() {
             .expect("entries array")
             .len(),
         0
+    );
+}
+
+#[tokio::test]
+async fn support_bundle_filters_operation_summaries_by_correlation_id() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_path = temp_dir.path().join("support-bundle-filter.sqlite");
+    let database_url = sqlite_url(database_path);
+    let store = SqliteStore::bootstrap(&database_url)
+        .await
+        .expect("store should bootstrap");
+    let now = Utc::now();
+    let target_correlation_id = "mcp-tool-call-018fbc89-9ac1-4f5d-8b2a-1f6f5f27b201";
+    let secret = "sk-correlation-filter-secret";
+
+    for (operation_id, correlation_id, occurred_at) in [
+        (
+            "matching-older",
+            target_correlation_id,
+            now - Duration::seconds(1),
+        ),
+        (
+            "other-correlation",
+            "mcp-tool-call-018fbc89-9ac1-4f5d-8b2a-1f6f5f27b202",
+            now,
+        ),
+        (
+            "matching-newer",
+            target_correlation_id,
+            now + Duration::seconds(1),
+        ),
+    ] {
+        store
+            .append_operation(OperationLogEntry {
+                operation_id: operation_id.to_string(),
+                occurred_at,
+                namespace: Some("self".to_string()),
+                actor_kind: ActorKind::System,
+                actor_id: "mcp-stdio".to_string(),
+                entrypoint: "ingest_interaction".to_string(),
+                operation_kind: OperationLogKind::Tool,
+                status: OperationLogStatus::Ok,
+                correlation_id: Some(correlation_id.to_string()),
+                request_summary_json: Some(format!(r#"{{"api_key":"{secret}"}}"#)),
+                response_summary_json: Some(r#"{"event_id":"event-1"}"#.to_string()),
+                diagnostic_summary_json: Some(format!(r#"{{"token":"{secret}"}}"#)),
+                redaction_version: 1,
+            })
+            .await
+            .expect("operation append should succeed");
+    }
+
+    let output_dir = temp_dir.path().join("bundle");
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig {
+            database_url: database_url.clone(),
+            ..Default::default()
+        },
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: None,
+        operation_correlation_id: Some(target_correlation_id.to_string()),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let operation_summaries = read_json(output_dir.join("operation-summaries.json"));
+    assert_eq!(operation_summaries["available"], true);
+    assert_eq!(operation_summaries["limit"], 25);
+    assert_eq!(
+        operation_summaries["filter"]["correlation_id"],
+        target_correlation_id
+    );
+
+    let entries = operation_summaries["entries"]
+        .as_array()
+        .expect("operation entries array");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["operation_id"], "matching-newer");
+    assert_eq!(entries[0]["operation_kind"], "tool");
+    assert_eq!(entries[0]["status"], "ok");
+    assert!(
+        entries[0].get("kind").is_none(),
+        "support bundle operation metadata should use operation_kind, not kind"
+    );
+    assert_eq!(entries[1]["operation_id"], "matching-older");
+    assert!(entries.iter().all(|entry| {
+        entry["correlation_id"] == target_correlation_id && entry["read_only"] == true
+    }));
+
+    let rendered = serde_json::to_string_pretty(&operation_summaries).expect("json text");
+    assert!(!rendered.contains("other-correlation"));
+    assert!(!rendered.contains(secret));
+    assert!(!rendered.contains("request_summary"));
+    assert!(!rendered.contains("diagnostic_summary"));
+}
+
+#[tokio::test]
+async fn support_bundle_rejects_non_generated_correlation_id_filter() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+
+    let result = generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: None,
+        operation_correlation_id: Some("sk-secret-correlation".to_string()),
+    })
+    .await;
+
+    let error = result.expect_err("invalid correlation ids must be rejected");
+    assert_error_contains(&error, "correlation id must start with mcp-tool-call-");
+    assert!(
+        !output_dir.join("operation-summaries.json").exists(),
+        "invalid correlation ids must not produce bundle artifacts"
+    );
+    assert!(
+        !output_dir.exists(),
+        "invalid correlation ids should fail before creating the bundle directory"
+    );
+}
+
+#[tokio::test]
+async fn support_bundle_rejects_prefixed_secret_like_correlation_id_filter() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+
+    let result = generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: None,
+        operation_correlation_id: Some("mcp-tool-call-sk-secret-token".to_string()),
+    })
+    .await;
+
+    let error = result.expect_err("prefixed secret-like correlation ids must be rejected");
+    assert_error_contains(
+        &error,
+        "correlation id must use the generated mcp-tool-call-<uuid-v4> shape",
+    );
+    assert!(
+        !output_dir.join("operation-summaries.json").exists(),
+        "invalid correlation ids must not produce bundle artifacts"
+    );
+    assert!(
+        !output_dir.exists(),
+        "invalid correlation ids should fail before creating the bundle directory"
+    );
+}
+
+#[tokio::test]
+async fn support_bundle_rejects_non_v4_correlation_id_filter() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+
+    let result = generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: None,
+        operation_correlation_id: Some(
+            "mcp-tool-call-00000000-0000-1000-8000-000000000000".to_string(),
+        ),
+    })
+    .await;
+
+    let error = result.expect_err("non-v4 correlation ids must be rejected");
+    assert_error_contains(
+        &error,
+        "correlation id must use the canonical generated mcp-tool-call-<uuid-v4> shape",
+    );
+    assert!(
+        !output_dir.join("operation-summaries.json").exists(),
+        "invalid correlation ids must not produce bundle artifacts"
+    );
+    assert!(
+        !output_dir.exists(),
+        "invalid correlation ids should fail before creating the bundle directory"
+    );
+}
+
+#[tokio::test]
+async fn support_bundle_rejects_non_canonical_correlation_id_filter() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+
+    let result = generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: None,
+        operation_correlation_id: Some(
+            "mcp-tool-call-018FBC89-9AC1-4F5D-8B2A-1F6F5F27B201".to_string(),
+        ),
+    })
+    .await;
+
+    let error = result.expect_err("non-canonical correlation ids must be rejected");
+    assert_error_contains(
+        &error,
+        "correlation id must use the canonical generated mcp-tool-call-<uuid-v4> shape",
+    );
+    assert!(
+        !output_dir.join("operation-summaries.json").exists(),
+        "invalid correlation ids must not produce bundle artifacts"
+    );
+    assert!(
+        !output_dir.exists(),
+        "invalid correlation ids should fail before creating the bundle directory"
     );
 }
 
@@ -285,6 +503,7 @@ async fn support_bundle_generates_bounded_redacted_local_log_excerpts() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path.clone()),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -427,6 +646,7 @@ async fn support_bundle_skips_unquoted_provider_payload_fields() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -473,6 +693,7 @@ async fn support_bundle_preserves_safe_request_response_metadata() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -504,6 +725,7 @@ async fn support_bundle_skips_session_material() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -540,6 +762,7 @@ async fn support_bundle_redacts_hyphenated_api_key_markers() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -581,6 +804,7 @@ async fn support_bundle_skips_prefixed_json_compound_secret_keys() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -633,6 +857,7 @@ async fn support_bundle_redacts_spaced_secret_markers() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -692,6 +917,7 @@ async fn support_bundle_skips_ssh_private_key_blocks() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -740,6 +966,7 @@ async fn support_bundle_skips_oversized_tail_inside_unclosed_private_key_block()
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -784,6 +1011,7 @@ async fn support_bundle_skips_short_private_key_body_lines_in_oversized_tail() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -819,6 +1047,7 @@ async fn support_bundle_redacts_windows_style_local_paths() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -862,6 +1091,7 @@ async fn support_bundle_redacts_space_paths_and_preserves_following_fields() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -914,6 +1144,7 @@ async fn support_bundle_skips_oversized_tail_that_starts_inside_private_key_bloc
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -957,6 +1188,7 @@ async fn support_bundle_marks_oversized_log_input_as_tail_scoped() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -998,6 +1230,7 @@ async fn support_bundle_discards_oversized_single_line_log_tail() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: Some(log_path),
+        operation_correlation_id: None,
     })
     .await
     .expect("support bundle should generate");
@@ -1039,6 +1272,7 @@ async fn support_bundle_refuses_non_empty_output_directory() {
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
         local_log_path: None,
+        operation_correlation_id: None,
     })
     .await;
 
@@ -1067,10 +1301,158 @@ fn support_bundle_script_uses_dedicated_generator_binary() {
     assert!(script.contains("cargo run --quiet --bin generate_support_bundle --"));
     assert!(script.contains("usage: ./scripts/generate-support-bundle.sh"));
     assert!(script.contains("--log-file"));
+    assert!(script.contains("--correlation-id"));
+    assert!(binary.contains("--correlation-id"));
+    assert!(binary.contains("missing value for --correlation-id"));
     assert!(!script.contains("log path does not exist"));
     assert!(script.contains("mkdir -p \"${output_parent}\""));
     assert!(binary.contains("unknown option"));
     assert_ne!(mode & 0o111, 0, "script should be directly executable");
+}
+
+#[test]
+fn support_bundle_script_forwards_correlation_id_filter() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("script-correlation-bundle");
+    let correlation_id = "mcp-tool-call-018fbc89-9ac1-4f5d-8b2a-1f6f5f27b203";
+
+    let output = Command::new("bash")
+        .arg("scripts/generate-support-bundle.sh")
+        .arg(&output_dir)
+        .arg("--correlation-id")
+        .arg(correlation_id)
+        .output()
+        .expect("support bundle script should run");
+    assert!(
+        output.status.success(),
+        "script should forward correlation id filters\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let operation_summaries = read_json(output_dir.join("operation-summaries.json"));
+    assert_eq!(
+        operation_summaries["filter"]["correlation_id"],
+        correlation_id
+    );
+}
+
+#[test]
+fn support_bundle_script_rejects_empty_correlation_id_filter() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("script-empty-correlation-bundle");
+
+    let output = Command::new("bash")
+        .arg("scripts/generate-support-bundle.sh")
+        .arg(&output_dir)
+        .arg("--correlation-id")
+        .arg("")
+        .output()
+        .expect("support bundle script should run");
+    assert!(
+        !output.status.success(),
+        "empty correlation id filters must fail\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !output_dir.exists(),
+        "empty correlation id filters must not create bundle output"
+    );
+}
+
+#[test]
+fn support_bundle_script_forwards_empty_log_file_as_explicit_request() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("script-empty-log-bundle");
+
+    let output = Command::new("bash")
+        .arg("scripts/generate-support-bundle.sh")
+        .arg(&output_dir)
+        .arg("--log-file")
+        .arg("")
+        .output()
+        .expect("support bundle script should run");
+    assert!(
+        output.status.success(),
+        "explicit empty log paths should still be forwarded to the generator\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    assert_eq!(log_excerpts["available"], false);
+    assert_eq!(log_excerpts["unavailable_reason"], "log file not found");
+    assert_eq!(log_excerpts["source"], "<local-path>");
+}
+
+#[test]
+fn support_bundle_script_rejects_empty_config_path() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("script-empty-config-bundle");
+
+    let output = Command::new("bash")
+        .arg("scripts/generate-support-bundle.sh")
+        .arg(&output_dir)
+        .arg("")
+        .output()
+        .expect("support bundle script should run");
+    assert!(
+        !output.status.success(),
+        "explicit empty config paths must not fall back to default config\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !output_dir.exists(),
+        "empty config paths must not create bundle output"
+    );
+}
+
+#[test]
+fn support_bundle_script_forwards_config_log_and_correlation_id_together() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("script-combined-bundle");
+    let config_path = temp_dir.path().join("agent-llm-mm.toml");
+    let log_path = temp_dir.path().join("agent-llm-mm.log");
+    let database_path = temp_dir.path().join("agent-llm-mm.sqlite");
+    let correlation_id = "mcp-tool-call-018fbc89-9ac1-4f5d-8b2a-1f6f5f27b204";
+    fs::write(
+        &config_path,
+        format!(
+            "transport = \"stdio\"\n\
+             database_url = \"{}\"\n\
+             model_provider = \"mock\"\n",
+            sqlite_url(database_path)
+        ),
+    )
+    .expect("config file");
+    fs::write(&log_path, "INFO safe combined support bundle smoke\n").expect("log file");
+
+    let output = Command::new("bash")
+        .arg("scripts/generate-support-bundle.sh")
+        .arg(&output_dir)
+        .arg(&config_path)
+        .arg("--log-file")
+        .arg(&log_path)
+        .arg("--correlation-id")
+        .arg(correlation_id)
+        .output()
+        .expect("support bundle script should run");
+    assert!(
+        output.status.success(),
+        "script should forward config, log, and correlation id together\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let operation_summaries = read_json(output_dir.join("operation-summaries.json"));
+    assert_eq!(
+        operation_summaries["filter"]["correlation_id"],
+        correlation_id
+    );
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    assert_eq!(log_excerpts["available"], true);
 }
 
 #[test]
@@ -1106,6 +1488,13 @@ fn sqlite_url(path: PathBuf) -> String {
 
 fn read_json(path: PathBuf) -> Value {
     serde_json::from_slice(&fs::read(path).expect("json file")).expect("valid json")
+}
+
+fn assert_error_contains(error: &anyhow::Error, expected: &str) {
+    assert!(
+        error.to_string().contains(expected),
+        "unexpected error: {error:#}"
+    );
 }
 
 async fn table_count(database_url: &str, table: &str) -> i64 {

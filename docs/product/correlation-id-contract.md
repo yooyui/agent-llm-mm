@@ -58,8 +58,16 @@ identity, commitment, claim, or reflection changes.
 ## Support Bundle Use
 
 Support bundle summaries may include correlation IDs so a maintainer can ask for
-the matching dashboard event or operation-log row. A support bundle must still
-redact secrets and exclude full SQLite databases by default.
+the matching dashboard event or operation-log row. A support bundle may also be
+generated with an explicit `--correlation-id <id>` filter to include only
+matching operation-log metadata rows in `operation-summaries.json`.
+
+The support bundle filter accepts only the canonical generated
+`mcp-tool-call-<uuid-v4>` shape. This keeps arbitrary user text, provider
+tokens, or secret-like values out of the bundle metadata. Filtered operation
+summaries remain metadata-only and must still redact secrets, omit request /
+response / diagnostic payload summaries, avoid database migration, and exclude
+full SQLite databases by default.
 
 ## Verification
 
@@ -67,6 +75,7 @@ Relevant tests:
 
 ```bash
 cargo test --test dashboard_projection --test mcp_stdio --test operation_log -v
+cargo test --test support_bundle -v
 ```
 
 Expected coverage:
@@ -76,3 +85,5 @@ Expected coverage:
 - distinct MCP calls receive distinct correlation IDs
 - MCP tool calls append runtime operation-log entries with correlation IDs
 - operation-log queries by `correlation_id` continue to work
+- support bundle operation summaries can be filtered by generated
+  `mcp-tool-call-<uuid-v4>` correlation IDs without exposing raw operation payloads

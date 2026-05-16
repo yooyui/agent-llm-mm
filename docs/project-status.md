@@ -134,10 +134,11 @@ Implementation notes:
 
 ### 11. Local support bundle generator
 
-- 已新增首版本机支持包生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>]`
+- 已新增首版本机支持包生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>] [--correlation-id <id>]`
 - 生成器输出 `manifest.json`、`doctor.json`、`config-shape.json`、`operation-summaries.json`、`release-metadata.json`、`product-smoke-summary.json` 和 `local-log-excerpts.json`
 - `doctor` / config 只保留脱敏 shape：SQLite URL 会泛化为 `sqlite://<local-path>`，provider credential 只输出布尔值，provider URL 会移除 userinfo 与 query；support bundle 的 `doctor.json` 不执行 runtime bootstrap
-- operation summaries 通过 read-only SQLite 连接读取最多 25 条 durable operation-log metadata，不输出 request / response payload summary；数据库或 `operation_log` 表不存在时会标记 unavailable，不创建或迁移数据库
+- operation summaries 通过 read-only SQLite 连接读取最多 25 条 durable operation-log metadata，不输出 request / response / diagnostic payload summary；可显式传入生成型 `--correlation-id mcp-tool-call-<uuid-v4>` 只导出匹配 correlation id 的 metadata，并在 `operation-summaries.json.filter` 记录过滤条件；数据库或 `operation_log` 表不存在时会标记 unavailable，不创建或迁移数据库
+- 非生成型、非 canonical 或非 v4 的 correlation id filter 会在创建 bundle 输出目录前被拒绝，避免把 secret-like 文本写进诊断包 metadata
 - local log excerpts 只在显式 `--log-file <path>` 时生成 bounded / redacted 摘要，不自动扫描日志目录、home、系统日志、browser profile、SSH/cookie/session、shell history 或 `target/` 输出，也不复制原始 `.log` 文件
 - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不上传数据，也不新增 identity / commitments / reflection 的 durable write path
 - local support bundle 仍只是 Local Alpha 诊断辅助；它不代表生产支持通道、远程上传能力、observe-only daemon diagnostics 或 Local Alpha 完整 gate 已完成

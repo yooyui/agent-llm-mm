@@ -6,7 +6,7 @@ This document defines what a Local Product Alpha user may share when asking for
 debugging help. The repository now includes a first local-only generator:
 
 ```bash
-./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>]
+./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>] [--correlation-id <id>]
 ```
 
 `<output_dir>` must not exist yet or must be empty. The generator rejects a
@@ -18,6 +18,12 @@ logs by scanning the repository, the user's home directory, browser profiles,
 SSH directories, system logs, shell history, or `target/` output. When a log file
 is requested, the bundle may include only a bounded, redacted JSON summary and a
 small number of safe excerpts. It must not copy the original `.log` file.
+
+`--correlation-id <id>` is also optional and explicit. When provided, it filters
+`operation-summaries.json` to operation-log metadata rows that match that
+generated MCP correlation ID. The accepted value must use the generated
+canonical `mcp-tool-call-<uuid-v4>` shape so arbitrary secret-like text is not
+copied into the support bundle filter metadata.
 
 The bundle is still a Local Alpha diagnostic aid, not a production support
 channel. It must not upload data, start remote diagnostics, copy the full user
@@ -43,10 +49,13 @@ directory:
   credential presence as a boolean, dashboard settings, daemon settings, and a
   redacted config file name when one was provided
 - `operation-summaries.json`: up to 25 recent durable operation-log metadata
-  rows, limited to operation id, timestamp, namespace, entrypoint, kind, status,
-  correlation id, and a `read_only` marker; when the local database or
-  `operation_log` table is unavailable, this file records `available = false`
-  and an unavailable reason instead of creating or migrating the database
+  rows, limited to operation id, timestamp, namespace, entrypoint,
+  `operation_kind`, status, correlation id, an optional
+  `filter.correlation_id`, and a `read_only` marker; when
+  `--correlation-id <id>` is provided, only matching generated MCP
+  correlation IDs are exported; when the local database or `operation_log` table
+  is unavailable, this file records `available = false` and an unavailable
+  reason instead of creating or migrating the database
 - `release-metadata.json`: generated timestamp, git branch, git commit, local
   platform, Rust version, and verification command names
 - `product-smoke-summary.json`: whether the latest self-revision demo evidence
@@ -151,12 +160,16 @@ section itself is secret-only.
   provider secret indicators used by the test fixture
 - no `.sqlite` file is copied into the bundle
 - no raw `.log` file is copied into the bundle
+- operation summaries can be explicitly filtered by generated MCP
+  `mcp-tool-call-<uuid-v4>` correlation ID
+- non-generated, non-canonical, or non-v4 correlation ID filter values are
+  rejected before the bundle output directory is created
 - explicit local log excerpts are bounded, redacted, and written only as
   `local-log-excerpts.json`
 - missing or unrequested local logs are represented as unavailable instead of
   triggering directory scans or runtime bootstrap
 - recent operation summaries are bounded to 25 entries and omit request /
-  response payload summaries
+  response / diagnostic payload summaries
 - missing SQLite databases are not created or bootstrapped; operation summaries
   are marked unavailable instead
 - `doctor.json` records `runtime_bootstrap_performed = false`
@@ -185,6 +198,8 @@ cargo test --test support_bundle -v
 bash -n scripts/generate-support-bundle.sh
 rm -rf target/support-bundles/manual-check
 ./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+rm -rf target/support-bundles/manual-correlation-check
+./scripts/generate-support-bundle.sh target/support-bundles/manual-correlation-check --correlation-id mcp-tool-call-018fbc89-9ac1-4f5d-8b2a-1f6f5f27b205
 find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
 rg -n 'api_key|api-key|x-api-key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///|token=' target/support-bundles/manual-check || true
 find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' -o -name '*.log' \) -print

@@ -9,6 +9,7 @@ use anyhow::{Result, anyhow};
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut local_log_path = None;
+    let mut correlation_id = None;
     let mut positional = Vec::new();
 
     let mut args = std::env::args().skip(1);
@@ -22,6 +23,13 @@ async fn main() -> Result<()> {
                 return Err(anyhow!("missing value for --log-file"));
             };
             local_log_path = Some(PathBuf::from(path));
+            continue;
+        }
+        if value == "--correlation-id" {
+            let Some(id) = args.next() else {
+                return Err(anyhow!("missing value for --correlation-id"));
+            };
+            correlation_id = Some(id);
             continue;
         }
         if value.starts_with('-') {
@@ -52,6 +60,7 @@ async fn main() -> Result<()> {
         config_path,
         project_root,
         local_log_path,
+        operation_correlation_id: correlation_id,
     })
     .await?;
 
@@ -60,5 +69,7 @@ async fn main() -> Result<()> {
 }
 
 fn print_usage() {
-    eprintln!("usage: generate_support_bundle <output_dir> [config_path] [--log-file <path>]");
+    eprintln!(
+        "usage: generate_support_bundle <output_dir> [config_path] [--log-file <path>] [--correlation-id <id>]"
+    );
 }

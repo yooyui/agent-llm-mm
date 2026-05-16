@@ -218,7 +218,7 @@ multi-tenant data lifecycle, or production disaster recovery.
 Local Alpha support bundle behavior now has a first local-only generator:
 
 ```bash
-./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>]
+./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>] [--correlation-id <id>]
 ```
 
 Review [`support-bundle-local-alpha.md`](support-bundle-local-alpha.md) before
@@ -237,6 +237,11 @@ Required boundary:
   migrate SQLite databases, or seed default identity / commitments
 - operation summaries must use read-only local SQLite access and mark themselves
   unavailable when the database or `operation_log` table is absent
+- operation summaries may be explicitly filtered with generated
+  `--correlation-id mcp-tool-call-<uuid-v4>` values, must record only the filter shape,
+  and must still omit request / response / diagnostic payload summaries
+- non-generated, non-canonical, or non-v4 correlation id filter values must fail
+  before bundle artifacts or output directories are created
 - local log excerpts must be generated only from an explicit `--log-file <path>`
   argument; support bundle generation must not scan default log directories,
   home directories, system logs, browser profiles, SSH directories, shell
@@ -264,6 +269,8 @@ cargo test --test support_bundle -v
 bash -n scripts/generate-support-bundle.sh
 rm -rf target/support-bundles/manual-check
 ./scripts/generate-support-bundle.sh target/support-bundles/manual-check
+rm -rf target/support-bundles/manual-correlation-check
+./scripts/generate-support-bundle.sh target/support-bundles/manual-correlation-check --correlation-id mcp-tool-call-018fbc89-9ac1-4f5d-8b2a-1f6f5f27b205
 find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
 rg -n 'api_key|api-key|x-api-key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///|token=' target/support-bundles/manual-check || true
 find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' -o -name '*.log' \) -print

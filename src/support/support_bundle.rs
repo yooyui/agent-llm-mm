@@ -13,6 +13,7 @@ use sqlx::{
     Row,
     sqlite::{SqliteConnectOptions, SqlitePool},
 };
+use uuid::{Uuid, Version};
 
 use crate::{
     interfaces,
@@ -34,6 +35,7 @@ pub struct SupportBundleOptions {
     pub config_path: Option<PathBuf>,
     pub project_root: PathBuf,
     pub local_log_path: Option<PathBuf>,
+    pub operation_correlation_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -99,8 +101,14 @@ struct DaemonShape {
 struct OperationSummaries {
     limit: usize,
     available: bool,
+    filter: Option<OperationSummaryFilter>,
     unavailable_reason: Option<&'static str>,
     entries: Vec<OperationSummary>,
+}
+
+#[derive(Debug, Serialize)]
+struct OperationSummaryFilter {
+    correlation_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -109,7 +117,7 @@ struct OperationSummary {
     occurred_at: String,
     namespace: Option<String>,
     entrypoint: String,
-    kind: String,
+    operation_kind: String,
     status: String,
     correlation_id: Option<String>,
     read_only: bool,
@@ -186,7 +194,10 @@ pub async fn generate_support_bundle(options: SupportBundleOptions) -> Result<()
         config_path,
         project_root,
         local_log_path,
+        operation_correlation_id,
     } = options;
+
+    validate_operation_correlation_id(operation_correlation_id.as_deref())?;
 
     fs::create_dir_all(&output_dir).with_context(|| {
         format!(
@@ -198,7 +209,8 @@ pub async fn generate_support_bundle(options: SupportBundleOptions) -> Result<()
 
     config.validate().map_err(anyhow::Error::msg)?;
 
-    let operations = query_operation_summaries(&config.database_url).await;
+    let operations =
+        query_operation_summaries(&config.database_url, operation_correlation_id.as_deref()).await;
     let generated_at = Utc::now().to_rfc3339();
 
     write_json(
@@ -1020,25 +1032,35 @@ fn model_shape(config: &AppConfig) -> ModelShape {
     }
 }
 
-async fn query_operation_summaries(database_url: &str) -> OperationSummaries {
+async fn query_operation_summaries(
+    database_url: &str,
+    correlation_id: Option<&str>,
+) -> OperationSummaries {
     if let Some(path) = sqlite_database_file_path(database_url)
         && !path.is_file()
     {
-        return unavailable_operation_summaries("sqlite database file not found");
+        return unavailable_operation_summaries("sqlite database file not found", correlation_id);
     }
 
-    match query_operation_summaries_read_only(database_url).await {
+    match query_operation_summaries_read_only(database_url, correlation_id).await {
         Ok(entries) => OperationSummaries {
             limit: OPERATION_SUMMARY_LIMIT,
             available: true,
+            filter: operation_summary_filter(correlation_id),
             unavailable_reason: None,
             entries,
         },
-        Err(_) => unavailable_operation_summaries("read-only operation-log query unavailable"),
+        Err(_) => unavailable_operation_summaries(
+            "read-only operation-log query unavailable",
+            correlation_id,
+        ),
     }
 }
 
-async fn query_operation_summaries_read_only(database_url: &str) -> Result<Vec<OperationSummary>> {
+async fn query_operation_summaries_read_only(
+    database_url: &str,
+    correlation_id: Option<&str>,
+) -> Result<Vec<OperationSummary>> {
     let options = SqliteConnectOptions::from_str(database_url)
         .map_err(|error| anyhow!(error.to_string()))?
         .read_only(true)
@@ -1057,12 +1079,22 @@ async fn query_operation_summaries_read_only(database_url: &str) -> Result<Vec<O
 
     let limit = i64::try_from(OPERATION_SUMMARY_LIMIT)
         .context("operation summary limit exceeds sqlite i64 range")?;
-    let rows = sqlx::query(
-        "SELECT operation_id, occurred_at, namespace, entrypoint, operation_kind, status, correlation_id FROM operation_log ORDER BY occurred_at DESC, operation_id DESC LIMIT ?",
-    )
-    .bind(limit)
-    .fetch_all(&pool)
-    .await?;
+    let rows = if let Some(correlation_id) = correlation_id {
+        sqlx::query(
+            "SELECT operation_id, occurred_at, namespace, entrypoint, operation_kind, status, correlation_id FROM operation_log WHERE correlation_id = ? ORDER BY occurred_at DESC, operation_id DESC LIMIT ?",
+        )
+        .bind(correlation_id)
+        .bind(limit)
+        .fetch_all(&pool)
+        .await?
+    } else {
+        sqlx::query(
+            "SELECT operation_id, occurred_at, namespace, entrypoint, operation_kind, status, correlation_id FROM operation_log ORDER BY occurred_at DESC, operation_id DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(&pool)
+        .await?
+    };
 
     Ok(rows
         .into_iter()
@@ -1071,7 +1103,7 @@ async fn query_operation_summaries_read_only(database_url: &str) -> Result<Vec<O
             occurred_at: entry.get("occurred_at"),
             namespace: entry.get("namespace"),
             entrypoint: entry.get("entrypoint"),
-            kind: entry.get("operation_kind"),
+            operation_kind: entry.get("operation_kind"),
             status: entry.get("status"),
             correlation_id: entry.get("correlation_id"),
             read_only: true,
@@ -1079,13 +1111,45 @@ async fn query_operation_summaries_read_only(database_url: &str) -> Result<Vec<O
         .collect())
 }
 
-fn unavailable_operation_summaries(reason: &'static str) -> OperationSummaries {
+fn unavailable_operation_summaries(
+    reason: &'static str,
+    correlation_id: Option<&str>,
+) -> OperationSummaries {
     OperationSummaries {
         limit: OPERATION_SUMMARY_LIMIT,
         available: false,
+        filter: operation_summary_filter(correlation_id),
         unavailable_reason: Some(reason),
         entries: Vec::new(),
     }
+}
+
+fn operation_summary_filter(correlation_id: Option<&str>) -> Option<OperationSummaryFilter> {
+    correlation_id.map(|correlation_id| OperationSummaryFilter {
+        correlation_id: correlation_id.to_string(),
+    })
+}
+
+fn validate_operation_correlation_id(correlation_id: Option<&str>) -> Result<()> {
+    let Some(correlation_id) = correlation_id else {
+        return Ok(());
+    };
+    let Some(uuid_value) = correlation_id.strip_prefix("mcp-tool-call-") else {
+        return Err(anyhow!(
+            "correlation id must start with mcp-tool-call- before it can be included in a support bundle"
+        ));
+    };
+    let uuid = Uuid::parse_str(uuid_value).map_err(|_| {
+        anyhow!(
+            "correlation id must use the generated mcp-tool-call-<uuid-v4> shape before it can be included in a support bundle"
+        )
+    })?;
+    if uuid.get_version() != Some(Version::Random) || uuid.to_string() != uuid_value {
+        return Err(anyhow!(
+            "correlation id must use the canonical generated mcp-tool-call-<uuid-v4> shape"
+        ));
+    }
+    Ok(())
 }
 
 fn release_metadata(project_root: &Path, generated_at: &str) -> ReleaseMetadata {
