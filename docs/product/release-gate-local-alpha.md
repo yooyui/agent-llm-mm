@@ -302,6 +302,77 @@ Result:
 - sensitive-token search produced no unredacted secret hits
 - `.sqlite`, `.toml`, and raw `.log` exclusion check produced no files
 
+## Local Alpha Evidence Summary Gate
+
+The Local Alpha evidence summary is a read-only rollup for reviewers:
+
+```bash
+./scripts/local-alpha-evidence-summary.sh \
+  --evidence-root . \
+  --output-json target/reports/local-alpha/evidence-summary.json \
+  --output-md target/reports/local-alpha/evidence-summary.md
+```
+
+This command summarizes existing evidence into JSON and optional Markdown. It
+does not run the product smoke, start `serve`, upload files, start daemon
+behavior, or perform durable reflection writes. It is not an automatic
+certification mechanism.
+
+Expected inputs under `--evidence-root`:
+
+- `target/reports/self-revision-demo/latest/` with the 8 product smoke
+  artifacts listed in the Product Smoke Gate; every required artifact must be
+  non-empty
+- first-run bootstrap evidence at `first-run-bootstrap/summary.json`, or the
+  documented release evidence path
+  `target/first-run-bootstrap-smoke/local-alpha-gate/summary.json`
+- Windows parity evidence at `windows-parity/summary.json`, or the documented
+  release evidence path `target/windows-parity/local-alpha-gate/summary.json`;
+  the summary must include a Windows runner or Windows platform marker, not only
+  a generic `verified` status
+- support bundle evidence at `support-bundle/`, or the documented release
+  evidence path `target/support-bundles/local-alpha-gate/`, containing only the
+  allowed local diagnostic files listed in the Support Bundle Gate
+
+Required boundary:
+
+- JSON output must include `overall_status`, `local_only`, `summary_boundary`,
+  and `gates`
+- every gate must include `name`, `status`, and either `evidence_path` or a
+  concrete `reason`
+- missing required artifacts keep the relevant gate `open`
+- missing Windows runner / Windows machine evidence keeps Windows parity
+  `not_verified`
+- `real_fresh_machine_evidence = false` in the first-run summary must prevent a
+  Local Alpha complete status
+- first-run summary evidence must also preserve `doctor_status = ok`,
+  `sqlite_database_exists = true`, `self_revision_write_path = run_reflection`,
+  and the local-only / no-serve / no-product-smoke / daemon-write-closed boundary
+- support bundle summary must validate the key generated JSON markers:
+  `manifest.bundle_format`, `manifest.local_only`, `manifest.upload_performed`,
+  `doctor.self_revision_write_path`, `doctor.runtime_bootstrap_performed`, and
+  `product-smoke-summary.self_revision_write_path_expected`
+- `overall_status` must remain conservative: when every gate is `satisfied`,
+  the summary reports `ready_for_human_review` rather than automatically
+  certifying Local Alpha completion; open gates keep the status `in_progress`,
+  and unresolved verification-only gaps keep it `not_verified`
+- Markdown output, when requested, must state that Local Alpha is not complete
+  unless every gate is satisfied and a human release decision is made
+- `run_reflection` remains the only durable identity / commitment / reflection
+  write path
+
+Recommended verification when the evidence summary changes:
+
+```bash
+cargo test --test local_alpha_release_evidence -v
+bash -n scripts/local-alpha-evidence-summary.sh
+cargo run --quiet --bin local_alpha_evidence_summary -- --evidence-root .
+```
+
+The summary may be attached to release notes or review packets as a gate status
+index. It must not be used to weaken missing real fresh-machine, Windows,
+support bundle, product smoke, dashboard, daemon, or data lifecycle evidence.
+
 ## Correlation ID Gate
 
 Runtime observability must keep MCP calls traceable without creating a new
@@ -465,4 +536,10 @@ Allowed wording after this gate passes:
 
 ## Release Decision
 
-Local Alpha is not complete unless all sections above have fresh evidence. If a section lacks fresh evidence, record it as an open gate item rather than weakening the gate. The Product Smoke Gate is implemented by `scripts/product-smoke-local.sh`, but it only passes for a release when a current successful run provides the required evidence. If any future gate section remains unimplemented, record that section separately as open.
+Local Alpha is not complete unless all sections above have fresh evidence. If a
+section lacks fresh evidence, record it as an open or not-verified gate item
+rather than weakening the gate. The Product Smoke Gate is implemented by
+`scripts/product-smoke-local.sh`, and the Local Alpha Evidence Summary Gate can
+summarize current gate status, but neither one certifies a release unless the
+current successful run provides the required evidence. If any future gate
+section remains unimplemented, record that section separately as open.

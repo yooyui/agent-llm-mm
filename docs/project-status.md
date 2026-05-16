@@ -143,7 +143,17 @@ Implementation notes:
 - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不上传数据，也不新增 identity / commitments / reflection 的 durable write path
 - local support bundle 仍只是 Local Alpha 诊断辅助；它不代表生产支持通道、远程上传能力、observe-only daemon diagnostics 或 Local Alpha 完整 gate 已完成
 
-### 12. Observe-only daemon diagnostics
+### 12. Local Alpha evidence summary
+
+- 已新增本地只读证据汇总入口：`./scripts/local-alpha-evidence-summary.sh`
+- Rust 入口为 `src/bin/local_alpha_evidence_summary.rs`，核心汇总逻辑在 `src/support/local_alpha_evidence.rs`
+- 汇总器读取已有 Local Alpha evidence：product smoke `latest` 目录、first-run bootstrap `summary.json`、Windows parity `summary.json` 和 support bundle 目录
+- 输出 JSON 包含 `overall_status`、`local_only`、`summary_boundary` 和 gate 列表；每个 gate 至少包含 `name`、`status`、`evidence_path` 或 `reason`
+- 可选输出 Markdown，并保守声明所有 gate 都 `satisfied` 时也只是 `ready_for_human_review`，仍需要人工 release decision
+- 当 real fresh-machine evidence 或 Windows parity evidence 缺失时，overall / gate status 会保持 `in_progress` / `open` / `not_verified`，不会宣称 Local Alpha 完成
+- 该能力不启动 `serve`，不运行 product smoke，不上传文件，不触发 daemon 写，也不新增 durable write path；`run_reflection` 仍是唯一 durable identity / commitment / reflection 写路径
+
+### 13. Observe-only daemon diagnostics
 
 - `doctor` 已输出 `daemon_observe_only` 本机只读诊断字段
 - 该字段固定声明 `mode = "observe_only"`、`local_only = true`、`write_gate_approved = false`、`writes_allowed = false`、`remote_listener_enabled = false`
@@ -252,6 +262,7 @@ Implementation notes:
 - `evidence_query_dto`: 2
 - `failure_modes`: 31
 - `first_run_bootstrap_smoke`: 4
+- `local_alpha_release_evidence`: 13
 - `mcp_stdio`: 36
 - `openai_compatible_model`: 9
 - `operation_log`: 9
@@ -259,8 +270,8 @@ Implementation notes:
 - `self_revision_demo_runner`: 2
 - `sqlite_backup_restore`: 6
 - `sqlite_store`: 20
-- `support_bundle`: 20
-- 合计：227 个测试通过
+- `support_bundle`: 30
+- 合计：250 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`

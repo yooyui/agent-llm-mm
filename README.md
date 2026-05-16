@@ -17,11 +17,12 @@
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
 - 最新 fresh 验证：`2026-05-16`
-  - `cargo test` 全量通过，共 227 个测试
+  - `cargo test` 全量通过，共 250 个测试
   - `doctor` 预检返回 `status = ok`
   - Local Alpha product smoke 通过 staging / promote 流程刷新本地证据链
   - Local Alpha support bundle 生成本地脱敏诊断 JSON，未包含 `.sqlite` 或 `.toml` 文件
   - Local first-run bootstrap smoke 已加入脚本入口，用于模拟 `bootstrap-local -> doctor` 的本地首启证据
+  - Local Alpha evidence summary 已加入本地只读 gate 状态汇总入口；它不运行 product smoke、不启动服务、不上传文件、不认证 Local Alpha 完成
   - SQLite backup / restore 本地脚本门禁已覆盖备份恢复 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份和拒绝 `..` restore target
 
 ## 先看这些
@@ -104,6 +105,12 @@
   - 可在显式传入 `--log-file <path>` 时输出 bounded / redacted `local-log-excerpts.json`，但不会自动扫描日志目录或复制原始 `.log` 文件
   - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不包含 provider payload、不上传数据
   - 该能力只是 Local Alpha 诊断辅助，不代表生产支持通道、远程上传能力或 Local Alpha 已完成
+- local alpha evidence summary
+  - 提供本地只读 gate 汇总入口：`./scripts/local-alpha-evidence-summary.sh`
+  - 读取已有 product smoke latest、first-run bootstrap summary、Windows parity summary 和 support bundle 目录，输出 JSON 与可选 Markdown
+  - 每个 gate 输出 `name`、`status`、`evidence_path` 或 `reason`；fresh-machine 或 Windows 证据缺失时会保持 `in_progress` / `not_verified` 等保守状态
+  - 不启动 `serve`，不运行 product smoke，不上传文件，不触发 daemon 写，不新增 durable write path；`run_reflection` 仍是唯一 durable identity / commitment / reflection 写路径
+  - 该能力只是可审查的状态汇总，不是自动认证，也不代表 Local Alpha 已完成
 - local first-run bootstrap helper / smoke
   - `./scripts/agent-llm-mm.sh bootstrap-local [config_path]` 和 PowerShell 等价入口可从 dev 示例生成本机配置模板
   - 默认目标是 `agent-llm-mm.local.toml`，也可显式传入目标路径
@@ -207,6 +214,17 @@
 ```
 
 输出目录必须不存在或为空；生成器会拒绝非空目录，避免旧的本地文件被误当作支持包内容分享。该支持包只包含脱敏 JSON 摘要，不会复制完整 SQLite 数据库、raw TOML、provider payload 或原始 `.log` 文件。需要日志排障时必须显式传入 `--log-file <path>`，生成器只输出受限的 `local-log-excerpts.json`。需要聚焦某次工具调用时可显式传入生成型 `--correlation-id mcp-tool-call-<uuid-v4>`，生成器只过滤 operation-log metadata，不输出 raw request / response / diagnostic payload。
+
+如果要汇总 Local Alpha gate 状态，可以运行：
+
+```zsh
+./scripts/local-alpha-evidence-summary.sh \
+  --evidence-root . \
+  --output-json target/reports/local-alpha/evidence-summary.json \
+  --output-md target/reports/local-alpha/evidence-summary.md
+```
+
+该命令只读取本地已有证据并输出 JSON / Markdown 汇总；它不会生成缺失证据，也不会自动认证 Local Alpha。
 
 ## 文档导航
 
