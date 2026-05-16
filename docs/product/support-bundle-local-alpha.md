@@ -6,12 +6,18 @@ This document defines what a Local Product Alpha user may share when asking for
 debugging help. The repository now includes a first local-only generator:
 
 ```bash
-./scripts/generate-support-bundle.sh <output_dir> [config_path]
+./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>]
 ```
 
 `<output_dir>` must not exist yet or must be empty. The generator rejects a
 non-empty directory so stale local TOML, SQLite, log, or scratch files cannot be
 accidentally shared as part of the support bundle.
+
+`--log-file <path>` is optional and explicit. The generator must not discover
+logs by scanning the repository, the user's home directory, browser profiles,
+SSH directories, system logs, shell history, or `target/` output. When a log file
+is requested, the bundle may include only a bounded, redacted JSON summary and a
+small number of safe excerpts. It must not copy the original `.log` file.
 
 The bundle is still a Local Alpha diagnostic aid, not a production support
 channel. It must not upload data, start remote diagnostics, copy the full user
@@ -46,6 +52,11 @@ directory:
 - `product-smoke-summary.json`: whether the latest self-revision demo evidence
   directory contains the required artifacts, plus the expected
   `self_revision_write_path = run_reflection` boundary
+- `local-log-excerpts.json`: local log availability, source shape, redaction
+  version, retained line count, line-number scope, truncation marker, hard
+  bounds, and at most a small number of redacted recent excerpts when
+  `--log-file <path>` was explicitly provided; when no log file is requested,
+  this file records `available = false` instead of scanning for logs
 
 The generator must not call the normal runtime bootstrap path. It may inspect
 local SQLite operation-log metadata only through a read-only connection. It does
@@ -53,13 +64,44 @@ not create or migrate the database, does not seed default identity or
 commitments, does not copy `.sqlite` files into the bundle, and does not
 serialize raw provider request or response summaries.
 
+## Local Log Excerpts
+
+Local log excerpts are allowed only through an explicit `--log-file <path>`
+argument. This is a diagnostic read surface, not runtime logging setup. The
+support bundle generator must not create, rotate, upload, or retain logs outside
+the requested output directory.
+
+The log summary must be bounded and conservative:
+
+- source shape is limited to the file name or `<local-path>/<file-name>`
+- input reading is capped by a maximum byte count
+- excerpt selection is capped by tail-line, excerpt-count, per-excerpt character,
+  and total excerpt byte bounds
+- oversized logs are read from a bounded tail window, discard the first partial
+  retained line, and mark `line_number_scope = "tail"`; untruncated logs use
+  `line_number_scope = "file"`
+- excerpts are recent and short; the raw `.log` file is never copied
+- JSON provider payloads, prompt text, request bodies, response bodies, tool
+  arguments, cookies, browser session material, local private paths, provider URL
+  userinfo/query values, API keys, bearer values, tokens, passwords, and secrets
+  must be redacted or omitted
+
+If the explicit log path is missing, unreadable, too large, or otherwise
+unavailable, the Rust generator records `available = false` and a reason instead
+of starting services or scanning fallback locations. The shell wrapper forwards
+missing explicit `--log-file` paths so the bundle can record that unavailable
+state in `local-log-excerpts.json`.
+
 ## Excluded Contents
 
 A support bundle must not include by default:
 
 - API keys or provider tokens
 - `Authorization` headers or `Bearer` values
+- cookies, session IDs, or browser session material
 - raw provider request or response payloads that may contain secrets
+- prompt text, request bodies, response bodies, or tool arguments from provider
+  log lines
 - full user SQLite databases
 - unredacted local TOML files
 - private prompt text unless the user explicitly extracts and redacts it
@@ -99,7 +141,7 @@ section itself is secret-only.
 
 `tests/support_bundle.rs` currently proves:
 
-- the generator creates the expected six JSON files
+- the generator creates the expected seven JSON files
 - non-empty output directories are rejected before bundle artifacts are written
 - provider credentials are represented as `credential_configured = true`, not as
   secret values
@@ -108,6 +150,11 @@ section itself is secret-only.
 - bundle output does not contain `Authorization`, `Bearer`, or the serialized
   provider secret indicators used by the test fixture
 - no `.sqlite` file is copied into the bundle
+- no raw `.log` file is copied into the bundle
+- explicit local log excerpts are bounded, redacted, and written only as
+  `local-log-excerpts.json`
+- missing or unrequested local logs are represented as unavailable instead of
+  triggering directory scans or runtime bootstrap
 - recent operation summaries are bounded to 25 entries and omit request /
   response payload summaries
 - missing SQLite databases are not created or bootstrapped; operation summaries
@@ -118,11 +165,11 @@ section itself is secret-only.
 
 ## Remaining Gaps
 
-The first generator does not make support packaging complete for a formal
-product release. Remaining Local Alpha gaps include:
+The generator does not make support packaging complete for a formal product
+release. Remaining Local Alpha gaps include:
 
-- no local log excerpts are included yet; logs stay excluded until log locations
-  and log redaction rules are stable
+- local log excerpts now require explicit `--log-file <path>` input and still do
+  not establish an automatic stable runtime log location
 - the full Local Alpha release gate still needs fresh evidence for the same
   release candidate
 - observe-only daemon diagnostics remain a later task
@@ -139,9 +186,9 @@ bash -n scripts/generate-support-bundle.sh
 rm -rf target/support-bundles/manual-check
 ./scripts/generate-support-bundle.sh target/support-bundles/manual-check
 find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
-rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/manual-check || true
-find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' \) -print
+rg -n 'api_key|api-key|x-api-key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///|token=' target/support-bundles/manual-check || true
+find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' -o -name '*.log' \) -print
 ```
 
 The sensitive-term scan should return no bundle leaks. The final `find` command
-should print no SQLite database or TOML files.
+should print no SQLite database, TOML, or raw log files.

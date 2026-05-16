@@ -40,7 +40,7 @@ Expected evidence:
 
 ### Fresh Evidence: 2026-05-16 Formal Product Readiness Slice
 
-Ran from branch `codex/formal-product-readiness-implementation` in an isolated
+Ran from branch `codex/support-bundle-log-excerpts` in an isolated
 worktree:
 
 ```bash
@@ -123,7 +123,7 @@ Required evidence:
 
 ### Fresh Evidence: 2026-05-16
 
-Ran from branch `codex/formal-product-readiness-implementation`:
+Ran from branch `codex/support-bundle-log-excerpts`:
 
 ```bash
 rm -rf target/reports/self-revision-demo/latest
@@ -180,7 +180,7 @@ multi-tenant data lifecycle, or production disaster recovery.
 Local Alpha support bundle behavior now has a first local-only generator:
 
 ```bash
-./scripts/generate-support-bundle.sh <output_dir> [config_path]
+./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>]
 ```
 
 Review [`support-bundle-local-alpha.md`](support-bundle-local-alpha.md) before
@@ -194,18 +194,29 @@ Required boundary:
   writing bundle artifacts if the requested directory already contains files
 - allowed contents are limited to redacted `doctor` shape, redacted config shape,
   bounded operation summaries, release metadata, product smoke evidence summary,
-  and bundle manifest metadata
+  bounded explicit local log excerpts, and bundle manifest metadata
 - support bundle generation must not call normal runtime bootstrap, create or
   migrate SQLite databases, or seed default identity / commitments
 - operation summaries must use read-only local SQLite access and mark themselves
   unavailable when the database or `operation_log` table is absent
+- local log excerpts must be generated only from an explicit `--log-file <path>`
+  argument; support bundle generation must not scan default log directories,
+  home directories, system logs, browser profiles, SSH directories, shell
+  history, or `target/` output
+- local log excerpts must be bounded and redacted, must omit raw provider
+  payloads, prompt text, request bodies, response bodies, tool arguments, cookies,
+  browser session material, local private paths, provider URL userinfo/query
+  values, API keys, bearer values, tokens, passwords, and secrets, and must not
+  copy the raw `.log` file
+- oversized explicit log files must be read from a bounded tail window, discard
+  partial first retained lines, and mark tail-scoped line numbers instead of
+  implying original file line numbers
 - excluded contents include API keys, `Authorization` / `Bearer` values, raw
   provider payloads with secrets, full SQLite databases by default, unredacted
   TOML files, provider URL userinfo/query secrets, SSH keys, cookies, and
   browser session data
-- local log excerpts remain excluded until log locations and redaction rules are
-  stable
-- support bundle tests must prove redaction and bounded operation summaries
+- support bundle tests must prove redaction, bounded operation summaries, and
+  bounded explicit local log excerpts
 - no support bundle flow may upload data or claim production support readiness
 
 Recommended verification when support bundle behavior changes:
@@ -216,20 +227,20 @@ bash -n scripts/generate-support-bundle.sh
 rm -rf target/support-bundles/manual-check
 ./scripts/generate-support-bundle.sh target/support-bundles/manual-check
 find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
-rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/manual-check || true
-find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' \) -print
+rg -n 'api_key|api-key|x-api-key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///|token=' target/support-bundles/manual-check || true
+find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' -o -name '*.log' \) -print
 ```
 
 ### Fresh Evidence: 2026-05-16
 
-Ran from branch `codex/formal-product-readiness-implementation`:
+Ran from branch `codex/support-bundle-log-excerpts`:
 
 ```bash
 rm -rf target/support-bundles/local-alpha-gate
 ./scripts/generate-support-bundle.sh target/support-bundles/local-alpha-gate
 find target/support-bundles/local-alpha-gate -maxdepth 1 -type f -print | sort
-rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/local-alpha-gate || true
-find target/support-bundles/local-alpha-gate \( -name '*.sqlite' -o -name '*.toml' \) -print
+rg -n 'api_key|api-key|x-api-key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///|token=' target/support-bundles/local-alpha-gate || true
+find target/support-bundles/local-alpha-gate \( -name '*.sqlite' -o -name '*.toml' -o -name '*.log' \) -print
 ```
 
 Result:
@@ -238,12 +249,13 @@ Result:
 - generated files were limited to:
   - `config-shape.json`
   - `doctor.json`
+  - `local-log-excerpts.json`
   - `manifest.json`
   - `operation-summaries.json`
   - `product-smoke-summary.json`
   - `release-metadata.json`
 - sensitive-token search produced no unredacted secret hits
-- `.sqlite` and `.toml` exclusion check produced no files
+- `.sqlite`, `.toml`, and raw `.log` exclusion check produced no files
 
 ## Correlation ID Gate
 

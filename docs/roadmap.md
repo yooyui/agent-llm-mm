@@ -12,7 +12,7 @@
 
 2026-05-09 已确认当前 MVP release gate 可作为产品化起点：`cargo test` 全量通过 170 个测试，`doctor` 返回 `status = ok`，self-revision demo package 可生成 release gate 要求的证据链。正式产品化进入下一阶段规划，详见 [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md)。这不改变当前事实：仓库还不是 GA / 生产级完整自治产品。
 
-2026-05-16 前序 formal product readiness slice 已刷新 Local Alpha minimum gate、product smoke gate 和 support bundle gate 证据：当时 `cargo test` 全量通过 194 个测试，`doctor` 返回 `status = ok`，`product-smoke-local.sh` 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`，`generate-support-bundle.sh` 生成本地脱敏诊断 JSON 且不包含 `.sqlite` 或 `.toml` 文件。这仍不代表 fresh-machine install、remote/team、multi-tenancy、Beta 或 GA 已完成。
+2026-05-16 前序 formal product readiness slice 已刷新 Local Alpha minimum gate、product smoke gate 和 support bundle gate 证据：当时 `cargo test` 全量通过 194 个测试，`doctor` 返回 `status = ok`，`product-smoke-local.sh` 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`，`generate-support-bundle.sh` 生成本地脱敏诊断 JSON 且不包含 `.sqlite` 或 `.toml` 文件。后续 support bundle 增加了显式 `--log-file <path>` 本地日志摘要/安全摘录边界，但仍不自动扫描日志位置，也不复制原始 `.log` 文件。这仍不代表 fresh-machine install、remote/team、multi-tenancy、Beta 或 GA 已完成。
 
 2026-05-16 后续补齐了 Local Alpha first-run bootstrap helper：`bootstrap-local` 可安全复制 dev 示例配置到本机私有 config，拒绝覆盖已有文件，不生成 secret，不运行 `doctor` / `serve`，不启动 daemon；相对目标路径按仓库根目录解析。该能力收窄 fresh-machine setup 的第一步，但仍需要真实 fresh-machine / Windows runner 证据后才能声明 Local Alpha install/bootstrap gate 完成。
 
@@ -24,7 +24,7 @@
 - 先完成 Local Product Alpha，再进入 durable observability、observe-only daemon、controlled beta、remote/team mode 和 GA readiness
 - 继续保持 `run_reflection` 作为 identity / commitments 的唯一 durable write path，直到后续 ADR 明确替换
 - 在 auth、authorization、audit、rollback 和隔离测试完成前，不暴露可写远程管理能力
-- Local Product Alpha 的支持包已有首版本地生成器：只允许分享脱敏 `doctor` shape、配置 shape、受限 operation summaries、release metadata、product smoke summary 和 manifest；日志片段仍要等 log 位置和脱敏测试稳定后再纳入
+- Local Product Alpha 的支持包已有首版本地生成器：只允许分享脱敏 `doctor` shape、配置 shape、受限 operation summaries、release metadata、product smoke summary、manifest，以及显式 `--log-file <path>` 触发的 bounded / redacted `local-log-excerpts.json`；它仍不自动发现日志位置或复制原始日志文件
 - Local Product Alpha 的 first-run 配置引导已有 `bootstrap-local` 脚本入口；下一步应补 fresh-machine install / Windows runner evidence，而不是把 helper 表述为 installer 或 production bootstrapper
 - daemon 先经过 observe-only gate：Local Alpha 阶段不调用 `run_reflection`、不写 identity / commitments、不启动 remote listener；当前 `doctor.daemon_observe_only` 只提供本机只读 preflight 诊断和 operation-log failed / suppressed 候选计数
 - correlation ID 先用于 observability：成功/失败 MCP tool call、dashboard event 和 operation-log metadata 可按 `mcp-tool-call-<uuid-v4>` 串联，但不新增语义写路径

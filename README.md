@@ -17,7 +17,7 @@
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
 - 最新 fresh 验证：`2026-05-16`
-  - `cargo test` 全量通过，共 201 个测试
+  - `cargo test` 全量通过，共 217 个测试
   - `doctor` 预检返回 `status = ok`
   - Local Alpha product smoke 通过 staging / promote 流程刷新本地证据链
   - Local Alpha support bundle 生成本地脱敏诊断 JSON，未包含 `.sqlite` 或 `.toml` 文件
@@ -96,9 +96,10 @@
   - 本机只读 dashboard API 已提供 `GET /api/operation-log` 与 `GET /api/operation-log/{id}` durable history 查询，可按 `limit`、`namespace`、`kind`、`correlation_id` 做受限排障；history 列表默认最多返回 100 条，单次查询最大 100 条
   - 不改变 MCP tool 列表，不污染 MCP `stdout`
 - local support bundle generator
-  - 提供首版本机排障材料生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path]`
+  - 提供首版本机排障材料生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>]`
   - `<output_dir>` 必须不存在或为空，避免旧的本地文件混入可分享支持包目录
   - 输出 redacted `doctor` shape、config shape、bounded operation summaries、release metadata、product smoke summary 和 manifest
+  - 可在显式传入 `--log-file <path>` 时输出 bounded / redacted `local-log-excerpts.json`，但不会自动扫描日志目录或复制原始 `.log` 文件
   - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不包含 provider payload、不上传数据
   - 该能力只是 Local Alpha 诊断辅助，不代表生产支持通道、远程上传能力或 Local Alpha 已完成
 - local first-run bootstrap helper
@@ -194,7 +195,7 @@
 ./scripts/generate-support-bundle.sh target/support-bundles/manual-check
 ```
 
-输出目录必须不存在或为空；生成器会拒绝非空目录，避免旧的本地文件被误当作支持包内容分享。该支持包只包含脱敏 JSON 摘要，不会复制完整 SQLite 数据库、raw TOML 或 provider payload。
+输出目录必须不存在或为空；生成器会拒绝非空目录，避免旧的本地文件被误当作支持包内容分享。该支持包只包含脱敏 JSON 摘要，不会复制完整 SQLite 数据库、raw TOML、provider payload 或原始 `.log` 文件。需要日志排障时必须显式传入 `--log-file <path>`，生成器只输出受限的 `local-log-excerpts.json`。
 
 ## 文档导航
 

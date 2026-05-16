@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     process::Command,
     str::FromStr,
@@ -19,6 +20,12 @@ use crate::{
 };
 
 const OPERATION_SUMMARY_LIMIT: usize = 25;
+const LOG_MAX_EXCERPTS: usize = 12;
+const LOG_MAX_EXCERPT_CHARS: usize = 240;
+const LOG_MAX_TOTAL_BYTES: usize = 4096;
+const LOG_MAX_INPUT_BYTES: u64 = 65_536;
+const LOG_TAIL_LINES: usize = 200;
+const LOG_REDACTION_VERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
 pub struct SupportBundleOptions {
@@ -26,6 +33,7 @@ pub struct SupportBundleOptions {
     pub output_dir: PathBuf,
     pub config_path: Option<PathBuf>,
     pub project_root: PathBuf,
+    pub local_log_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize)]
@@ -132,6 +140,43 @@ struct Manifest {
     upload_performed: bool,
     excluded_by_default: Vec<&'static str>,
     files: Vec<&'static str>,
+    bounds: ManifestBounds,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestBounds {
+    local_log_excerpts: LocalLogBounds,
+}
+
+#[derive(Debug, Serialize, Clone, Copy)]
+struct LocalLogBounds {
+    max_excerpts: usize,
+    max_excerpt_chars: usize,
+    max_total_bytes: usize,
+    max_input_bytes: u64,
+    tail_lines: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct LocalLogExcerpts {
+    available: bool,
+    unavailable_reason: Option<&'static str>,
+    read_only: bool,
+    source: Option<String>,
+    redaction_version: u32,
+    line_count: usize,
+    line_number_scope: &'static str,
+    input_truncated: bool,
+    bounds: LocalLogBounds,
+    exclusions: Vec<&'static str>,
+    excerpts: Vec<LocalLogExcerpt>,
+}
+
+#[derive(Debug, Serialize)]
+struct LocalLogExcerpt {
+    line: usize,
+    text: String,
+    truncated: bool,
 }
 
 pub async fn generate_support_bundle(options: SupportBundleOptions) -> Result<()> {
@@ -140,6 +185,7 @@ pub async fn generate_support_bundle(options: SupportBundleOptions) -> Result<()
         output_dir,
         config_path,
         project_root,
+        local_log_path,
     } = options;
 
     fs::create_dir_all(&output_dir).with_context(|| {
@@ -172,9 +218,717 @@ pub async fn generate_support_bundle(options: SupportBundleOptions) -> Result<()
         &output_dir.join("product-smoke-summary.json"),
         &product_smoke_summary(&project_root),
     )?;
+    write_json(
+        &output_dir.join("local-log-excerpts.json"),
+        &local_log_excerpts(local_log_path.as_deref()),
+    )?;
     write_json(&output_dir.join("manifest.json"), &manifest(&generated_at))?;
 
     Ok(())
+}
+
+fn local_log_excerpts(log_path: Option<&Path>) -> LocalLogExcerpts {
+    let Some(log_path) = log_path else {
+        return unavailable_local_log_excerpts("log file not requested", None);
+    };
+
+    let source = Some(redact_path(log_path));
+    let Ok(metadata) = fs::metadata(log_path) else {
+        return unavailable_local_log_excerpts("log file not found", source);
+    };
+    if !metadata.is_file() {
+        return unavailable_local_log_excerpts("log file not found", source);
+    }
+
+    let Ok((bytes, was_input_truncated)) = read_bounded_log_bytes(log_path, metadata.len()) else {
+        return unavailable_local_log_excerpts("log file unreadable", source);
+    };
+
+    let text = String::from_utf8_lossy(&bytes);
+    let line_count = text.lines().count();
+    let start_line = line_count.saturating_sub(LOG_TAIL_LINES);
+    let mut total_bytes = 0usize;
+    let mut excerpts = Vec::new();
+    let mut skipping_private_key_block = retained_tail_starts_inside_private_key_block(&text);
+    for (offset, line) in text.lines().skip(start_line).enumerate() {
+        if excerpts.len() >= LOG_MAX_EXCERPTS || total_bytes >= LOG_MAX_TOTAL_BYTES {
+            break;
+        }
+        if should_skip_private_key_block_line(line, &mut skipping_private_key_block) {
+            continue;
+        }
+        if should_skip_log_line(line) {
+            continue;
+        }
+
+        let (mut redacted, mut truncated) = redact_log_line(line);
+        if redacted.trim().is_empty() || should_skip_log_line(&redacted) {
+            continue;
+        }
+        if redacted.chars().count() > LOG_MAX_EXCERPT_CHARS {
+            redacted = redacted
+                .chars()
+                .take(LOG_MAX_EXCERPT_CHARS)
+                .collect::<String>();
+            truncated = true;
+        }
+        let redacted_bytes = redacted.len();
+        if total_bytes + redacted_bytes > LOG_MAX_TOTAL_BYTES {
+            break;
+        }
+
+        total_bytes += redacted_bytes;
+        excerpts.push(LocalLogExcerpt {
+            line: start_line + offset + 1,
+            text: redacted,
+            truncated,
+        });
+    }
+
+    LocalLogExcerpts {
+        available: true,
+        unavailable_reason: None,
+        read_only: true,
+        source,
+        redaction_version: LOG_REDACTION_VERSION,
+        line_count,
+        line_number_scope: if was_input_truncated { "tail" } else { "file" },
+        input_truncated: was_input_truncated,
+        bounds: local_log_bounds(),
+        exclusions: local_log_exclusions(),
+        excerpts,
+    }
+}
+
+fn read_bounded_log_bytes(log_path: &Path, file_len: u64) -> Result<(Vec<u8>, bool)> {
+    let mut file = fs::File::open(log_path)?;
+    let input_truncated = file_len > LOG_MAX_INPUT_BYTES;
+    if input_truncated {
+        file.seek(SeekFrom::Start(file_len - LOG_MAX_INPUT_BYTES))?;
+    }
+
+    let mut bytes = Vec::new();
+    file.take(LOG_MAX_INPUT_BYTES).read_to_end(&mut bytes)?;
+    if input_truncated {
+        if let Some(first_newline) = bytes.iter().position(|byte| *byte == b'\n') {
+            bytes = bytes[(first_newline + 1)..].to_vec();
+        } else {
+            bytes.clear();
+        }
+    }
+    Ok((bytes, input_truncated))
+}
+
+fn unavailable_local_log_excerpts(
+    reason: &'static str,
+    source: Option<String>,
+) -> LocalLogExcerpts {
+    LocalLogExcerpts {
+        available: false,
+        unavailable_reason: Some(reason),
+        read_only: true,
+        source,
+        redaction_version: LOG_REDACTION_VERSION,
+        line_count: 0,
+        line_number_scope: "unavailable",
+        input_truncated: false,
+        bounds: local_log_bounds(),
+        exclusions: local_log_exclusions(),
+        excerpts: Vec::new(),
+    }
+}
+
+fn local_log_bounds() -> LocalLogBounds {
+    LocalLogBounds {
+        max_excerpts: LOG_MAX_EXCERPTS,
+        max_excerpt_chars: LOG_MAX_EXCERPT_CHARS,
+        max_total_bytes: LOG_MAX_TOTAL_BYTES,
+        max_input_bytes: LOG_MAX_INPUT_BYTES,
+        tail_lines: LOG_TAIL_LINES,
+    }
+}
+
+fn local_log_exclusions() -> Vec<&'static str> {
+    vec![
+        "raw local log files",
+        "raw provider payloads",
+        "authorization headers",
+        "bearer values",
+        "provider credentials",
+        "access credentials",
+        "web credential data",
+        "ssh keys",
+        "full local paths",
+    ]
+}
+
+fn should_skip_log_line(line: &str) -> bool {
+    if is_sensitive_json_payload(line) {
+        return true;
+    }
+
+    let lower = line.to_lowercase();
+    if text_has_sensitive_json_key(&lower) {
+        return true;
+    }
+
+    if [
+        "messages", "content", "input", "prompt", "request", "response",
+    ]
+    .iter()
+    .any(|field| line_has_payload_field(&lower, field))
+    {
+        return true;
+    }
+
+    if line_has_payload_field(&lower, "tool") {
+        return true;
+    }
+
+    [
+        "tool_args",
+        "tool args",
+        "cookie",
+        "session_id",
+        "session-id",
+        "session token",
+        "session_token",
+        "session-token",
+        "browser session",
+        "localstorage",
+        "sessionstorage",
+        "browser profile",
+        "profile path",
+        "profile_path",
+        ".ssh/",
+        "ssh_key",
+        "id_ed25519",
+        "private key",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+        || is_key_material_like(line)
+}
+
+fn should_skip_private_key_block_line(line: &str, skipping_private_key_block: &mut bool) -> bool {
+    let lower = line.to_lowercase();
+    if lower.contains("-----begin ") && lower.contains(" private key-----") {
+        *skipping_private_key_block = true;
+        return true;
+    }
+    if lower.contains("-----end ") && lower.contains(" private key-----") {
+        *skipping_private_key_block = false;
+        return true;
+    }
+
+    *skipping_private_key_block
+}
+
+fn retained_tail_starts_inside_private_key_block(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    if !lower.contains(" private key-----") {
+        return false;
+    }
+
+    match (lower.find("-----begin "), lower.find("-----end ")) {
+        (None, Some(_)) => true,
+        (Some(begin), Some(end)) => end < begin,
+        _ => false,
+    }
+}
+
+fn line_has_payload_field(line: &str, field: &str) -> bool {
+    line.contains(&format!("\"{field}\""))
+        || line.split_whitespace().enumerate().any(|(index, token)| {
+            let trimmed = token.trim_matches(|ch: char| {
+                matches!(
+                    ch,
+                    '"' | '\'' | ',' | ';' | ')' | '(' | '[' | ']' | '{' | '}'
+                )
+            });
+            trimmed == format!("{field}=")
+                || trimmed == format!("{field}:")
+                || trimmed.starts_with(&format!("{field}="))
+                || trimmed.starts_with(&format!("{field}:"))
+                || (trimmed == field
+                    && line
+                        .split_whitespace()
+                        .nth(index + 1)
+                        .is_some_and(|next| matches!(next, "=" | ":")))
+        })
+}
+
+fn is_sensitive_json_payload(line: &str) -> bool {
+    let trimmed = line.trim();
+    if !(trimmed.starts_with('{') || trimmed.starts_with('[')) {
+        return false;
+    }
+
+    serde_json::from_str::<serde_json::Value>(trimmed)
+        .map(|value| json_value_has_sensitive_key(&value))
+        .unwrap_or_else(|_| text_has_sensitive_json_key(trimmed))
+}
+
+fn json_value_has_sensitive_key(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(object) => object
+            .iter()
+            .any(|(key, value)| is_sensitive_json_key(key) || json_value_has_sensitive_key(value)),
+        serde_json::Value::Array(values) => values.iter().any(json_value_has_sensitive_key),
+        _ => false,
+    }
+}
+
+fn text_has_sensitive_json_key(value: &str) -> bool {
+    let lower = value.to_lowercase();
+    if [
+        "\"api_key\"",
+        "\"api-key\"",
+        "\"apikey\"",
+        "\"x-api-key\"",
+        "\"openai_api_key\"",
+        "\"token\"",
+        "\"password\"",
+        "\"secret\"",
+        "\"authorization\"",
+        "\"bearer\"",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+    {
+        return true;
+    }
+
+    let bytes = lower.as_bytes();
+    let mut cursor = 0usize;
+    while cursor < bytes.len() {
+        let Some(start) = lower[cursor..].find('"') else {
+            break;
+        };
+        let key_start = cursor + start + 1;
+        let Some(end) = lower[key_start..].find('"') else {
+            break;
+        };
+        let key_end = key_start + end;
+        let rest = &lower[(key_end + 1)..];
+        if rest.trim_start().starts_with(':') && is_sensitive_json_key(&lower[key_start..key_end]) {
+            return true;
+        }
+        cursor = key_end + 1;
+    }
+
+    false
+}
+
+fn is_sensitive_json_key(key: &str) -> bool {
+    let lower = key.to_lowercase();
+    lower == "authorization"
+        || lower == "bearer"
+        || lower.contains("api_key")
+        || lower.contains("api-key")
+        || lower.contains("apikey")
+        || lower.contains("token")
+        || lower.contains("password")
+        || lower.contains("secret")
+}
+
+fn redact_log_line(line: &str) -> (String, bool) {
+    let original = line.to_string();
+    let mut redacted = line.to_string();
+    redacted = redact_urls(&redacted);
+    redacted = redact_local_paths(&redacted);
+    redacted = redact_sensitive_markers(&redacted);
+    redacted = redact_sk_values(&redacted);
+    let changed = redacted != original;
+    (redacted, changed)
+}
+
+fn redact_urls(line: &str) -> String {
+    line.split_whitespace()
+        .map(redact_url_token)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn redact_url_token(token: &str) -> String {
+    let Some(scheme_marker) = token.find("://") else {
+        return token.to_string();
+    };
+    let scheme_start = token[..scheme_marker]
+        .rfind(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.')))
+        .map_or(0, |index| index + 1);
+    let prefix = &token[..scheme_start];
+    let candidate = &token[scheme_start..];
+    let trimmed = candidate.trim_end_matches(|ch: char| {
+        matches!(
+            ch,
+            '"' | '\'' | ',' | ';' | ')' | '(' | '[' | ']' | '{' | '}'
+        )
+    });
+    let suffix = &candidate[trimmed.len()..];
+
+    reqwest::Url::parse(trimmed)
+        .map(|url| format!("{prefix}{}{suffix}", base_url_shape(url.as_str())))
+        .unwrap_or_else(|_| token.to_string())
+}
+
+fn redact_local_paths(line: &str) -> String {
+    let redacted_windows_paths = redact_windows_paths(line);
+    let redacted_posix_paths = redact_posix_paths(&redacted_windows_paths);
+    redacted_posix_paths
+        .split_whitespace()
+        .map(|part| {
+            let trimmed = part.trim_matches(|ch: char| {
+                matches!(
+                    ch,
+                    '"' | '\'' | ',' | ';' | ')' | '(' | '[' | ']' | '{' | '}'
+                )
+            });
+            if is_local_path_like(trimmed) {
+                let prefix_len = part.find(trimmed).unwrap_or(0);
+                let suffix_start = prefix_len + trimmed.len();
+                format!(
+                    "{}{}{}",
+                    &part[..prefix_len],
+                    redact_log_path_like(trimmed),
+                    &part[suffix_start..]
+                )
+            } else {
+                part.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn redact_windows_paths(line: &str) -> String {
+    let mut redacted = String::new();
+    let mut cursor = 0usize;
+    while let Some((start, end, file_name)) = find_windows_path(&line[cursor..]) {
+        let absolute_start = cursor + start;
+        let absolute_end = cursor + end;
+        redacted.push_str(&line[cursor..absolute_start]);
+        redacted.push_str(&format!("<local-path>/{file_name}"));
+        cursor = absolute_end;
+    }
+    redacted.push_str(&line[cursor..]);
+    redacted
+}
+
+fn find_windows_path(value: &str) -> Option<(usize, usize, String)> {
+    let bytes = value.as_bytes();
+    let mut index = 0usize;
+    while index + 2 < bytes.len() {
+        if bytes[index].is_ascii_alphabetic()
+            && bytes[index + 1] == b':'
+            && bytes[index + 2] == b'\\'
+        {
+            let start = index;
+            let mut end = index + 3;
+            while end < bytes.len() {
+                let byte = bytes[end];
+                if matches!(
+                    byte,
+                    b'"' | b'\'' | b',' | b';' | b')' | b'(' | b'[' | b']' | b'{' | b'}'
+                ) || (byte.is_ascii_whitespace()
+                    && next_non_whitespace_starts_field(&bytes[end..]))
+                {
+                    break;
+                }
+                end += 1;
+            }
+            let path = &value[start..end];
+            let file_name = path
+                .rsplit('\\')
+                .next()
+                .map(str::trim)
+                .filter(|file_name| !file_name.is_empty())
+                .unwrap_or("path")
+                .to_string();
+            return Some((start, end, file_name));
+        }
+        index += 1;
+    }
+    None
+}
+
+fn redact_posix_paths(line: &str) -> String {
+    let mut redacted = String::new();
+    let mut cursor = 0usize;
+    while let Some((start, end, file_name)) = find_posix_path(&line[cursor..]) {
+        let absolute_start = cursor + start;
+        let absolute_end = cursor + end;
+        redacted.push_str(&line[cursor..absolute_start]);
+        redacted.push_str(&format!("<local-path>/{file_name}"));
+        cursor = absolute_end;
+    }
+    redacted.push_str(&line[cursor..]);
+    redacted
+}
+
+fn find_posix_path(value: &str) -> Option<(usize, usize, String)> {
+    let bytes = value.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if value.is_char_boundary(index) && starts_posix_path_like(&value[index..]) {
+            let start = index;
+            let mut end = index;
+            while end < bytes.len() {
+                let byte = bytes[end];
+                if matches!(
+                    byte,
+                    b'"' | b'\'' | b',' | b';' | b')' | b'(' | b'[' | b']' | b'{' | b'}'
+                ) || (byte.is_ascii_whitespace()
+                    && next_non_whitespace_starts_field(&bytes[end..]))
+                {
+                    break;
+                }
+                end += 1;
+            }
+            let path = &value[start..end];
+            let file_name = path
+                .rsplit('/')
+                .next()
+                .map(str::trim)
+                .filter(|file_name| !file_name.is_empty())
+                .unwrap_or("path")
+                .to_string();
+            return Some((start, end, file_name));
+        }
+        index += 1;
+    }
+    None
+}
+
+fn starts_posix_path_like(value: &str) -> bool {
+    value.starts_with("/Users/")
+        || value.starts_with("/home/")
+        || value.starts_with("/tmp/")
+        || value.starts_with("/var/")
+        || value.starts_with("~/")
+        || value.starts_with("./")
+        || value.starts_with("../")
+}
+
+fn next_non_whitespace_starts_field(bytes: &[u8]) -> bool {
+    let Some(next_index) = bytes.iter().position(|byte| !byte.is_ascii_whitespace()) else {
+        return false;
+    };
+    let rest = &bytes[next_index..];
+    let field_len = rest
+        .iter()
+        .take_while(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        .count();
+    field_len > 0 && rest.get(field_len) == Some(&b'=')
+}
+
+fn redact_log_path_like(value: &str) -> String {
+    if value.contains('\\') {
+        let file_name = value
+            .rsplit('\\')
+            .next()
+            .filter(|file_name| !file_name.is_empty())
+            .unwrap_or("path");
+        return format!("<local-path>/{file_name}");
+    }
+
+    redact_path(Path::new(value))
+}
+
+fn is_local_path_like(value: &str) -> bool {
+    is_windows_path_like(value)
+        || value.starts_with('/')
+        || value.starts_with("~/")
+        || value.starts_with("./")
+        || value.starts_with("../")
+        || value.contains("/Users/")
+        || value.contains("/home/")
+        || value.contains("/tmp/")
+        || value.contains("/var/")
+        || value.contains(".config/")
+        || value.ends_with(".toml")
+        || value.ends_with(".sqlite")
+        || value.ends_with(".log")
+}
+
+fn is_windows_path_like(value: &str) -> bool {
+    let lower = value.to_lowercase();
+    value.as_bytes().get(1) == Some(&b':')
+        && value
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphabetic)
+        && value.contains('\\')
+        || lower.contains("\\users\\")
+        || lower.contains("\\appdata\\")
+        || lower.contains("\\temp\\")
+}
+
+fn redact_sensitive_markers(line: &str) -> String {
+    let tokens = line.split_whitespace().collect::<Vec<_>>();
+    let mut output = Vec::new();
+    let mut index = 0usize;
+    while index < tokens.len() {
+        let token = tokens[index];
+        let lower = token.to_lowercase();
+
+        if let Some((marker, separator, value, marker_tokens)) =
+            compound_sensitive_marker_parts(&tokens, index)
+        {
+            let is_auth =
+                marker == "authorization" || marker == "bearer" || value.contains("bearer");
+            output.push(if is_auth {
+                "<redacted-auth>".to_string()
+            } else {
+                "<redacted-value>".to_string()
+            });
+            index += marker_tokens
+                + secret_value_tokens_to_skip(
+                    &tokens[(index + marker_tokens)..],
+                    separator,
+                    &value,
+                );
+        } else if let Some((marker, separator, value)) = sensitive_marker_parts(&lower) {
+            let is_auth =
+                marker == "authorization" || marker == "bearer" || value.contains("bearer");
+            output.push(if is_auth {
+                "<redacted-auth>".to_string()
+            } else {
+                "<redacted-value>".to_string()
+            });
+            index += 1 + secret_value_tokens_to_skip(&tokens[(index + 1)..], separator, value);
+        } else {
+            output.push(token.to_string());
+            index += 1;
+        }
+    }
+    output.join(" ")
+}
+
+fn compound_sensitive_marker_parts(
+    tokens: &[&str],
+    index: usize,
+) -> Option<(String, Option<char>, String, usize)> {
+    let first = tokens.get(index)?.to_lowercase();
+    let second = tokens.get(index + 1)?.to_lowercase();
+    let (first_marker, first_separator, first_value) = marker_token_parts(&first);
+    if first_separator.is_some() || !first_value.is_empty() {
+        return None;
+    }
+
+    let (second_marker, separator, value) = marker_token_parts(&second);
+    let marker = format!("{first_marker}_{second_marker}");
+    if !is_sensitive_marker(&marker) {
+        return None;
+    }
+
+    let has_separator = separator.is_some()
+        || tokens
+            .get(index + 2)
+            .is_some_and(|next| matches!(*next, "=" | ":"));
+    if !has_separator {
+        return None;
+    }
+
+    Some((marker, separator, value.to_string(), 2))
+}
+
+fn sensitive_marker_parts(token: &str) -> Option<(&str, Option<char>, &str)> {
+    let (marker, separator, value) = marker_token_parts(token);
+    if is_sensitive_marker(marker) {
+        Some((marker, separator, value))
+    } else {
+        None
+    }
+}
+
+fn marker_token_parts(token: &str) -> (&str, Option<char>, &str) {
+    let trimmed = token.trim_matches(|ch: char| {
+        !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '=' | ':'))
+    });
+    let (marker, separator, value) = if let Some((marker, value)) = trimmed.split_once('=') {
+        (marker, Some('='), value)
+    } else if let Some((marker, value)) = trimmed.split_once(':') {
+        (marker, Some(':'), value)
+    } else {
+        (trimmed, None, "")
+    };
+    let marker =
+        marker.trim_matches(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-')));
+    (marker, separator, value)
+}
+
+fn secret_value_tokens_to_skip(tokens: &[&str], separator: Option<char>, value: &str) -> usize {
+    if separator.is_some()
+        && !value
+            .trim_matches(|ch: char| matches!(ch, '"' | '\''))
+            .is_empty()
+    {
+        if value.contains("bearer") && !tokens.is_empty() {
+            return 1;
+        }
+        return 0;
+    }
+
+    match tokens {
+        [next, value, ..] if matches!(*next, "=" | ":") => {
+            if value.eq_ignore_ascii_case("bearer") && tokens.len() >= 3 {
+                3
+            } else {
+                2
+            }
+        }
+        [next, ..] if next.eq_ignore_ascii_case("bearer") && tokens.len() >= 2 => 2,
+        [_next, ..] => 1,
+        [] => 0,
+    }
+}
+
+fn is_sensitive_marker(marker: &str) -> bool {
+    [
+        "api_key",
+        "api-key",
+        "apikey",
+        "x-api-key",
+        "openai_api_key",
+        "token",
+        "password",
+        "secret",
+        "authorization",
+        "bearer",
+        "access_key",
+        "secret_key",
+    ]
+    .iter()
+    .any(|sensitive| {
+        marker == *sensitive
+            || marker.ends_with(&format!("_{sensitive}"))
+            || marker.ends_with(&format!("-{sensitive}"))
+    })
+}
+
+fn is_key_material_like(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.len() >= 6
+        && !trimmed.chars().any(char::is_whitespace)
+        && trimmed.chars().any(|ch| ch.is_ascii_alphabetic())
+        && trimmed.chars().any(|ch| ch.is_ascii_digit())
+        && trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '/' | '=' | '-' | '_'))
+}
+
+fn redact_sk_values(line: &str) -> String {
+    line.split_whitespace()
+        .map(|token| {
+            if token.to_lowercase().contains("sk-") {
+                "<redacted-value>".to_string()
+            } else {
+                token.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn ensure_empty_output_dir(output_dir: &Path) -> Result<()> {
@@ -388,6 +1142,7 @@ fn manifest(generated_at: &str) -> Manifest {
             "raw provider payloads",
             "full sqlite databases",
             "unredacted toml files",
+            "raw local log files",
             "provider url userinfo and query values",
             "ssh keys",
             "cookies",
@@ -400,7 +1155,11 @@ fn manifest(generated_at: &str) -> Manifest {
             "operation-summaries.json",
             "release-metadata.json",
             "product-smoke-summary.json",
+            "local-log-excerpts.json",
         ],
+        bounds: ManifestBounds {
+            local_log_excerpts: local_log_bounds(),
+        },
     }
 }
 

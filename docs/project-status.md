@@ -125,10 +125,11 @@ Implementation notes:
 
 ### 10. Local support bundle generator
 
-- 已新增首版本机支持包生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path]`
-- 生成器输出 `manifest.json`、`doctor.json`、`config-shape.json`、`operation-summaries.json`、`release-metadata.json` 和 `product-smoke-summary.json`
+- 已新增首版本机支持包生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>]`
+- 生成器输出 `manifest.json`、`doctor.json`、`config-shape.json`、`operation-summaries.json`、`release-metadata.json`、`product-smoke-summary.json` 和 `local-log-excerpts.json`
 - `doctor` / config 只保留脱敏 shape：SQLite URL 会泛化为 `sqlite://<local-path>`，provider credential 只输出布尔值，provider URL 会移除 userinfo 与 query；support bundle 的 `doctor.json` 不执行 runtime bootstrap
 - operation summaries 通过 read-only SQLite 连接读取最多 25 条 durable operation-log metadata，不输出 request / response payload summary；数据库或 `operation_log` 表不存在时会标记 unavailable，不创建或迁移数据库
+- local log excerpts 只在显式 `--log-file <path>` 时生成 bounded / redacted 摘要，不自动扫描日志目录、home、系统日志、browser profile、SSH/cookie/session、shell history 或 `target/` 输出，也不复制原始 `.log` 文件
 - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不上传数据，也不新增 identity / commitments / reflection 的 durable write path
 - local support bundle 仍只是 Local Alpha 诊断辅助；它不代表生产支持通道、远程上传能力、observe-only daemon diagnostics 或 Local Alpha 完整 gate 已完成
 
@@ -246,12 +247,12 @@ Implementation notes:
 - `provider_config`: 9
 - `self_revision_demo_runner`: 2
 - `sqlite_store`: 20
-- `support_bundle`: 4
-- 合计：201 个测试通过
+- `support_bundle`: 20
+- 合计：217 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`
-- Local Alpha support bundle 生成允许的 6 个 JSON 文件，敏感词扫描无未脱敏命中，且未包含 `.sqlite` 或 `.toml` 文件
+- Local Alpha support bundle 生成允许的 JSON 文件，敏感词扫描无未脱敏命中，且未包含 `.sqlite`、`.toml` 或原始 `.log` 文件
 - `bootstrap-local` 已提供 first-run dev 配置模板生成路径，但 fresh-machine install / Windows runner 实机验证仍需单独记录；当前本机没有 `pwsh` 时，PowerShell runtime parity 只能视为待补证据
 
 ## 对外描述建议

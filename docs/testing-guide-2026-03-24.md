@@ -49,9 +49,9 @@
 - `provider_config`: 9 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_store`: 20 passed
-- `support_bundle`: 4 passed
+- `support_bundle`: 20 passed
 
-合计：201 个测试通过。
+合计：217 个测试通过。
 
 ---
 
@@ -944,13 +944,20 @@ bash -n scripts/generate-support-bundle.sh
 rm -rf target/support-bundles/manual-check
 ./scripts/generate-support-bundle.sh target/support-bundles/manual-check
 find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
-rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/manual-check || true
-find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' \) -print
+rg -n 'api_key|api-key|x-api-key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///|token=' target/support-bundles/manual-check || true
+find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' -o -name '*.log' \) -print
+tmp_log="$(mktemp target/support-bundles/manual-log.XXXXXX.log)"
+printf 'INFO request prompt=hidden Authorization: Bearer sk-manual token=abc sqlite:///Users/example/private.sqlite\n' > "${tmp_log}"
+rm -rf target/support-bundles/manual-check-with-log
+./scripts/generate-support-bundle.sh target/support-bundles/manual-check-with-log --log-file "${tmp_log}"
+test -s target/support-bundles/manual-check-with-log/local-log-excerpts.json
+rg -n 'api_key|api-key|x-api-key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///|token=' target/support-bundles/manual-check-with-log || true
+find target/support-bundles/manual-check-with-log \( -name '*.sqlite' -o -name '*.toml' -o -name '*.log' \) -print
 rg -n 'API key|redact|support bundle|excluded|doctor|generate-support-bundle' docs/product/support-bundle-local-alpha.md docs/product/release-gate-local-alpha.md
 git diff --check
 ```
 
-这组命令验证首版本地 support bundle 生成器、脚本入口、脱敏边界、read-only operation-log 查询和文档口径。输出目录必须不存在或为空；测试会覆盖非空目录被拒绝，避免旧的本地文件混入可分享支持包。敏感词扫描应无实际泄露；最后一个 `find` 命令不应打印 `.sqlite` 或 `.toml` 文件。该生成器不会创建或迁移缺失 SQLite 数据库，也不会通过 runtime bootstrap seed 默认 identity / commitments；它仍是本地诊断辅助，不代表远程上传、生产支持通道或 Local Alpha 完成。
+这组命令验证首版本地 support bundle 生成器、脚本入口、脱敏边界、read-only operation-log 查询、显式 `--log-file` 本地日志摘要/摘录，以及文档口径。输出目录必须不存在或为空；测试会覆盖非空目录被拒绝，避免旧的本地文件混入可分享支持包。敏感词扫描应无实际泄露；`find` 命令不应打印 `.sqlite`、`.toml` 或原始 `.log` 文件。日志摘录只允许显式传入单个本地文件，不允许扫描默认日志目录、home、系统日志、browser profile、SSH/cookie/session、shell history 或 `target/` 输出。超大日志只读取有界尾部窗口，并以 `line_number_scope = "tail"` 标记行号语义。该生成器不会创建或迁移缺失 SQLite 数据库，也不会通过 runtime bootstrap seed 默认 identity / commitments；它仍是本地诊断辅助，不代表远程上传、生产支持通道或 Local Alpha 完成。
 
 ### 改 daemon observe-only gate
 

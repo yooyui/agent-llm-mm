@@ -12,7 +12,7 @@ use agent_llm_mm::{
 };
 use chrono::{Duration, Utc};
 use serde_json::Value;
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
 use tempfile::tempdir;
 
 #[tokio::test]
@@ -83,6 +83,7 @@ async fn support_bundle_generates_redacted_local_diagnostics() {
         output_dir: output_dir.clone(),
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
+        local_log_path: None,
     })
     .await
     .expect("support bundle should generate");
@@ -105,6 +106,7 @@ async fn support_bundle_generates_redacted_local_diagnostics() {
         "operation-summaries.json",
         "release-metadata.json",
         "product-smoke-summary.json",
+        "local-log-excerpts.json",
     ] {
         assert!(
             output_dir.join(file).is_file(),
@@ -173,6 +175,11 @@ async fn support_bundle_generates_redacted_local_diagnostics() {
     assert_eq!(operation_summaries["available"], true);
     assert_eq!(operation_summaries["unavailable_reason"], Value::Null);
     assert!(entries.iter().all(|entry| entry["read_only"] == true));
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    assert_eq!(log_excerpts["available"], false);
+    assert_eq!(log_excerpts["unavailable_reason"], "log file not requested");
+    assert_eq!(log_excerpts["read_only"], true);
 }
 
 #[tokio::test]
@@ -190,6 +197,7 @@ async fn support_bundle_does_not_create_or_bootstrap_missing_database() {
         output_dir: output_dir.clone(),
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
+        local_log_path: None,
     })
     .await
     .expect("support bundle should generate without bootstrapping db");
@@ -219,6 +227,802 @@ async fn support_bundle_does_not_create_or_bootstrap_missing_database() {
 }
 
 #[tokio::test]
+async fn support_bundle_generates_bounded_redacted_local_log_excerpts() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_dir = temp_dir.path().join("logs");
+    fs::create_dir_all(&log_dir).expect("log dir");
+    let log_path = log_dir.join("agent-llm-mm.local.log");
+    let local_toml = temp_dir.path().join("agent-llm-mm.local.toml");
+    let local_sqlite = temp_dir.path().join("support.sqlite");
+    let local_secret = "sk-local-support-secret-1234567890";
+    let bearer = "Bearer support-bearer-secret";
+    let api_key = "api_key=support-api-key";
+    let token = "token=support-token";
+    let password = "password=support-password";
+    let secret = "secret=support-secret";
+    let provider_url = "https://support-user:support-pass@provider.example.test/v1?token=query-secret&api_key=query-key";
+    let provider_url_without_query = "https://plain-user:plain-pass@provider.example.test/v1";
+    let sqlite_url = format!("sqlite://{}", local_sqlite.display());
+    let ordinary_local_path = temp_dir.path().join("Downloads/error.txt");
+
+    let payload = format!(
+        "startup ok\n\
+         Authorization: Bearer opaque-auth-value\n\
+         Authorization=Bearer equals-auth-value\n\
+         Authorization: {bearer}\n\
+         token plain-token-value\n\
+         password plain-password-value\n\
+         secret plain-secret-value\n\
+         database_url={sqlite_url}\n\
+         config_path={} sqlite_path={}\n\
+         error_path={}\n\
+         {api_key} {token} {password} {secret}\n\
+         {{\"api_key\":\"json-secret-value\",\"note\":\"summary ok\"}}\n\
+         {{\"token\":\"json-token-value\"}}\n\
+         {{\"password\":\"json-password-value\"}}\n\
+         {{\"secret\":\"json-secret-field-value\"}}\n\
+         headers={{\"authorization\":\"Bearer json-auth-value\"}}\n\
+         password:\"json-password\" token:\"json-token\"\n\
+         openai_api_key: plain-colon-key\n\
+         provider_url={provider_url}\n\
+         provider_url={provider_url_without_query}\n\
+         ssh_key=/Users/private/.ssh/id_ed25519\n\
+         {{\"messages\":[{{\"role\":\"user\",\"content\":\"raw provider message should be removed\"}}]}}\n\
+         {{\"input\":\"raw provider input should be removed\"}}\n\
+         {{\"prompt\":\"raw user prompt should be removed\",\"request\":{{\"messages\":[\"hidden\"]}},\"response\":{{\"text\":\"hidden\"}},\"tool_args\":{{\"path\":\"/Users/private/.ssh/id_ed25519\"}},\"api_key\":\"json-secret\",\"authorization\":\"Bearer json-bearer\",\"note\":\"keep tiny summary\"}}\n\
+         cookie browser session localStorage profile should not leak\n\
+         final line with {local_secret}\n",
+        local_toml.display(),
+        local_sqlite.display(),
+        ordinary_local_path.display()
+    );
+    fs::write(&log_path, payload).expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path.clone()),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    assert!(
+        !output_dir.join("agent-llm-mm.local.log").exists(),
+        "support bundle must not copy raw log files"
+    );
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    assert_eq!(log_excerpts["available"], true);
+    assert_eq!(log_excerpts["unavailable_reason"], Value::Null);
+    assert_eq!(log_excerpts["read_only"], true);
+    assert_eq!(log_excerpts["redaction_version"], 1);
+    assert_eq!(log_excerpts["line_count"], 26);
+    assert_eq!(log_excerpts["line_number_scope"], "file");
+    assert_eq!(log_excerpts["input_truncated"], false);
+    assert_eq!(
+        log_excerpts["source"],
+        "<local-path>/agent-llm-mm.local.log"
+    );
+    assert_eq!(log_excerpts["bounds"]["max_excerpts"], 12);
+    assert_eq!(log_excerpts["bounds"]["max_excerpt_chars"], 240);
+    assert_eq!(log_excerpts["bounds"]["max_total_bytes"], 4096);
+    assert_eq!(log_excerpts["bounds"]["max_input_bytes"], 65536);
+    assert_eq!(log_excerpts["bounds"]["tail_lines"], 200);
+    assert!(
+        log_excerpts["exclusions"]
+            .as_array()
+            .expect("exclusions array")
+            .iter()
+            .any(|entry| entry == "raw provider payloads")
+    );
+
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    let rendered_lower = rendered.to_lowercase();
+    for forbidden in [
+        local_secret,
+        "support-bearer-secret",
+        "support-api-key",
+        "support-token",
+        "support-password",
+        "support-secret",
+        "support-user",
+        "support-pass",
+        "plain-user",
+        "plain-pass",
+        "query-secret",
+        "query-key",
+        "opaque-auth-value",
+        "equals-auth-value",
+        "plain-token-value",
+        "plain-password-value",
+        "plain-secret-value",
+        "json-secret-value",
+        "json-token-value",
+        "json-password-value",
+        "json-secret-field-value",
+        "json-auth-value",
+        "json-password",
+        "json-token",
+        "plain-colon-key",
+        local_toml.to_string_lossy().as_ref(),
+        local_sqlite.to_string_lossy().as_ref(),
+        ordinary_local_path.to_string_lossy().as_ref(),
+        "/Users/private/.ssh/id_ed25519",
+        "raw provider message should be removed",
+        "raw provider input should be removed",
+        "raw user prompt should be removed",
+        "\"messages\"",
+        "\"content\"",
+        "\"input\"",
+        "json-secret",
+        "json-bearer",
+        "cookie",
+        "browser session",
+        "localstorage",
+        "profile",
+    ] {
+        assert!(
+            !rendered_lower.contains(&forbidden.to_lowercase()),
+            "local log excerpts leaked forbidden text: {forbidden}"
+        );
+    }
+
+    assert!(!rendered.contains("Authorization"));
+    assert!(!rendered.contains("Bearer"));
+    assert!(!rendered.contains("api_key"));
+    assert!(!rendered.contains("password"));
+    assert!(!rendered.contains("secret"));
+    assert!(!rendered.contains("token"));
+    assert!(rendered.contains("<redacted"));
+    assert!(rendered.contains("<local-path>/agent-llm-mm.local.toml"));
+    assert!(rendered.contains("<local-path>/support.sqlite"));
+
+    let manifest = read_json(output_dir.join("manifest.json"));
+    assert_eq!(manifest["local_only"], true);
+    assert_eq!(manifest["upload_performed"], false);
+    assert!(
+        manifest["files"]
+            .as_array()
+            .expect("manifest files")
+            .iter()
+            .any(|entry| entry == "local-log-excerpts.json")
+    );
+    assert!(
+        manifest["excluded_by_default"]
+            .as_array()
+            .expect("manifest exclusions")
+            .iter()
+            .any(|entry| entry == "raw local log files")
+    );
+    assert!(
+        manifest["bounds"]["local_log_excerpts"]["max_input_bytes"] == 65536,
+        "manifest should record local log bounds"
+    );
+}
+
+#[tokio::test]
+async fn support_bundle_skips_unquoted_provider_payload_fields() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("provider-payload.log");
+    fs::write(
+        &log_path,
+        "INFO startup ok\n\
+         INFO messages=user raw private message should not enter\n\
+         INFO content=user private content should not enter\n\
+         INFO input=user private input should not enter\n\
+         INFO messages = raw private spaced message should not enter\n\
+         INFO content = private spaced content should not enter\n\
+         INFO input = private spaced input should not enter\n\
+         INFO safe summary retained\n",
+    )
+    .expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in [
+        "raw private message should not enter",
+        "private content should not enter",
+        "private input should not enter",
+        "messages=user",
+        "content=user",
+        "input=user",
+        "raw private spaced message should not enter",
+        "private spaced content should not enter",
+        "private spaced input should not enter",
+        "messages =",
+        "content =",
+        "input =",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked provider payload field: {forbidden}"
+        );
+    }
+    assert!(rendered.contains("INFO startup ok"));
+    assert!(rendered.contains("INFO safe summary retained"));
+}
+
+#[tokio::test]
+async fn support_bundle_preserves_safe_request_response_metadata() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("safe-metadata.log");
+    fs::write(
+        &log_path,
+        "INFO request_id=req-123 response_status=500 response_time_ms=42 profile=local-alpha\n",
+    )
+    .expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    assert!(rendered.contains("request_id=req-123"));
+    assert!(rendered.contains("response_status=500"));
+    assert!(rendered.contains("response_time_ms=42"));
+    assert!(rendered.contains("profile=local-alpha"));
+}
+
+#[tokio::test]
+async fn support_bundle_skips_session_material() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("session-material.log");
+    fs::write(
+        &log_path,
+        "INFO session_id=abc123 status=ok\n\
+         INFO session token retained-by-cookie should not leak\n\
+         INFO safe summary retained\n",
+    )
+    .expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in ["session_id", "abc123", "retained-by-cookie"] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked session material: {forbidden}"
+        );
+    }
+    assert!(rendered.contains("INFO safe summary retained"));
+}
+
+#[tokio::test]
+async fn support_bundle_redacts_hyphenated_api_key_markers() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("credential-marker.log");
+    fs::write(
+        &log_path,
+        "INFO provider x-api-key: leak-me-12345\n\
+         INFO provider api-key=leak-me-67890\n\
+         {\"api-key\":\"json-hyphen-secret\",\"note\":\"keep\"}\n\
+         INFO payload={\"openai_api_key\":\"leak-openai-json\",\"note\":\"x\"}\n\
+         INFO safe summary retained\n",
+    )
+    .expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in [
+        "leak-me-12345",
+        "leak-me-67890",
+        "json-hyphen-secret",
+        "leak-openai-json",
+        "x-api-key",
+        "openai_api_key",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked hyphenated API key marker: {forbidden}"
+        );
+    }
+    assert!(rendered.contains("<redacted-value>"));
+    assert!(rendered.contains("INFO safe summary retained"));
+}
+
+#[tokio::test]
+async fn support_bundle_skips_prefixed_json_compound_secret_keys() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("prefixed-json-secrets.log");
+    fs::write(
+        &log_path,
+        "INFO payload={\"access_token\":\"leak-access-token\",\"refresh_token\":\"leak-refresh-token\",\"provider_token\":\"leak-provider-token\",\"client_secret\":\"leak-client-secret\",\"user_password\":\"leak-user-password\",\"note\":\"safe\"}\n\
+         INFO safe summary retained\n",
+    )
+    .expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in [
+        "leak-access-token",
+        "leak-refresh-token",
+        "leak-provider-token",
+        "leak-client-secret",
+        "leak-user-password",
+        "access_token",
+        "refresh_token",
+        "provider_token",
+        "client_secret",
+        "user_password",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked prefixed JSON compound secret: {forbidden}"
+        );
+    }
+    assert!(rendered.contains("INFO safe summary retained"));
+}
+
+#[tokio::test]
+async fn support_bundle_redacts_spaced_secret_markers() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("spaced-secrets.log");
+    fs::write(
+        &log_path,
+        "INFO token = plain-token-value\n\
+         INFO password = plain-password-value\n\
+         INFO secret : plain-secret-value\n\
+         INFO Authorization : Bearer bearer-value\n\
+         INFO Authorization:Bearer compact-bearer-value\n\
+         INFO api key = plain-api-key-value\n\
+         INFO API key: colon-api-key-value\n\
+         INFO access key = access-key-value\n\
+         INFO bearer token = bearer-token-value\n\
+         INFO safe summary retained\n",
+    )
+    .expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in [
+        "plain-token-value",
+        "plain-password-value",
+        "plain-secret-value",
+        "bearer-value",
+        "compact-bearer-value",
+        "plain-api-key-value",
+        "colon-api-key-value",
+        "access-key-value",
+        "bearer-token-value",
+        "Authorization",
+        "Bearer",
+        "token =",
+        "password =",
+        "secret :",
+        "api key =",
+        "API key:",
+        "access key =",
+        "bearer token =",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked spaced secret marker: {forbidden}"
+        );
+    }
+    assert!(rendered.contains("<redacted"));
+    assert!(rendered.contains("INFO safe summary retained"));
+}
+
+#[tokio::test]
+async fn support_bundle_skips_ssh_private_key_blocks() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("ssh-key.log");
+    fs::write(
+        &log_path,
+        "INFO startup ok\n\
+         -----BEGIN OPENSSH PRIVATE KEY-----\n\
+         b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ==\n\
+         -----END OPENSSH PRIVATE KEY-----\n\
+         -----BEGIN RSA PRIVATE KEY-----\n\
+         private-key-body-line\n\
+         -----END RSA PRIVATE KEY-----\n\
+         INFO safe summary retained\n",
+    )
+    .expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in [
+        "BEGIN OPENSSH PRIVATE KEY",
+        "END OPENSSH PRIVATE KEY",
+        "BEGIN RSA PRIVATE KEY",
+        "END RSA PRIVATE KEY",
+        "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ==",
+        "private-key-body-line",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked SSH private key block text: {forbidden}"
+        );
+    }
+    assert!(rendered.contains("INFO startup ok"));
+    assert!(rendered.contains("INFO safe summary retained"));
+}
+
+#[tokio::test]
+async fn support_bundle_skips_oversized_tail_inside_unclosed_private_key_block() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("oversized-unclosed-ssh-key.log");
+    let key_body = (0..2500)
+        .map(|index| format!("BASE64LIKEKEYBODY{index:04}SHOULDNOTLEAK"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(
+        &log_path,
+        format!(
+            "INFO before key\n\
+             -----BEGIN OPENSSH PRIVATE KEY-----\n\
+             {key_body}\n"
+        ),
+    )
+    .expect("oversized unclosed ssh key log");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    assert_eq!(log_excerpts["input_truncated"], true);
+    assert_eq!(log_excerpts["line_number_scope"], "tail");
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in [
+        "BASE64LIKEKEYBODY",
+        "SHOULDNOTLEAK",
+        "BEGIN OPENSSH PRIVATE KEY",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked unclosed oversized private key tail text: {forbidden}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn support_bundle_skips_short_private_key_body_lines_in_oversized_tail() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("oversized-short-key-tail.log");
+    let key_body = std::iter::repeat_n("abc001", 30000)
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(
+        &log_path,
+        format!(
+            "INFO before key\n\
+             -----BEGIN OPENSSH PRIVATE KEY-----\n\
+             {key_body}\n"
+        ),
+    )
+    .expect("oversized short private key body log");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    assert_eq!(log_excerpts["input_truncated"], true);
+    assert_eq!(log_excerpts["line_number_scope"], "tail");
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in ["abc001", "BEGIN OPENSSH PRIVATE KEY"] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked short private key body tail text: {forbidden}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn support_bundle_redacts_windows_style_local_paths() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("windows-paths.log");
+    fs::write(
+        &log_path,
+        "INFO windows_path=C:\\Users\\Alice\\Private\\support.txt\n\
+         INFO windows_config=C:\\Users\\Alice\\Private\\agent.toml windows_log=C:\\Users\\Alice\\Private\\agent.log\n\
+         INFO quoted_windows_path=\"C:\\Users\\Alice\\Secret Folder\\support.txt\"\n",
+    )
+    .expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in [
+        "C:\\Users\\Alice\\Private\\support.txt",
+        "C:\\Users\\Alice\\Private\\agent.toml",
+        "C:\\Users\\Alice\\Private\\agent.log",
+        "C:\\Users\\Alice\\Secret Folder\\support.txt",
+        "Secret Folder",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked Windows local path: {forbidden}"
+        );
+    }
+    assert!(rendered.contains("<local-path>/support.txt"));
+    assert!(rendered.contains("<local-path>/agent.toml"));
+    assert!(rendered.contains("<local-path>/agent.log"));
+}
+
+#[tokio::test]
+async fn support_bundle_redacts_space_paths_and_preserves_following_fields() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("space-paths.log");
+    fs::write(
+        &log_path,
+        "INFO posix_path=/Users/Alice/Secret Folder/support.txt status=ok\n\
+         INFO quoted_posix_path=\"/Users/Alice/Secret Folder/agent.log\" next=ready\n\
+         INFO 错误 posix_path=/Users/Alice/Secret Folder/nonascii.log trace=ok\n\
+         INFO windows_path=C:\\Users\\Alice\\Secret Folder\\support.txt status=ok another=1\n",
+    )
+    .expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in [
+        "/Users/Alice/Secret Folder/support.txt",
+        "/Users/Alice/Secret Folder/agent.log",
+        "/Users/Alice/Secret Folder/nonascii.log",
+        "C:\\Users\\Alice\\Secret Folder\\support.txt",
+        "Secret Folder",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked local path with spaces: {forbidden}"
+        );
+    }
+    assert!(rendered.contains("<local-path>/support.txt"));
+    assert!(rendered.contains("<local-path>/agent.log"));
+    assert!(rendered.contains("status=ok"));
+    assert!(rendered.contains("another=1"));
+    assert!(rendered.contains("next=ready"));
+    assert!(rendered.contains("trace=ok"));
+}
+
+#[tokio::test]
+async fn support_bundle_skips_oversized_tail_that_starts_inside_private_key_block() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("oversized-ssh-key.log");
+    fs::write(
+        &log_path,
+        format!(
+            "INFO before key\n\
+             -----BEGIN OPENSSH PRIVATE KEY-----\n\
+             {}\n\
+             PRIVATEKEYBODY-SHOULD-NOT-LEAK\n\
+             MOREPRIVATEKEYBODY\n\
+             -----END OPENSSH PRIVATE KEY-----\n\
+             INFO safe retained after key\n",
+            "A".repeat(70_000)
+        ),
+    )
+    .expect("oversized ssh key log");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    assert_eq!(log_excerpts["input_truncated"], true);
+    assert_eq!(log_excerpts["line_number_scope"], "tail");
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in [
+        "PRIVATEKEYBODY-SHOULD-NOT-LEAK",
+        "MOREPRIVATEKEYBODY",
+        "BEGIN OPENSSH PRIVATE KEY",
+        "END OPENSSH PRIVATE KEY",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked oversized private key tail text: {forbidden}"
+        );
+    }
+    assert!(rendered.contains("INFO safe retained after key"));
+}
+
+#[tokio::test]
+async fn support_bundle_marks_oversized_log_input_as_tail_scoped() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("oversized.log");
+    let partial_prefix = format!(
+        "partial-line-start secret-unbounded-prefix {}\n",
+        "x".repeat(70_000)
+    );
+    fs::write(
+        &log_path,
+        format!("{partial_prefix}INFO retained tail line\n"),
+    )
+    .expect("oversized log");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    assert_eq!(log_excerpts["available"], true);
+    assert_eq!(log_excerpts["input_truncated"], true);
+    assert_eq!(log_excerpts["line_number_scope"], "tail");
+    assert_eq!(log_excerpts["line_count"], 1);
+
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    assert!(
+        rendered.contains("INFO retained tail line"),
+        "tail line should remain available"
+    );
+    assert!(
+        !rendered.contains("secret-unbounded-prefix"),
+        "partial first retained line must be discarded after tail seek"
+    );
+}
+
+#[tokio::test]
+async fn support_bundle_discards_oversized_single_line_log_tail() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("oversized-single-line.log");
+    fs::write(
+        &log_path,
+        format!(
+            "huge single-line prefix json-secret-field-value {}",
+            "x".repeat(70_000)
+        ),
+    )
+    .expect("oversized single-line log");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    assert_eq!(log_excerpts["available"], true);
+    assert_eq!(log_excerpts["input_truncated"], true);
+    assert_eq!(log_excerpts["line_number_scope"], "tail");
+    assert_eq!(log_excerpts["line_count"], 0);
+    assert_eq!(
+        log_excerpts["excerpts"]
+            .as_array()
+            .expect("excerpts array")
+            .len(),
+        0
+    );
+
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    assert!(
+        !rendered.contains("json-secret-field-value"),
+        "partial single-line tail content must not be included"
+    );
+}
+
+#[tokio::test]
 async fn support_bundle_refuses_non_empty_output_directory() {
     let temp_dir = tempdir().expect("temp dir");
     let output_dir = temp_dir.path().join("bundle");
@@ -234,6 +1038,7 @@ async fn support_bundle_refuses_non_empty_output_directory() {
         output_dir: output_dir.clone(),
         config_path: None,
         project_root: temp_dir.path().to_path_buf(),
+        local_log_path: None,
     })
     .await;
 
@@ -252,6 +1057,8 @@ async fn support_bundle_refuses_non_empty_output_directory() {
 fn support_bundle_script_uses_dedicated_generator_binary() {
     let script =
         fs::read_to_string("scripts/generate-support-bundle.sh").expect("script should exist");
+    let binary =
+        fs::read_to_string("src/bin/generate_support_bundle.rs").expect("binary should exist");
     let mode = fs::metadata("scripts/generate-support-bundle.sh")
         .expect("script metadata")
         .permissions()
@@ -259,8 +1066,38 @@ fn support_bundle_script_uses_dedicated_generator_binary() {
 
     assert!(script.contains("cargo run --quiet --bin generate_support_bundle --"));
     assert!(script.contains("usage: ./scripts/generate-support-bundle.sh"));
+    assert!(script.contains("--log-file"));
+    assert!(!script.contains("log path does not exist"));
     assert!(script.contains("mkdir -p \"${output_parent}\""));
+    assert!(binary.contains("unknown option"));
     assert_ne!(mode & 0o111, 0, "script should be directly executable");
+}
+
+#[test]
+fn support_bundle_script_records_missing_explicit_log_as_unavailable() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("script-bundle");
+    let missing_log_path = temp_dir.path().join("missing.log");
+
+    let output = Command::new("bash")
+        .arg("scripts/generate-support-bundle.sh")
+        .arg(&output_dir)
+        .arg("--log-file")
+        .arg(&missing_log_path)
+        .output()
+        .expect("support bundle script should run");
+    assert!(
+        output.status.success(),
+        "script should record missing logs as unavailable instead of failing\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    assert_eq!(log_excerpts["available"], false);
+    assert_eq!(log_excerpts["unavailable_reason"], "log file not found");
+    assert_eq!(log_excerpts["line_number_scope"], "unavailable");
+    assert_eq!(log_excerpts["source"], "<local-path>/missing.log");
 }
 
 fn sqlite_url(path: PathBuf) -> String {
