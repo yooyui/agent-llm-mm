@@ -12,6 +12,8 @@
 
 2026-05-09 已确认当前 MVP release gate 可作为产品化起点：`cargo test` 全量通过 170 个测试，`doctor` 返回 `status = ok`，self-revision demo package 可生成 release gate 要求的证据链。正式产品化进入下一阶段规划，详见 [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md)。这不改变当前事实：仓库还不是 GA / 生产级完整自治产品。
 
+2026-05-16 已刷新 Local Alpha minimum gate、product smoke gate 和 support bundle gate 证据：`cargo test` 全量通过 194 个测试，`doctor` 返回 `status = ok`，`product-smoke-local.sh` 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`，`generate-support-bundle.sh` 生成本地脱敏诊断 JSON 且不包含 `.sqlite` 或 `.toml` 文件。这仍不代表 fresh-machine install、remote/team、multi-tenancy、Beta 或 GA 已完成。
+
 ## 下一阶段：正式产品化
 
 目标：
@@ -28,6 +30,11 @@
 
 - [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md)
 - [Formal Product Readiness 12 Workstreams](superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
+- [Local Alpha Data Lifecycle](product/data-lifecycle.md)
+- [Release Engineering](product/release-engineering.md)
+- [Remote and Team Mode Boundary](product/remote-team-mode-boundary.md)
+- [Threat Model: Local and Remote Surfaces](security/threat-model-local-and-remote.md)
+- [Memory Layering Roadmap](product/memory-layering-roadmap.md)
 - [Local Alpha Support Bundle Design](product/support-bundle-local-alpha.md)
 - [Daemon Observe-Only Gate](product/daemon-observe-only-gate.md)
 - [Correlation ID Contract](product/correlation-id-contract.md)
@@ -178,6 +185,8 @@
 - 更稳定的配置与部署方式
 
 当前该方向已进入下一阶段产品化规划，实施顺序以 [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md) 为准。
+
+多层 memory 方向已收敛到 [Memory Layering Roadmap](product/memory-layering-roadmap.md)。该文档只定义未来阶段和 first slice，不改变当前 Local Alpha 的产品承诺。
 
 ## 当前不纳入近期承诺的事项
 

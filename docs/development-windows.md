@@ -39,7 +39,7 @@ Copy-Item .\examples\agent-llm-mm.dev.example.toml .\agent-llm-mm.local.toml
 - 选择 `provider`
 - dev/mock profile 不需要 API key；只有选择 `openai-compatible` 或 prod-local profile 时，才在已忽略的 `agent-llm-mm.local.toml` 里填写 `base_url`、`api_key` 和 `model`
 
-常见 Windows SQLite URL 示例；dev、demo、prod-local 必须使用不同文件：
+常见 Windows SQLite URL 示例；dev、demo、prod-local 必须使用不同文件。按数据生命周期口径，`prod-local` 对应 formal 数据，`dev` / manual profile 对应 test 数据，demo profile 只对应 demo 数据：
 
 ```toml
 database_url = "sqlite:///D:/agent-llm-mm/dev.sqlite"
@@ -110,7 +110,7 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 
 ## 7.2 SQLite 备份与恢复
 
-正式数据、手工 test 数据和 demo 数据必须使用不同 `database_url`。本地正式数据进入 productization 前，应先保守地按 [Local Alpha Data Safety Runbook](product/data-safety-local-alpha.md) 做 SQLite backup。当前 backup / restore helper 是 bash 脚本；在 Windows 上请从 Git Bash、WSL，或等价 bash 环境运行。Git Bash drive URL 形态 `sqlite:///D:/...` 会被脚本转换为 `D:/...`，不会按 Unix 路径 `/D:/...` 处理：
+完整数据生命周期边界见 [Data Lifecycle](product/data-lifecycle.md)。本节只保留 Windows 本地命令入口；正式数据、手工 test 数据和 demo 数据必须使用不同 `database_url`。这里的正式数据对应 `prod-local`，手工 test 数据对应 dev / manual profile。本地正式数据进入 productization 前，应先保守地按 [Local Alpha Data Safety Runbook](product/data-safety-local-alpha.md) 做 SQLite backup。当前 backup / restore helper 是 bash 脚本；在 Windows 上请从 Git Bash、WSL，或等价 bash 环境运行。Git Bash drive URL 形态 `sqlite:///D:/...` 会被脚本转换为 `D:/...`，不会按 Unix 路径 `/D:/...` 处理：
 
 ```bash
 ./scripts/backup-sqlite.sh "sqlite:///D:/agent-llm-mm/formal/agent-llm-mm.sqlite"

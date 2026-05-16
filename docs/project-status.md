@@ -210,7 +210,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-05-14`，已 fresh 运行：
+截至 `2026-05-16`，已 fresh 运行：
 
 - `cargo fmt --check`
 - `git diff --check`
@@ -219,6 +219,8 @@ Implementation notes:
 - `./scripts/agent-llm-mm.sh doctor` 或 `cargo run --quiet --bin agent_llm_mm -- doctor`
 - `cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner --test openai_compatible_model --test mcp_stdio -v`
 - `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest`
+- `./scripts/product-smoke-local.sh`
+- `./scripts/generate-support-bundle.sh target/support-bundles/local-alpha-gate`
 
 结果：
 
@@ -245,6 +247,8 @@ Implementation notes:
 - 合计：194 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
+- Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`
+- Local Alpha support bundle 生成允许的 6 个 JSON 文件，敏感词扫描无未脱敏命中，且未包含 `.sqlite` 或 `.toml` 文件
 
 ## 对外描述建议
 

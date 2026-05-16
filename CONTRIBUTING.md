@@ -25,6 +25,7 @@ This repository is a public technical demo and MVP. Please keep changes aligned 
 2. Keep the blast radius small and focused.
 3. After each completed task, update the corresponding docs whenever behavior, scope, integration, configuration, verification commands, or public-facing wording changes.
 4. Prefer explicit wording for what is implemented, partially implemented, and not implemented.
+5. For release-facing changes, follow [Release Engineering](docs/product/release-engineering.md): source-only artifacts first, evidence directory recorded, compatibility and soak evidence captured when relevant, and deprecation notes written before removal.
 
 ## Verification
 
@@ -32,6 +33,13 @@ This repository is a public technical demo and MVP. Please keep changes aligned 
 
 - macOS：见 [docs/development-macos.md](docs/development-macos.md)
 - Windows：见 [docs/development-windows.md](docs/development-windows.md)
+
+Before release claims or public release notes, also run the applicable
+[Release Gate](docs/release-gate.md) and record the release engineering evidence
+described in [docs/product/release-engineering.md](docs/product/release-engineering.md).
+Do not claim Beta, GA, production-ready status, remote write admin, remote team
+service, multi-tenancy, or a replacement for `run_reflection` unless a later
+gate explicitly approves that boundary.
 
 ## License for Contributions
 
@@ -46,6 +54,12 @@ If your change affects project positioning or collaboration, update the relevant
 - [当前实现状态](docs/project-status.md)
 - [路线图](docs/roadmap.md)
 - [发布准备评估](docs/release-readiness.md)
+- [Release Engineering](docs/product/release-engineering.md)
+
+Release-related documentation must keep the product statement conservative.
+Remote write/admin claims blocked means no contributor should describe an
+ungated remote write path, remote admin surface, production self-governance, or
+GA readiness as implemented.
 
 ## Acknowledgement
 

@@ -10,6 +10,8 @@
 
 发布前执行口径见 [Release Gate](release-gate.md)。该 gate 只覆盖本机 Rust MCP `stdio` technical demo / MVP 的最低发布核验，不代表 production autonomy、remote administration、multi-tenant deployment 或 background daemon readiness。
 
+产品化阶段的发布工程规则见 [Release Engineering](product/release-engineering.md)。第一阶段 release artifact 采用 source-only tag 或同等保守的源码形态；不要把它描述为安装包、托管服务、Beta、GA 或 production-ready 交付。
+
 不建议定位为：
 
 - 生产级产品
@@ -104,9 +106,11 @@ SQLite 落盘已经可用，默认路径语义也已收口为“本机用户共�
 ### 最低必做
 
 - 按 [Release Gate](release-gate.md) 跑完整发布 gate（minimum gate、self-revision 证据 gate、dashboard gate），并单独记录 sandbox-only failure 与代码失败的区别
+- 按 [Release Engineering](product/release-engineering.md) 记录 release evidence directory、version naming、changelog、compatibility matrix、soak 证据和 deprecation 状态
 - 确认 README、状态文档、路线图、三语说明都已更新
 - 确认接入命令与验证命令可以直接复制使用
 - 确认对“已实现 / 部分实现 / 未实现”的边界没有过度承诺
+- 确认 remote write/admin claims blocked：公开说明不得暗示远程写管理、生产级自治、多租户、Beta、GA 或 production-ready 已实现
 
 ### 如果准备公开仓库
 

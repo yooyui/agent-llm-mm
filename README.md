@@ -16,10 +16,11 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
-- 最新 fresh 验证：`2026-05-14`
+- 最新 fresh 验证：`2026-05-16`
   - `cargo test` 全量通过，共 194 个测试
   - `doctor` 预检返回 `status = ok`
-  - self-revision demo package 可一键生成本地证据链
+  - Local Alpha product smoke 通过 staging / promote 流程刷新本地证据链
+  - Local Alpha support bundle 生成本地脱敏诊断 JSON，未包含 `.sqlite` 或 `.toml` 文件
 
 ## 先看这些
 
@@ -28,8 +29,12 @@
 - [发布准备评估](docs/release-readiness.md)
 - [Release Gate Runbook](docs/release-gate.md)
 - [Local Product Alpha PRD](docs/product/prd-local-alpha.md)
+- [Local Alpha 数据生命周期](docs/product/data-lifecycle.md)
+- [Release Engineering](docs/product/release-engineering.md)
 - [正式产品化路线图](docs/superpowers/plans/2026-05-09-productization-roadmap.md)
 - [正式产品化 12 项后续工作规划](docs/superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
+- [远程 / 团队模式边界](docs/product/remote-team-mode-boundary.md)
+- [多层 Memory 路线图](docs/product/memory-layering-roadmap.md)
 - [未来路线图](docs/roadmap.md)
 - [文档总览](docs/document-map.md)
 
@@ -193,6 +198,10 @@
 - [发布准备评估](docs/release-readiness.md)
 - [Release Gate Runbook](docs/release-gate.md)
 - [Local Product Alpha PRD](docs/product/prd-local-alpha.md)
+- [Local Alpha 数据生命周期](docs/product/data-lifecycle.md)
+- [Release Engineering](docs/product/release-engineering.md)
+- [远程 / 团队模式边界](docs/product/remote-team-mode-boundary.md)
+- [多层 Memory 路线图](docs/product/memory-layering-roadmap.md)
 - [正式产品化 12 项后续工作规划](docs/superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
 - [协作说明](CONTRIBUTING.md)
 - [macOS 开发与接入指南](docs/development-macos.md)
@@ -203,6 +212,10 @@
 - [本机 MCP 接入说明](docs/local-mcp-integration-2026-03-26.md)
 - [测试指南](docs/testing-guide-2026-03-24.md)
 - [Release Gate Runbook](docs/release-gate.md)
+- [Release Engineering](docs/product/release-engineering.md)
+- [Local Alpha 数据生命周期](docs/product/data-lifecycle.md)
+- [远程 / 团队模式边界](docs/product/remote-team-mode-boundary.md)
+- [本地与远程威胁模型](docs/security/threat-model-local-and-remote.md)
 - [Self-Revision Demo Guide](docs/self-revision-demo-guide-2026-04-24.md)
 - [Self-Revision Demo Report](docs/reports/self-revision-demo-2026-04-24.md)
 - [Codex MCP 配置样例](examples/codex-mcp-config.toml)

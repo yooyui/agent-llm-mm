@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-14 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-16 fresh 验证更新）
 
 ## 1. 目标
 
@@ -28,7 +28,7 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-05-14`，`cargo test` 全量通过，摘要如下：
+截至 `2026-05-16`，`cargo test` 全量通过，摘要如下：
 
 - `application_use_cases`: 22 passed
 - `bootstrap`: 17 passed

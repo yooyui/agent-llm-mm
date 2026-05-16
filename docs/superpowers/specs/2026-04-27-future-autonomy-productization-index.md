@@ -14,6 +14,7 @@ This index tracks future capabilities beyond the current local MCP memory MVP. I
 | Remote management | Remote management backend | Not implemented | remote-admin-boundary-spec |
 | Product service | Auth, multi-tenancy, productization | Not implemented | productization-foundation-spec |
 | Background daemon | All-entry auto-reflection daemon | Not implemented | daemon-trigger-policy-spec |
+| Memory layering | Working memory, episodic memory, semantic memory, procedural memory, slow variables, and self-model layering | Not implemented as a complete architecture; Local Alpha remains local MCP memory plus governed self-revision | [memory-layering-roadmap](../../product/memory-layering-roadmap.md) |
 
 ## Entry Criteria
 

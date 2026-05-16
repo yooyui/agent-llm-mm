@@ -41,10 +41,20 @@
   - Local Alpha / product alpha release gate，区分 MVP gate 与产品 gate，收口最低命令、product smoke evidence、self-revision demo 8 个 artifact、dashboard local-only、daemon disabled / observe-only 和产品文案边界
 - [product/support-bundle-local-alpha.md](product/support-bundle-local-alpha.md)
   - Local Alpha 支持包 gate，定义首版本地生成器、可分享内容、排除内容、脱敏术语、验证命令和剩余限制；当前不代表生产支持通道或 Local Alpha 已完成
+- [product/data-lifecycle.md](product/data-lifecycle.md)
+  - Local Alpha 数据生命周期文档，定义 formal / test / demo `database_url` 隔离、SQLite backup / restore-to-new-path、export 边界、保留预期和 schema migration 验证清单
+- [product/release-engineering.md](product/release-engineering.md)
+  - 正式产品化发布工程规则，定义 source-only artifact、版本命名、changelog、release evidence directory、compatibility matrix、soak test 和 deprecation policy
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
   - daemon observe-only gate，定义 Local Alpha 阶段只读诊断边界、forbidden behavior、required diagnostics 和进入写能力前的退出 gate
+- [product/remote-team-mode-boundary.md](product/remote-team-mode-boundary.md)
+  - 远程 / 团队模式边界文档，明确 remote read-only first、remote write/admin gate、namespace/database isolation、transport split 和 Local Alpha non-goals
 - [product/correlation-id-contract.md](product/correlation-id-contract.md)
   - correlation ID contract，定义 MCP tool call 级 `mcp-tool-call-<uuid-v4>`、dashboard / operation-log 传播和不越过 `run_reflection` 的观测边界
+- [product/memory-layering-roadmap.md](product/memory-layering-roadmap.md)
+  - 多层 memory 产品方向路线图，定义 working / episodic / semantic / procedural memory、slow variables 和 self-model layering 的未来阶段，不代表当前已实现
+- [security/threat-model-local-and-remote.md](security/threat-model-local-and-remote.md)
+  - 本地与远程 surface 的威胁模型，覆盖 SQLite data、provider credentials、reflection audit、operation log、support bundles、trust boundaries 和 remote/team 前置 mitigations
 - [provider-contract.md](provider-contract.md)
   - 新增 provider 前的就绪清单，覆盖配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射
 - [roadmap.md](roadmap.md)
@@ -78,10 +88,20 @@
   - 判断 Local Alpha 是否可对外表述前阅读；它是产品 alpha gate，不替代 `release-gate.md` 的 MVP gate
 - [product/support-bundle-local-alpha.md](product/support-bundle-local-alpha.md)
   - 生成或设计本地排障材料前阅读，避免泄露 API keys、raw provider payloads、provider URL secrets、raw TOML 或完整 SQLite 数据库
+- [product/data-lifecycle.md](product/data-lifecycle.md)
+  - 做备份、恢复、迁移、正式/测试/demo 数据隔离或支持包导出边界前阅读
+- [product/release-engineering.md](product/release-engineering.md)
+  - 做 release note、source-only tag、compatibility matrix、soak evidence 或 deprecation 规则前阅读
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
   - 任何 daemon 代码或文档推进前阅读，确认 observe-only 阶段不调用 `run_reflection`、不写 identity / commitments、不开远程监听
+- [product/remote-team-mode-boundary.md](product/remote-team-mode-boundary.md)
+  - 任何远程 dashboard、admin/API、team mode 或多租户设计前阅读，确认 remote write/admin 仍被 gate 阻断
+- [security/threat-model-local-and-remote.md](security/threat-model-local-and-remote.md)
+  - 任何 remote/team 或安全边界设计前阅读，用于列出 assets、attacker capabilities、trust boundaries 和 mitigations
 - [product/correlation-id-contract.md](product/correlation-id-contract.md)
   - 任何 MCP handler、dashboard projection、operation-log 或 support bundle 变更前阅读，确认 correlation id 只是 observability metadata
+- [product/memory-layering-roadmap.md](product/memory-layering-roadmap.md)
+  - 任何 richer episode、semantic memory、procedural memory、slow variables 或 self-model 设计前阅读，确认它们仍是后续方向
 - [roadmap.md](roadmap.md)
   - 近期 / 中期 / 后期规划
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
@@ -112,16 +132,26 @@
   - 新增 provider 的就绪清单，以及 `tests/provider_config.rs`、`tests/openai_compatible_model.rs`、`tests/mcp_stdio.rs` 的覆盖映射
 - [release-gate.md](release-gate.md)
   - 发布 gate 的最小命令集、self-revision demo artifact 要求，以及 dashboard 边界检查
+- [product/release-engineering.md](product/release-engineering.md)
+  - 正式产品化发布工程规则；第一阶段使用 source-only artifact，不添加包装自动化声明
 - [product/prd-local-alpha.md](product/prd-local-alpha.md)
   - Local Product Alpha PRD；后续产品化任务应先确认这里的范围、non-goals、exit gate 与验收命令
 - [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
   - Local Alpha release gate；产品化发布前从这里确认 product smoke、self-revision demo、dashboard local-only、daemon observe-only 和 remote write / multi-tenancy 文案边界
+- [product/data-lifecycle.md](product/data-lifecycle.md)
+  - Local Alpha 数据生命周期；正式/测试/demo SQLite 隔离、备份、恢复、导出和 migration 验证入口
 - [product/support-bundle-local-alpha.md](product/support-bundle-local-alpha.md)
   - Local Alpha support bundle gate；当前已有 `./scripts/generate-support-bundle.sh <output_dir> [config_path]` 首版本地生成器，但仍不是远程上传或生产支持能力
+- [product/remote-team-mode-boundary.md](product/remote-team-mode-boundary.md)
+  - 远程 / 团队模式边界；remote read-only first，remote write/admin、team mode 和 multi-tenancy 仍需后续 gate
+- [security/threat-model-local-and-remote.md](security/threat-model-local-and-remote.md)
+  - 本地与远程 surface 威胁模型；remote/team 工作前的安全审查入口
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
   - Local Alpha daemon observe-only gate；防止 daemon work 提前进入写能力或后台自治声明
 - [product/correlation-id-contract.md](product/correlation-id-contract.md)
   - Local Alpha correlation id contract；用于把 MCP tool call、dashboard event 和 operation-log metadata 串起来
+- [product/memory-layering-roadmap.md](product/memory-layering-roadmap.md)
+  - 多层 memory 产品方向；当前不是 Local Alpha 已实现能力
 - [self-revision-demo-guide-2026-04-24.md](self-revision-demo-guide-2026-04-24.md)
   - 如何运行 `./scripts/run-self-revision-demo.sh` 并复核 8 个 demo artifact
 - [examples/codex-mcp-config.toml](../examples/codex-mcp-config.toml)
@@ -167,6 +197,14 @@
   - 正式产品化第一轮任务列表，适合拆给 subagent 或按 milestone 执行
 - [2026-05-16-formal-product-readiness-12-workstreams.md](superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
   - 12 项后续完善工作的正式产品化执行规划，连接 Local Alpha gate、Beta、remote/team 和 GA readiness 前置工作
+- [product/data-lifecycle.md](product/data-lifecycle.md)
+  - Workstream 8 的数据生命周期落地文档
+- [product/release-engineering.md](product/release-engineering.md)
+  - Workstream 11 的 release engineering 落地文档
+- [product/remote-team-mode-boundary.md](product/remote-team-mode-boundary.md)
+  - Workstream 10 的远程 / 团队模式边界文档
+- [product/memory-layering-roadmap.md](product/memory-layering-roadmap.md)
+  - Workstream 12 的多层 memory 产品方向文档
 
 ## 8. 阅读建议
 

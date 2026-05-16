@@ -6,6 +6,13 @@ This gate is for the local MCP `stdio` technical demo / MVP. Passing it does not
 
 For the next productization stage, use the separate [Local Alpha Release Gate](product/release-gate-local-alpha.md). That product alpha gate does not replace this MVP gate: this file remains the minimum release gate for the technical demo / MVP, while the Local Alpha gate adds install/config/product-smoke, dashboard local-only, daemon observe-only, and product wording checks.
 
+Release engineering rules for version naming, source-only artifact shape,
+changelog entries, evidence directories, compatibility matrix, soak evidence,
+and deprecation policy live in
+[`product/release-engineering.md`](product/release-engineering.md). Those rules
+do not replace this gate; they define what must be recorded before a release
+candidate is described publicly.
+
 ## Minimum Gate
 
 - `cargo fmt --check`
@@ -13,6 +20,21 @@ For the next productization stage, use the separate [Local Alpha Release Gate](p
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo test`
 - `./scripts/agent-llm-mm.sh doctor`
+
+## Release Engineering Gate
+
+- Use a source-only tag or equivalent conservative source artifact for the first
+  productization-stage release; do not claim binary packaging, installer,
+  hosted service, Beta, GA, or production-ready delivery.
+- Record a candidate-specific release evidence directory instead of relying on
+  stale `latest` artifacts.
+- Record version naming, changelog boundaries, compatibility matrix results,
+  soak command results when required, and deprecation status according to
+  [`product/release-engineering.md`](product/release-engineering.md).
+- Confirm release notes and public docs keep remote write/admin claims blocked:
+  no remote write admin, production self-governance, remote team service,
+  multi-tenancy, or `run_reflection` replacement claim may be made from this
+  gate.
 
 ## Self-Revision Evidence Gate
 

@@ -30,6 +30,29 @@ Expected evidence:
   `[serve|doctor] [config_path]` contract with unsupported modes returning exit
   code `2`
 
+### Fresh Evidence: 2026-05-16
+
+Ran from branch `codex/formal-product-readiness-implementation` in an isolated
+worktree:
+
+```bash
+cargo fmt --check
+git diff --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+./scripts/agent-llm-mm.sh doctor
+```
+
+Result:
+
+- `cargo fmt --check`: passed
+- `git diff --check`: passed
+- `cargo clippy --all-targets --all-features -- -D warnings`: passed
+- `cargo test`: passed, 194 tests
+- `./scripts/agent-llm-mm.sh doctor`: passed with `status = ok`
+- `doctor.self_revision_write_path = "run_reflection"`
+- `doctor.daemon_observe_only.writes_allowed = false`
+
 ## Product Smoke Gate
 
 Run the local product smoke script from the repository root with the repo-relative script path:
@@ -56,9 +79,59 @@ Required evidence:
 - the deterministic self-revision demo wrapper generates artifacts in a staging directory and promotes them to `target/reports/self-revision-demo/latest` only after the same smoke run passes the artifact checks
 - all 8 required self-revision demo artifacts listed in the Self-Revision Evidence Gate are present and non-empty
 
+### Fresh Evidence: 2026-05-16
+
+Ran from branch `codex/formal-product-readiness-implementation`:
+
+```bash
+rm -rf target/reports/self-revision-demo/latest
+./scripts/product-smoke-local.sh
+```
+
+Result:
+
+- product smoke exited with code `0`
+- `doctor` ran as part of product smoke and returned `status = ok`
+- deterministic self-revision demo ran in a staging directory
+- staging artifacts were promoted to `target/reports/self-revision-demo/latest`
+- the required 8 release artifacts were present and non-empty:
+  - `doctor.json`
+  - `snapshot-before.json`
+  - `snapshot-after.json`
+  - `decision-before.json`
+  - `decision-after.json`
+  - `timeline.json`
+  - `sqlite-summary.json`
+  - `report.md`
+
+Generated demo support files in `latest`, such as `demo.sqlite` and
+`agent-llm-mm.demo.toml`, remain local artifacts and are not support-bundle
+shareables.
+
 Important limitation: `[config_path]` applies only to `doctor`. `scripts/run-self-revision-demo.sh` currently accepts only an output directory, so the product smoke script keeps the existing deterministic demo contract and does not pass a config path to the demo wrapper.
 
 This gate proves the current local wrapper path, optional config bootstrap health, and the self-revision demo evidence chain. It does not prove fresh-machine install, guided config profiles, backup/restore, GA readiness, production self-governance, remote write admin, remote team service, or multi-tenancy.
+
+## Data Lifecycle Gate
+
+Local Alpha data lifecycle rules are documented in
+[`data-lifecycle.md`](data-lifecycle.md). Product evidence must keep formal,
+test, and demo SQLite data separated by explicit `database_url` values.
+
+Required boundary:
+
+- formal data, manual test data, and demo data use separate SQLite files
+- backup uses a local SQLite backup or conservative copy helper before schema
+  migration or formal data path changes
+- restore defaults to a new path first; never overwrite a formal database as
+  the first restore step
+- support bundle summaries are not full database exports
+- demo SQLite artifacts are demo evidence, not formal user data export
+- migration work validates against a test or restored database before changing
+  the formal `database_url`
+
+This gate does not certify fresh-machine install, remote backup service,
+multi-tenant data lifecycle, or production disaster recovery.
 
 ## Support Bundle Gate
 
@@ -104,6 +177,31 @@ find target/support-bundles/manual-check -maxdepth 1 -type f -print | sort
 rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/manual-check || true
 find target/support-bundles/manual-check \( -name '*.sqlite' -o -name '*.toml' \) -print
 ```
+
+### Fresh Evidence: 2026-05-16
+
+Ran from branch `codex/formal-product-readiness-implementation`:
+
+```bash
+rm -rf target/support-bundles/local-alpha-gate
+./scripts/generate-support-bundle.sh target/support-bundles/local-alpha-gate
+find target/support-bundles/local-alpha-gate -maxdepth 1 -type f -print | sort
+rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/local-alpha-gate || true
+find target/support-bundles/local-alpha-gate \( -name '*.sqlite' -o -name '*.toml' \) -print
+```
+
+Result:
+
+- support bundle generation exited with code `0`
+- generated files were limited to:
+  - `config-shape.json`
+  - `doctor.json`
+  - `manifest.json`
+  - `operation-summaries.json`
+  - `product-smoke-summary.json`
+  - `release-metadata.json`
+- sensitive-token search produced no unredacted secret hits
+- `.sqlite` and `.toml` exclusion check produced no files
 
 ## Correlation ID Gate
 
@@ -169,6 +267,12 @@ Required boundary:
 - do not expose write actions from the dashboard
 - do not publish the dashboard through a public reverse proxy without a separate gate covering auth, authorization, audit, rollback, and transport risk
 
+Remote/team boundaries are tracked in
+[`remote-team-mode-boundary.md`](remote-team-mode-boundary.md) and the local /
+remote threat model is tracked in
+[`../security/threat-model-local-and-remote.md`](../security/threat-model-local-and-remote.md).
+Those documents are planning gates, not evidence that remote/team mode exists.
+
 Recommended verification when dashboard behavior changes:
 
 ```bash
@@ -212,6 +316,28 @@ The detailed gate is
 [`daemon-observe-only-gate.md`](daemon-observe-only-gate.md). The older future
 daemon trigger policy does not authorize write-capable daemon behavior in Local
 Alpha.
+
+## Release Engineering Gate
+
+Release engineering rules are documented in
+[`release-engineering.md`](release-engineering.md). For this productization
+stage, the conservative release artifact is a source-only Git tag plus
+evidence-backed release notes.
+
+Required boundary:
+
+- no binary package, installer, service manager, auto-updater, remote
+  bootstrapper, or packaging automation claim is made before a separate gate
+- release notes point to the exact evidence directory for the candidate
+- compatibility matrix records what was actually checked instead of inferring
+  platform parity
+- soak evidence is required when runtime, persistence, dashboard, daemon,
+  provider, or MCP behavior changes
+- deprecations name the deprecated behavior, replacement path, announcement
+  candidate, earliest removal candidate, and migration or rollback note
+
+This gate does not certify Beta, GA, production support, remote write admin,
+remote team service, or multi-tenancy.
 
 ## Product Wording Gate
 
