@@ -149,6 +149,18 @@ async fn support_bundle_generates_redacted_local_diagnostics() {
     let manifest = read_json(output_dir.join("manifest.json"));
     assert_eq!(manifest["local_only"], true);
     assert_eq!(manifest["upload_performed"], false);
+    assert_eq!(manifest["safety_checks"]["read_only"], true);
+    assert_eq!(
+        manifest["safety_checks"]["runtime_bootstrap_performed"],
+        false
+    );
+    assert_eq!(manifest["safety_checks"]["sqlite_files_included"], false);
+    assert_eq!(manifest["safety_checks"]["toml_files_included"], false);
+    assert_eq!(manifest["safety_checks"]["raw_log_files_included"], false);
+    assert_eq!(
+        manifest["safety_checks"]["provider_payloads_included"],
+        false
+    );
     assert!(
         manifest["excluded_by_default"]
             .as_array()
@@ -324,6 +336,79 @@ async fn support_bundle_filters_operation_summaries_by_correlation_id() {
 }
 
 #[tokio::test]
+async fn support_bundle_redacts_secret_like_operation_metadata() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_path = temp_dir
+        .path()
+        .join("support-bundle-secret-metadata.sqlite");
+    let database_url = sqlite_url(database_path);
+    let store = SqliteStore::bootstrap(&database_url)
+        .await
+        .expect("store should bootstrap");
+    let now = Utc::now();
+
+    store
+        .append_operation(OperationLogEntry {
+            operation_id: "op-sk-secret-token".to_string(),
+            occurred_at: now,
+            namespace: Some("project/sk-secret-/Users/Alice/private-case".to_string()),
+            actor_kind: ActorKind::System,
+            actor_id: "mcp-stdio".to_string(),
+            entrypoint: "ingest_interaction".to_string(),
+            operation_kind: OperationLogKind::Tool,
+            status: OperationLogStatus::Ok,
+            correlation_id: Some("corr-sk-secret-token".to_string()),
+            request_summary_json: None,
+            response_summary_json: None,
+            diagnostic_summary_json: None,
+            redaction_version: 1,
+        })
+        .await
+        .expect("operation append should succeed");
+
+    let output_dir = temp_dir.path().join("bundle");
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig {
+            database_url: database_url.clone(),
+            ..Default::default()
+        },
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: None,
+        operation_correlation_id: None,
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let operation_summaries = read_json(output_dir.join("operation-summaries.json"));
+    let entries = operation_summaries["entries"]
+        .as_array()
+        .expect("operation entries array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["operation_id"], "<redacted-metadata>");
+    assert_eq!(entries[0]["namespace"], "project/<namespace>");
+    assert_eq!(entries[0]["correlation_id"], "<redacted-metadata>");
+    assert_eq!(entries[0]["entrypoint"], "ingest_interaction");
+
+    let rendered = serde_json::to_string_pretty(&operation_summaries).expect("json text");
+    for forbidden in [
+        "sk-secret",
+        "secret",
+        "token",
+        "/Users/Alice",
+        "private-case",
+        "op-sk-secret-token",
+        "corr-sk-secret-token",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "operation summaries leaked secret-like metadata: {forbidden}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn support_bundle_rejects_non_generated_correlation_id_filter() {
     let temp_dir = tempdir().expect("temp dir");
     let output_dir = temp_dir.path().join("bundle");
@@ -442,6 +527,56 @@ async fn support_bundle_rejects_non_canonical_correlation_id_filter() {
         !output_dir.exists(),
         "invalid correlation ids should fail before creating the bundle directory"
     );
+}
+
+#[tokio::test]
+async fn support_bundle_redacts_secret_like_config_and_log_filenames() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let config_path = temp_dir
+        .path()
+        .join("agent-sk-secret-token-private-user.toml");
+    let log_path = temp_dir
+        .path()
+        .join("trace-sk-secret-token-private-user.log");
+    fs::write(&log_path, "INFO safe support bundle line\n").expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: Some(config_path),
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+        operation_correlation_id: None,
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let config_shape = read_json(output_dir.join("config-shape.json"));
+    assert_eq!(config_shape["config_path"], "<local-path>/<redacted-name>");
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    assert_eq!(log_excerpts["source"], "<local-path>/<redacted-name>");
+
+    let rendered = fs::read_dir(&output_dir)
+        .expect("bundle dir")
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().is_file())
+        .map(|entry| fs::read_to_string(entry.path()).expect("bundle file text"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for forbidden in [
+        "sk-secret",
+        "secret",
+        "token",
+        "private-user",
+        "agent-sk-secret-token-private-user.toml",
+        "trace-sk-secret-token-private-user.log",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "support bundle leaked secret-like path metadata: {forbidden}"
+        );
+    }
 }
 
 #[tokio::test]

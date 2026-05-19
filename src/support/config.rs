@@ -25,6 +25,23 @@ pub enum ModelProviderKind {
     OpenAiCompatible,
 }
 
+impl ModelProviderKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ModelProviderKind::Mock => "mock",
+            ModelProviderKind::OpenAiCompatible => "openai-compatible",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderMatrixEntry {
+    pub provider: &'static str,
+    pub state: &'static str,
+    pub configurable: bool,
+    pub adapter: &'static str,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenAiCompatibleConfig {
     pub base_url: String,
@@ -128,6 +145,41 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    pub fn provider_matrix() -> Vec<ProviderMatrixEntry> {
+        vec![
+            ProviderMatrixEntry {
+                provider: "mock",
+                state: "supported",
+                configurable: true,
+                adapter: "built-in deterministic mock",
+            },
+            ProviderMatrixEntry {
+                provider: "openai-compatible",
+                state: "supported",
+                configurable: true,
+                adapter: "openai-compatible chat completions",
+            },
+            ProviderMatrixEntry {
+                provider: "azure-openai",
+                state: "planned-only",
+                configurable: false,
+                adapter: "not implemented",
+            },
+            ProviderMatrixEntry {
+                provider: "openrouter",
+                state: "planned-only",
+                configurable: false,
+                adapter: "not implemented",
+            },
+            ProviderMatrixEntry {
+                provider: "local",
+                state: "planned-only",
+                configurable: false,
+                adapter: "not implemented",
+            },
+        ]
+    }
+
     pub fn load() -> Result<Self, String> {
         let mut config = match std::env::var(CONFIG_PATH_ENV_VAR) {
             Ok(path) => Self::load_from_path(path),

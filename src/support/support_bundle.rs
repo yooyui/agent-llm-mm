@@ -146,9 +146,20 @@ struct Manifest {
     generated_at: String,
     local_only: bool,
     upload_performed: bool,
+    safety_checks: ManifestSafetyChecks,
     excluded_by_default: Vec<&'static str>,
     files: Vec<&'static str>,
     bounds: ManifestBounds,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestSafetyChecks {
+    read_only: bool,
+    runtime_bootstrap_performed: bool,
+    sqlite_files_included: bool,
+    toml_files_included: bool,
+    raw_log_files_included: bool,
+    provider_payloads_included: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -1099,16 +1110,60 @@ async fn query_operation_summaries_read_only(
     Ok(rows
         .into_iter()
         .map(|entry| OperationSummary {
-            operation_id: entry.get("operation_id"),
+            operation_id: safe_metadata_value(entry.get::<String, _>("operation_id")),
             occurred_at: entry.get("occurred_at"),
-            namespace: entry.get("namespace"),
-            entrypoint: entry.get("entrypoint"),
-            operation_kind: entry.get("operation_kind"),
-            status: entry.get("status"),
-            correlation_id: entry.get("correlation_id"),
+            namespace: safe_namespace_shape(entry.get::<Option<String>, _>("namespace")),
+            entrypoint: safe_metadata_value(entry.get::<String, _>("entrypoint")),
+            operation_kind: safe_metadata_value(entry.get::<String, _>("operation_kind")),
+            status: safe_metadata_value(entry.get::<String, _>("status")),
+            correlation_id: entry
+                .get::<Option<String>, _>("correlation_id")
+                .map(safe_metadata_value),
             read_only: true,
         })
         .collect())
+}
+
+fn safe_namespace_shape(namespace: Option<String>) -> Option<String> {
+    namespace.map(|namespace| {
+        if namespace == "self" || namespace == "world" {
+            namespace
+        } else if namespace.starts_with("project/") {
+            "project/<namespace>".to_string()
+        } else if namespace.starts_with("user/") {
+            "user/<namespace>".to_string()
+        } else if metadata_value_is_sensitive(&namespace) {
+            "<redacted-metadata>".to_string()
+        } else {
+            "<namespace>".to_string()
+        }
+    })
+}
+
+fn safe_metadata_value(value: String) -> String {
+    if metadata_value_is_sensitive(&value) {
+        "<redacted-metadata>".to_string()
+    } else {
+        value
+    }
+}
+
+fn metadata_value_is_sensitive(value: &str) -> bool {
+    value_has_secret_marker(value) || is_local_path_like(value)
+}
+
+fn value_has_secret_marker(value: &str) -> bool {
+    let lower = value.to_lowercase();
+    lower.contains("sk-")
+        || lower.contains("api_key")
+        || lower.contains("api-key")
+        || lower.contains("apikey")
+        || lower.contains("token")
+        || lower.contains("password")
+        || lower.contains("secret")
+        || lower.contains("authorization")
+        || lower.contains("bearer")
+        || lower.contains("private")
 }
 
 fn unavailable_operation_summaries(
@@ -1199,6 +1254,14 @@ fn manifest(generated_at: &str) -> Manifest {
         generated_at: generated_at.to_string(),
         local_only: true,
         upload_performed: false,
+        safety_checks: ManifestSafetyChecks {
+            read_only: true,
+            runtime_bootstrap_performed: false,
+            sqlite_files_included: false,
+            toml_files_included: false,
+            raw_log_files_included: false,
+            provider_payloads_included: false,
+        },
         excluded_by_default: vec![
             "api keys",
             "authorization headers",
@@ -1286,7 +1349,13 @@ fn base_url_shape(base_url: &str) -> String {
 fn redact_path(path: &Path) -> String {
     path.file_name()
         .and_then(|name| name.to_str())
-        .map(|name| format!("<local-path>/{name}"))
+        .map(|name| {
+            if value_has_secret_marker(name) {
+                "<local-path>/<redacted-name>".to_string()
+            } else {
+                format!("<local-path>/{name}")
+            }
+        })
         .unwrap_or_else(|| "<local-path>".to_string())
 }
 

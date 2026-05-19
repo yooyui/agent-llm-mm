@@ -45,6 +45,8 @@
   - Local Alpha 数据生命周期文档，定义 formal / test / demo `database_url` 隔离、SQLite backup / restore-to-new-path、export 边界、保留预期和 schema migration 验证清单
 - [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
   - 产品化二次跟进现实 gate，按 `implemented` / `partial` / `simulation-only` / `planning-gate` 等标签追踪哪些模块已有实现、哪些仍是假设或缺 fresh evidence
+- [product/structured-decision-protocol.md](product/structured-decision-protocol.md)
+  - `decide_with_snapshot` v1 response envelope 兼容契约；当前只增加 protocol metadata、status、reason 和 gate metadata，不代表完整决策引擎
 - [product/release-engineering.md](product/release-engineering.md)
   - 正式产品化发布工程规则，定义 source-only artifact、版本命名、changelog、release evidence directory、compatibility matrix、soak test 和 deprecation policy
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
@@ -58,7 +60,7 @@
 - [security/threat-model-local-and-remote.md](security/threat-model-local-and-remote.md)
   - 本地与远程 surface 的威胁模型，覆盖 SQLite data、provider credentials、reflection audit、operation log、support bundles、trust boundaries 和 remote/team 前置 mitigations
 - [provider-contract.md](provider-contract.md)
-  - 新增 provider 前的就绪清单，覆盖配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射
+  - 新增 provider 前的就绪清单，覆盖当前 read-only provider matrix、配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射；planned-only provider 不能当作可配置能力
 - [roadmap.md](roadmap.md)
   - 近期 / 中期 / 后期规划，明确哪些是 MVP 延伸，哪些不在近期承诺内
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
@@ -94,6 +96,8 @@
   - 做备份、恢复、迁移、正式/测试/demo 数据隔离或支持包导出边界前阅读
 - [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
   - 做二次跟进、判断规划项是否已经落地或检查假设证据时优先阅读
+- [product/structured-decision-protocol.md](product/structured-decision-protocol.md)
+  - 改 `decide_with_snapshot` 返回结构、MCP schema 或 caller compatibility 前阅读，确认 v1 envelope 和 legacy `blocked` / `decision` 字段保持兼容
 - [product/release-engineering.md](product/release-engineering.md)
   - 做 release note、source-only tag、compatibility matrix、soak evidence 或 deprecation 规则前阅读
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
@@ -133,13 +137,15 @@
 - [testing-guide-2026-03-24.md](testing-guide-2026-03-24.md)
   - 当前测试基线、推荐验证顺序、self-revision runtime coverage / diagnostics / evidence policy 定向回归和常见问题排查
 - [provider-contract.md](provider-contract.md)
-  - 新增 provider 的就绪清单，以及 `tests/provider_config.rs`、`tests/openai_compatible_model.rs`、`tests/mcp_stdio.rs` 的覆盖映射
+  - 新增 provider 的就绪清单、read-only provider matrix，以及 `tests/provider_config.rs`、`tests/openai_compatible_model.rs`、`tests/mcp_stdio.rs` 的覆盖映射
 - [release-gate.md](release-gate.md)
   - 发布 gate 的最小命令集、self-revision demo artifact 要求，以及 dashboard 边界检查
 - [product/release-engineering.md](product/release-engineering.md)
   - 正式产品化发布工程规则；第一阶段使用 source-only artifact，不添加包装自动化声明
 - [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
   - 产品化二次跟进现实 gate；把当前模块按实现、模拟、规划和缺证据状态拆开，防止把 roadmap 误读成完成声明
+- [product/structured-decision-protocol.md](product/structured-decision-protocol.md)
+  - `decide_with_snapshot` structured response envelope；用于追踪 v1 compatibility，不包含 planning、confidence scoring、provider JSON decision parsing 或 policy arbitration
 - [product/prd-local-alpha.md](product/prd-local-alpha.md)
   - Local Product Alpha PRD；后续产品化任务应先确认这里的范围、non-goals、exit gate 与验收命令
 - [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)

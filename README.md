@@ -16,9 +16,10 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
-- 最新 fresh 验证：`2026-05-16`
-  - `cargo test` 全量通过，共 255 个测试
+- 最新 fresh 验证：`2026-05-19`
+  - `cargo test` 全量通过，共 270 个测试
   - `doctor` 预检返回 `status = ok`
+  - `status-sync-check` 已加入本地只读文档漂移检查，用于对齐当前测试总数声明
   - Local Alpha product smoke 通过 staging / promote 流程刷新本地证据链
   - Local Alpha support bundle 生成本地脱敏诊断 JSON，未包含 `.sqlite` 或 `.toml` 文件
   - Local first-run bootstrap smoke 已加入脚本入口，用于模拟 `bootstrap-local -> doctor` 的本地首启证据
@@ -34,6 +35,8 @@
 - [Local Product Alpha PRD](docs/product/prd-local-alpha.md)
 - [Local Alpha 数据生命周期](docs/product/data-lifecycle.md)
 - [产品化二次跟进现实 Gate](docs/product/follow-up-reality-gates.md)
+- [Structured Decision Protocol](docs/product/structured-decision-protocol.md)
+- [Provider Readiness Checklist](docs/provider-contract.md)
 - [Release Engineering](docs/product/release-engineering.md)
 - [正式产品化路线图](docs/superpowers/plans/2026-05-09-productization-roadmap.md)
 - [正式产品化 12 项后续工作规划](docs/superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
@@ -105,6 +108,7 @@
   - 可在显式传入生成型 `--correlation-id mcp-tool-call-<uuid-v4>` 时，仅导出该 correlation id 对应的 operation-log metadata，并把 filter 形状写入 `operation-summaries.json`
   - 可在显式传入 `--log-file <path>` 时输出 bounded / redacted `local-log-excerpts.json`，但不会自动扫描日志目录或复制原始 `.log` 文件
   - 默认不复制完整 SQLite 数据库、不包含 raw TOML、不包含 provider payload、不上传数据
+  - `manifest.json` 会输出只读、未 runtime bootstrap、未包含 SQLite/TOML/raw log/provider payload 的显式 safety checks
   - 该能力只是 Local Alpha 诊断辅助，不代表生产支持通道、远程上传能力或 Local Alpha 已完成
 - local alpha evidence summary
   - 提供本地只读 gate 汇总入口：`./scripts/local-alpha-evidence-summary.sh`
@@ -159,7 +163,8 @@
 - `decide_with_snapshot`
   - commitment gate 已真实生效
   - 已可切到 `openai-compatible` provider
-  - 当前只支持返回“动作字符串”的最小协议
+  - 返回 envelope 已有 `protocol_version = 1`、`status`、`reason` 和 commitment-gate metadata，同时保留旧的 `blocked` / `decision` 字段
+  - 当前仍是围绕动作字符串的兼容协议，不是完整决策引擎
 - self-revision 触发面与治理深度
   - 当前 trigger type 已有 `failure / conflict / periodic` 契约，协调器与 ledger 也支持这些类型
   - 当前 MCP runtime coverage 已谨慎接到 4 条路径：`ingest_interaction -> failure`、`ingest_interaction -> conflict`、`decide_with_snapshot -> conflict`、`build_self_snapshot -> periodic`
@@ -170,6 +175,7 @@
 - provider 扩展性
   - 已保留 provider 枚举与 provider-specific config 结构
   - 但目前只内建 `mock` 与 `openai-compatible`
+  - `doctor.provider_matrix` 会把 `azure-openai`、`openrouter`、`local` 标为 `planned-only` 且不可配置；这不是可运行 adapter
 - `self_snapshot`
   - 当前只有统一 `SnapshotBudget`
   - 主要对 evidence 数量做截断

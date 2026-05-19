@@ -36,13 +36,13 @@ Current baseline:
 | `P0` | Local Alpha full release gate | `partial` | Product smoke, first-run simulation, support bundle, and summary can now be refreshed together locally, but Windows parity, real fresh-machine evidence, and release decision evidence can still be missing. | Run the refresh script for local evidence, then separately record real fresh-machine and Windows runner evidence without claiming completion from local simulation artifacts. | `./scripts/local-alpha-release-gate-refresh.sh`; evidence summary JSON showing every gate state; separate real fresh-machine and Windows parity summaries before human release review. |
 | `P0` | Fresh-machine first-run | `simulation-only` | `first-run-bootstrap-smoke-local.sh` proves an isolated local simulation, not a real clone/unpack on a fresh machine. | Run the documented bootstrap -> doctor path in a clean checkout or real fresh-machine environment; record the summary separately from simulation evidence. | A dated `first-run-bootstrap/summary.json` or documented equivalent with `real_fresh_machine_evidence = true`, `doctor_status = ok`, `local_only = true`, no serve/product smoke side effects, and `run_reflection` write path. |
 | `P0` | Windows parity | `planning-gate` | PowerShell/static contract tests do not prove Windows runtime parity. | Run Windows or Windows runner validation for bootstrap, doctor, and product smoke parity; do not infer Windows from macOS. | `windows-parity/summary.json` or `target/windows-parity/local-alpha-gate/summary.json` with `status = verified`, `runtime_parity = true`, and a Windows runner/platform marker. |
-| `P1` | Plan/status synchronization | `partial` | Planning checkboxes, test counts, and status docs can drift from code. | After each productization slice, reconcile `docs/project-status.md`, `docs/progress-tracker.md`, `docs/testing-guide-2026-03-24.md`, and this document against commands run in the current branch. | Matching test counts, dated verification commands, and no stale claims such as old test totals or completed workstream labels without evidence. |
+| `P1` | Plan/status synchronization | `partial` | Planning checkboxes, test counts, and status docs can drift from code. The current branch implements only the read-only `cargo test` total drift slice, not full roadmap/task-state reconciliation. | Use `status-sync-check` after each productization slice, then reconcile any flagged docs against commands run in the current branch. Keep broader plan/status state review manual until a separate tracker verifier exists. | `cargo test --test status_sync -v`; `./scripts/status-sync-check.sh`; matching test counts, dated verification commands, and no stale claims such as old test totals or completed workstream labels without evidence. |
 | `P1` | Observe-only daemon lifecycle | `partial` | `doctor.daemon_observe_only` is real, and `DaemonHandle` now has local start / stop proof, but it is still not connected as a running background product service. | Keep write capability blocked; use lifecycle tests to preserve clean shutdown and closed write / remote gates before any future daemon write path. | `cargo test --test daemon_config -v`; tests prove disabled quick exit, observe-only start / stop, no remote listener, no semantic writes, and clean shutdown. |
 | `P1` | Runtime self-revision coverage | `partial` | Four hooks are wired, but this is not all-entry auto-reflection or continuous autonomy. | Tighten diagnostics and tests for the existing four hooks before widening trigger coverage. | Focused `mcp_stdio`, `failure_modes`, and `bootstrap` tests showing hook list, opt-in requirements, best-effort failure semantics, and no direct `run_reflection` recursion. |
-| `P1` | Support bundle diagnostics | `partial` | Local support bundle is useful, but not a production support channel, remote upload flow, or automatic log collector. | Keep explicit log file and correlation filters; extend only after redaction tests exist. | `cargo test --test support_bundle -v`; secret scans on generated bundle; manifest says local only and upload false. |
-| `P2` | Structured decision protocol | `partial` | `decide_with_snapshot` still returns a minimal action string; not a full decision engine. | Add a versioned response contract only after compatibility tests preserve existing callers. | New decision protocol spec, compatibility tests, and MCP schema checks. |
+| `P1` | Support bundle diagnostics | `partial` | Local support bundle is useful, but not a production support channel, remote upload flow, or automatic log collector. | Keep explicit log file and correlation filters; extend only after redaction tests exist. Current manifest must keep `safety_checks` explicit for read-only generation, no runtime bootstrap, no SQLite/TOML/raw log copies, and no provider payloads. | `cargo test --test support_bundle -v`; secret scans on generated bundle; `manifest.json` says local only, upload false, and every safety check remains closed for copied raw artifacts. |
+| `P2` | Structured decision protocol | `partial` | `decide_with_snapshot` now has a v1 response envelope with protocol metadata, status, reason, and gate metadata, but the model decision remains a minimal action string. This is not a full decision engine. | Preserve legacy `blocked` / `decision` callers while adding any future schema fields. Do not add provider JSON decisions, confidence scoring, planning, or policy arbitration without separate tests and docs. | `docs/product/structured-decision-protocol.md`; `cargo test --test decision_flow -v`; future MCP schema compatibility checks when the wire schema changes. |
 | `P2` | Evidence and reflection semantics v2 | `partial` | Current queries are bounded narrowing only; no richer relation, weight, ranking, or widening engine. | Add one evidence-v2 slice at a time while preserving no-widening governance. | Focused `sqlite_store`, `failure_modes`, `evidence_query_dto`, and `application_use_cases` tests. |
-| `P2` | Provider matrix | `partial` | Only `mock` and first `openai-compatible` are implemented. | Define provider matrix and add adapters only with config, doctor, parsing, and error-mode tests. | Provider contract doc update plus provider-specific tests. |
+| `P2` | Provider matrix | `partial` | Only `mock` and first `openai-compatible` are runnable. The current branch exposes a read-only matrix in config and `doctor`; `azure-openai`, `openrouter`, and `local` remain planned-only and non-configurable. | Add adapters only with config, doctor, parsing, redaction, timeout/error-mode, and MCP stdio path tests. Do not turn matrix rows into accepted config values without a real adapter in the same change. | `docs/provider-contract.md`; `cargo test --test provider_config -v`; provider-specific tests before any future provider is marked supported. |
 | `P2` | Data lifecycle and migration | `partial` | Backup/restore local scripts are covered, but this is not remote backup, cloud sync, scheduled backup, or production disaster recovery. | Add migration tests when schema changes; keep restore-to-new-path and manual database switch boundary. | `cargo test --test sqlite_backup_restore -v`; schema migration tests for any future migration. |
 | `P3` | Remote/team/auth/security | `planning-gate` | Boundary and threat model docs exist, but remote/team mode is not implemented. | Start with remote read-only inventory and auth/audit design; block remote writes until separate security gates pass. | Security review, route inventory, auth/authorization tests, audit tests, and no write-capable remote routes before gate approval. |
 | `P3` | Release engineering | `planning-gate` | Rules exist, but there is no installer, binary package, service manager, auto-updater, or soak automation. | Keep first artifact source-only; add repeatable release evidence and compatibility matrix before Beta language. | Release evidence directory, changelog, compatibility matrix, soak command/result, and wording scan. |
@@ -68,6 +68,9 @@ cargo fmt --check
 git diff --check
 bash -n scripts/local-alpha-evidence-summary.sh
 bash -n scripts/local-alpha-release-gate-refresh.sh
+bash -n scripts/status-sync-check.sh
+cargo test --test status_sync -v
+./scripts/status-sync-check.sh
 cargo test --test local_alpha_release_evidence -v
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
@@ -78,3 +81,23 @@ cargo run --quiet --bin local_alpha_evidence_summary -- --evidence-root .
 If `local_alpha_evidence_summary` reports `in_progress` or `not_verified`, keep
 the corresponding module open. Do not rewrite open gates into completed product
 claims.
+
+## Plan / Status Sync Check
+
+The local `status-sync-check` slice is a read-only drift detector for declared
+`cargo test` totals. It compares the current `cargo test -- --list --format
+terse` test list against the total declarations in:
+
+- `README.md`
+- `docs/testing-guide-2026-03-24.md`
+- `docs/local-mcp-integration-2026-03-26.md`
+- `docs/project-status.md`
+- `docs/progress-tracker.md`
+- `docs/product/follow-up-reality-gates.md`
+
+Current branch `cargo test` total declaration: 270 tests.
+
+This check only protects the documented cargo-test total from drifting. It does
+not certify Local Alpha, does not turn simulation evidence into real
+fresh-machine evidence, does not prove Windows runner parity, and does not
+change the `run_reflection` durable write-path boundary.

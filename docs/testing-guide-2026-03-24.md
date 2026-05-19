@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-16 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-19 fresh 验证更新）
 
 ## 1. 目标
 
@@ -28,8 +28,9 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-05-16`，`cargo test` 全量通过，摘要如下：
+截至 `2026-05-19`，`cargo test` 全量通过，摘要如下：
 
+- `lib unit tests`: 7 passed
 - `application_use_cases`: 22 passed
 - `bootstrap`: 24 passed
 - `daemon_config`: 8 passed
@@ -44,17 +45,18 @@
 - `evidence_query_dto`: 2 passed
 - `failure_modes`: 31 passed
 - `first_run_bootstrap_smoke`: 4 passed
-- `local_alpha_release_evidence`: 13 passed
+- `local_alpha_release_evidence`: 15 passed
 - `mcp_stdio`: 36 passed
 - `openai_compatible_model`: 9 passed
 - `operation_log`: 9 passed
-- `provider_config`: 9 passed
+- `provider_config`: 12 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_backup_restore`: 6 passed
 - `sqlite_store`: 20 passed
-- `support_bundle`: 30 passed
+- `status_sync`: 3 passed
+- `support_bundle`: 32 passed
 
-合计：255 个测试通过。
+合计：270 个测试通过。
 
 ---
 
@@ -1009,7 +1011,7 @@ rg -n 'API key|redact|support bundle|excluded|doctor|generate-support-bundle' do
 git diff --check
 ```
 
-这组命令验证首版本地 support bundle 生成器、脚本入口、脱敏边界、read-only operation-log 查询、显式 `--correlation-id mcp-tool-call-<uuid-v4>` operation summary 过滤、显式 `--log-file` 本地日志摘要/摘录，以及文档口径。输出目录必须不存在或为空；测试会覆盖非空目录被拒绝，避免旧的本地文件混入可分享支持包。敏感词扫描应无实际泄露；`find` 命令不应打印 `.sqlite`、`.toml` 或原始 `.log` 文件。operation summary 过滤只接受生成型 `mcp-tool-call-<uuid-v4>` correlation id，并仍只输出 metadata，不输出 request / response / diagnostic payload summary。日志摘录只允许显式传入单个本地文件，不允许扫描默认日志目录、home、系统日志、browser profile、SSH/cookie/session、shell history 或 `target/` 输出。超大日志只读取有界尾部窗口，并以 `line_number_scope = "tail"` 标记行号语义。该生成器不会创建或迁移缺失 SQLite 数据库，也不会通过 runtime bootstrap seed 默认 identity / commitments；它仍是本地诊断辅助，不代表远程上传、生产支持通道或 Local Alpha 完成。
+这组命令验证首版本地 support bundle 生成器、脚本入口、脱敏边界、read-only operation-log 查询、显式 `--correlation-id mcp-tool-call-<uuid-v4>` operation summary 过滤、显式 `--log-file` 本地日志摘要/摘录，以及文档口径。输出目录必须不存在或为空；测试会覆盖非空目录被拒绝，避免旧的本地文件混入可分享支持包。敏感词扫描应无实际泄露；`find` 命令不应打印 `.sqlite`、`.toml` 或原始 `.log` 文件。operation summary 过滤只接受生成型 `mcp-tool-call-<uuid-v4>` correlation id，并仍只输出 metadata，不输出 request / response / diagnostic payload summary；user/project namespace 只输出 shape，secret-like operation metadata 会被替换。日志摘录只允许显式传入单个本地文件，secret-like config/log 文件名会折叠成 `<local-path>/<redacted-name>`；不允许扫描默认日志目录、home、系统日志、browser profile、SSH/cookie/session、shell history 或 `target/` 输出。超大日志只读取有界尾部窗口，并以 `line_number_scope = "tail"` 标记行号语义。该生成器不会创建或迁移缺失 SQLite 数据库，也不会通过 runtime bootstrap seed 默认 identity / commitments；它仍是本地诊断辅助，不代表远程上传、生产支持通道或 Local Alpha 完成。
 
 ### 改 daemon observe-only gate
 

@@ -72,10 +72,10 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 - 存在后台 daemon / 定时自治进程
 - 所有 MCP 请求都会自动反思
 
-截至 `2026-04-29`，fresh 验证还包括：
+截至 `2026-05-19`，fresh 验证还包括：
 
-- `cargo test` 全量通过，165 个测试通过
-- 其中 `application_use_cases` 22、`failure_modes` 30、`mcp_stdio` 27、`sqlite_store` 19、`dashboard_http` 5
+- `cargo test` 全量通过，270 个测试通过
+- 其中 `application_use_cases` 22、`failure_modes` 31、`mcp_stdio` 36、`sqlite_store` 20、`dashboard_http` 7、`support_bundle` 32、`status_sync` 3
 - self-revision demo package wrapper 可生成本地 artifact report
 
 ## 4. 启动服务

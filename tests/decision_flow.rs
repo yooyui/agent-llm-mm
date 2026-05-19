@@ -13,6 +13,7 @@ use agent_llm_mm::{
     ports::{ModelDecision, ModelDecisionRequest, ModelPort},
 };
 use async_trait::async_trait;
+use serde_json::json;
 
 #[tokio::test]
 async fn decision_returns_blocked_without_calling_model_when_gate_fails() {
@@ -24,6 +25,29 @@ async fn decision_returns_blocked_without_calling_model_when_gate_fails() {
 
     assert!(result.blocked);
     assert!(result.decision.is_none());
+    assert_eq!(result.protocol_version, 1);
+    assert_eq!(result.status, "blocked");
+    assert_eq!(
+        result.reason.as_deref(),
+        Some("commitment_gate_blocked_action")
+    );
+    assert_eq!(result.gate.name, "commitment_gate");
+    assert!(result.gate.blocked);
+
+    let serialized = serde_json::to_value(&result).unwrap();
+    assert_eq!(serialized["blocked"], true);
+    assert_eq!(serialized["decision"], serde_json::Value::Null);
+    assert_eq!(serialized["protocol_version"], 1);
+    assert_eq!(serialized["status"], "blocked");
+    assert_eq!(serialized["reason"], "commitment_gate_blocked_action");
+    assert_eq!(
+        serialized["gate"],
+        json!({
+            "name": "commitment_gate",
+            "blocked": true,
+            "reason": "commitment_gate_blocked_action"
+        })
+    );
     assert_eq!(deps.model_call_count(), 0);
     assert!(deps.last_request().is_none());
 }
@@ -38,6 +62,29 @@ async fn mock_model_receives_snapshot_context_when_gate_passes() {
     assert_eq!(
         result.decision,
         Some(ModelDecision::new("summarize_memory_state".to_string()))
+    );
+    assert_eq!(result.protocol_version, 1);
+    assert_eq!(result.status, "model_decision");
+    assert!(result.reason.is_none());
+    assert_eq!(result.gate.name, "commitment_gate");
+    assert!(!result.gate.blocked);
+
+    let serialized = serde_json::to_value(&result).unwrap();
+    assert_eq!(serialized["blocked"], false);
+    assert_eq!(
+        serialized["decision"],
+        json!({ "action": "summarize_memory_state" })
+    );
+    assert_eq!(serialized["protocol_version"], 1);
+    assert_eq!(serialized["status"], "model_decision");
+    assert_eq!(serialized["reason"], serde_json::Value::Null);
+    assert_eq!(
+        serialized["gate"],
+        json!({
+            "name": "commitment_gate",
+            "blocked": false,
+            "reason": null
+        })
     );
 
     let request = deps.last_request().expect("model should receive request");

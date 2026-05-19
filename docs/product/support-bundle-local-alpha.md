@@ -39,7 +39,8 @@ The current generator writes these JSON files into the requested output
 directory:
 
 - `manifest.json`: bundle format, generated timestamp, local-only flag,
-  `upload_performed = false`, excluded content list, and file inventory
+  `upload_performed = false`, explicit `safety_checks`, excluded content list,
+  and file inventory
 - `doctor.json`: config-derived safe `doctor` shape, including transport,
   database URL shape, provider kind, URL shape, model, dashboard settings,
   daemon settings, runtime hook names, `self_revision_write_path`,
@@ -47,15 +48,18 @@ directory:
 - `config-shape.json`: configuration shape with secrets removed, including
   transport, database URL shape, provider kind, URL shape, model, timeout,
   credential presence as a boolean, dashboard settings, daemon settings, and a
-  redacted config file name when one was provided
+  redacted config file name when one was provided; secret-like config file names
+  are collapsed to `<local-path>/<redacted-name>`
 - `operation-summaries.json`: up to 25 recent durable operation-log metadata
-  rows, limited to operation id, timestamp, namespace, entrypoint,
+  rows, limited to safe-shaped operation id, timestamp, namespace, entrypoint,
   `operation_kind`, status, correlation id, an optional
   `filter.correlation_id`, and a `read_only` marker; when
   `--correlation-id <id>` is provided, only matching generated MCP
   correlation IDs are exported; when the local database or `operation_log` table
   is unavailable, this file records `available = false` and an unavailable
-  reason instead of creating or migrating the database
+  reason instead of creating or migrating the database; user/project namespace
+  values are shape-only (`project/<namespace>` / `user/<namespace>`), and
+  secret-like operation metadata is replaced with `<redacted-metadata>`
 - `release-metadata.json`: generated timestamp, git branch, git commit, local
   platform, Rust version, and verification command names
 - `product-smoke-summary.json`: whether the latest self-revision demo evidence
@@ -65,13 +69,21 @@ directory:
   version, retained line count, line-number scope, truncation marker, hard
   bounds, and at most a small number of redacted recent excerpts when
   `--log-file <path>` was explicitly provided; when no log file is requested,
-  this file records `available = false` instead of scanning for logs
+  this file records `available = false` instead of scanning for logs; secret-like
+  explicit log file names are collapsed to `<local-path>/<redacted-name>`
 
 The generator must not call the normal runtime bootstrap path. It may inspect
 local SQLite operation-log metadata only through a read-only connection. It does
 not create or migrate the database, does not seed default identity or
 commitments, does not copy `.sqlite` files into the bundle, and does not
 serialize raw provider request or response summaries.
+
+`manifest.json` now records the support-bundle boundary as machine-readable
+`safety_checks`: `read_only = true`, `runtime_bootstrap_performed = false`,
+`sqlite_files_included = false`, `toml_files_included = false`,
+`raw_log_files_included = false`, and `provider_payloads_included = false`.
+These fields are evidence markers only; they do not turn the support bundle into
+a remote upload channel or production support workflow.
 
 ## Local Log Excerpts
 
@@ -140,6 +152,7 @@ Tooling and tests treat these terms as sensitive indicators:
 - `AGENT_LLM_MM_CONFIG`
 - `AGENT_LLM_MM_DATABASE_URL` when it contains a private local path that should
   be generalized before sharing
+- `sk-`-prefixed values and secret-like local file names
 
 Redaction should preserve structure while replacing values with a stable marker
 or shape, for example `<redacted>`, `sqlite://<local-path>`, or a provider URL
@@ -151,6 +164,8 @@ section itself is secret-only.
 `tests/support_bundle.rs` currently proves:
 
 - the generator creates the expected seven JSON files
+- `manifest.json` includes explicit safety checks for read-only generation, no
+  runtime bootstrap, no SQLite/TOML/raw-log copies, and no provider payloads
 - non-empty output directories are rejected before bundle artifacts are written
 - provider credentials are represented as `credential_configured = true`, not as
   secret values
@@ -164,8 +179,12 @@ section itself is secret-only.
   `mcp-tool-call-<uuid-v4>` correlation ID
 - non-generated, non-canonical, or non-v4 correlation ID filter values are
   rejected before the bundle output directory is created
+- secret-like operation metadata and user/project namespace values are redacted
+  or reduced to stable shapes before writing `operation-summaries.json`
 - explicit local log excerpts are bounded, redacted, and written only as
   `local-log-excerpts.json`
+- secret-like explicit config/log file names are redacted before being written
+  to `config-shape.json` or `local-log-excerpts.json`
 - missing or unrequested local logs are represented as unavailable instead of
   triggering directory scans or runtime bootstrap
 - recent operation summaries are bounded to 25 entries and omit request /
@@ -185,7 +204,7 @@ release. Remaining Local Alpha gaps include:
   not establish an automatic stable runtime log location
 - the full Local Alpha release gate still needs fresh evidence for the same
   release candidate
-- observe-only daemon diagnostics remain a later task
+- observe-only daemon diagnostics remain separate from support packaging
 - this bundle is not a remote upload flow, support ticket integration, or
   production support readiness claim
 

@@ -4,6 +4,7 @@ use agent_llm_mm::{
         AppConfig, DATABASE_URL_ENV_VAR, ModelConfig, ModelProviderKind, OpenAiCompatibleConfig,
         TransportKind,
     },
+    support::doctor::ProviderSupportState,
 };
 use std::{
     collections::HashMap,
@@ -163,6 +164,64 @@ fn generic_example_config_parses_and_keeps_daemon_disabled() {
         .expect("generic example config should validate");
 }
 
+#[test]
+fn provider_matrix_lists_supported_and_future_providers_as_contract_only() {
+    let entries = AppConfig::provider_matrix();
+
+    assert_eq!(entries.len(), 5);
+    assert_eq!(entries[0].provider, "mock");
+    assert_eq!(entries[0].state, "supported");
+    assert!(entries[0].configurable);
+    assert_eq!(entries[0].adapter, "built-in deterministic mock");
+
+    assert_eq!(entries[1].provider, "openai-compatible");
+    assert_eq!(entries[1].state, "supported");
+    assert!(entries[1].configurable);
+    assert_eq!(entries[1].adapter, "openai-compatible chat completions");
+
+    for entry in &entries[2..] {
+        assert_eq!(entry.state, "planned-only");
+        assert!(
+            !entry.configurable,
+            "{} must not be configurable before an adapter exists",
+            entry.provider
+        );
+        assert_eq!(entry.adapter, "not implemented");
+    }
+
+    let future_names: Vec<_> = entries[2..].iter().map(|entry| entry.provider).collect();
+    assert_eq!(future_names, ["azure-openai", "openrouter", "local"]);
+}
+
+#[test]
+fn future_providers_are_rejected_by_config_parser_until_implemented() {
+    let temp_dir = tempdir().expect("temp dir");
+
+    for provider in ["azure-openai", "openrouter", "local"] {
+        let config_path = temp_dir
+            .path()
+            .join(format!("unsupported-provider-{provider}.toml"));
+        fs::write(
+            &config_path,
+            format!(
+                r#"
+[model]
+provider = "{provider}"
+"#
+            ),
+        )
+        .expect("write config");
+
+        let error = AppConfig::load_from_path(&config_path)
+            .expect_err("future provider must not parse as a usable provider");
+
+        assert!(
+            error.to_string().contains(provider),
+            "parse error should name the rejected provider {provider}: {error}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn doctor_fails_when_openai_provider_config_is_missing_api_key() {
     let temp_dir = tempdir().expect("temp dir");
@@ -212,6 +271,51 @@ async fn doctor_report_does_not_contain_api_key_in_serialized_output() {
         !json.contains(secret),
         "doctor output must not contain the api_key secret"
     );
+}
+
+#[tokio::test]
+async fn doctor_reports_provider_matrix_without_marking_future_providers_supported() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(temp_dir.path().join("doctor-matrix.sqlite"));
+    let config = AppConfig {
+        transport: TransportKind::Stdio,
+        database_url,
+        model_provider: ModelProviderKind::Mock,
+        model_config: ModelConfig::Mock,
+        dashboard: Default::default(),
+        ..Default::default()
+    };
+
+    let report = run_doctor(config).await.expect("doctor");
+
+    assert_eq!(report.provider_matrix.len(), 5);
+    assert_eq!(report.provider_matrix[0].provider, "mock");
+    assert_eq!(
+        report.provider_matrix[0].support_state,
+        ProviderSupportState::Supported
+    );
+    assert!(report.provider_matrix[0].configurable);
+    assert!(report.provider_matrix[0].selected);
+
+    assert_eq!(report.provider_matrix[1].provider, "openai-compatible");
+    assert_eq!(
+        report.provider_matrix[1].support_state,
+        ProviderSupportState::Supported
+    );
+    assert!(report.provider_matrix[1].configurable);
+    assert!(!report.provider_matrix[1].selected);
+
+    for entry in &report.provider_matrix[2..] {
+        assert_eq!(entry.support_state, ProviderSupportState::PlannedOnly);
+        assert!(!entry.configurable);
+        assert!(!entry.selected);
+    }
+
+    let json = serde_json::to_string(&report).expect("serialize");
+    assert!(json.contains(r#""support_state":"planned-only""#));
+    assert!(json.contains(r#""provider":"azure-openai""#));
+    assert!(json.contains(r#""provider":"openrouter""#));
+    assert!(json.contains(r#""provider":"local""#));
 }
 
 fn sqlite_url(path: PathBuf) -> String {

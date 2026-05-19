@@ -81,6 +81,8 @@
 - 已支持通过本地 TOML 配置文件选择 provider
 - runtime 已能按配置在 `mock` 与 `openai-compatible` 间切换
 - `doctor` 会输出 provider / base_url / model，但不会泄露 API key
+- `doctor.provider_matrix` 已输出当前只读 provider matrix：`mock` 与 `openai-compatible` 为 `supported` / configurable；`azure-openai`、`openrouter`、`local` 为 `planned-only` / not configurable
+- planned-only provider 仍会被配置解析拒绝，不能被当成已实现 adapter
 
 ### 8. automatic self-revision MVP
 
@@ -137,10 +139,11 @@ Implementation notes:
 - 已新增首版本机支持包生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>] [--correlation-id <id>]`
 - 生成器输出 `manifest.json`、`doctor.json`、`config-shape.json`、`operation-summaries.json`、`release-metadata.json`、`product-smoke-summary.json` 和 `local-log-excerpts.json`
 - `doctor` / config 只保留脱敏 shape：SQLite URL 会泛化为 `sqlite://<local-path>`，provider credential 只输出布尔值，provider URL 会移除 userinfo 与 query；support bundle 的 `doctor.json` 不执行 runtime bootstrap
-- operation summaries 通过 read-only SQLite 连接读取最多 25 条 durable operation-log metadata，不输出 request / response / diagnostic payload summary；可显式传入生成型 `--correlation-id mcp-tool-call-<uuid-v4>` 只导出匹配 correlation id 的 metadata，并在 `operation-summaries.json.filter` 记录过滤条件；数据库或 `operation_log` 表不存在时会标记 unavailable，不创建或迁移数据库
+- operation summaries 通过 read-only SQLite 连接读取最多 25 条 durable operation-log metadata，不输出 request / response / diagnostic payload summary；user/project namespace 只输出 shape，secret-like operation id / correlation id 会替换为 `<redacted-metadata>`；可显式传入生成型 `--correlation-id mcp-tool-call-<uuid-v4>` 只导出匹配 correlation id 的 metadata，并在 `operation-summaries.json.filter` 记录过滤条件；数据库或 `operation_log` 表不存在时会标记 unavailable，不创建或迁移数据库
 - 非生成型、非 canonical 或非 v4 的 correlation id filter 会在创建 bundle 输出目录前被拒绝，避免把 secret-like 文本写进诊断包 metadata
-- local log excerpts 只在显式 `--log-file <path>` 时生成 bounded / redacted 摘要，不自动扫描日志目录、home、系统日志、browser profile、SSH/cookie/session、shell history 或 `target/` 输出，也不复制原始 `.log` 文件
-- 默认不复制完整 SQLite 数据库、不包含 raw TOML、不上传数据，也不新增 identity / commitments / reflection 的 durable write path
+- local log excerpts 只在显式 `--log-file <path>` 时生成 bounded / redacted 摘要，secret-like config/log 文件名会折叠成 `<local-path>/<redacted-name>`；不自动扫描日志目录、home、系统日志、browser profile、SSH/cookie/session、shell history 或 `target/` 输出，也不复制原始 `.log` 文件
+- 默认不复制完整 SQLite 数据库、不包含 raw TOML、不包含 provider payload、不上传数据，也不新增 identity / commitments / reflection 的 durable write path
+- `manifest.json` 会输出 `safety_checks`，明确记录 read-only、未 runtime bootstrap、未包含 SQLite/TOML/raw log/provider payload
 - local support bundle 仍只是 Local Alpha 诊断辅助；它不代表生产支持通道、远程上传能力、observe-only daemon diagnostics 或 Local Alpha 完整 gate 已完成
 
 ### 12. Local Alpha evidence summary
@@ -175,7 +178,8 @@ Implementation notes:
 
 - commitment gate 是真实能力
 - 下游模型调用已可走 `openai-compatible`
-- 当前返回契约仍是“动作字符串”
+- 当前返回 envelope 已有 `protocol_version = 1`、`status`、`reason` 和 commitment-gate metadata
+- 原有 `blocked` / `decision` 字段保留，`decision` 内仍是最小 `action` 字符串
 
 因此它更适合作为最小决策闭环和集成验证能力，而不是完整决策引擎。
 
@@ -183,6 +187,7 @@ Implementation notes:
 
 - 当前 provider 边界已经抽出来
 - 但仓库内目前只实现了 `mock` 与 `openai-compatible`
+- 当前 provider matrix 只是只读合同和 doctor 诊断，不会让 `azure-openai`、`openrouter`、`local` 变成可运行 provider
 
 ### 3. `self_snapshot`
 
@@ -242,7 +247,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-05-16`，已 fresh 运行：
+截至 `2026-05-19`，已 fresh 运行：
 
 - `cargo fmt --check`
 - `git diff --check`
@@ -256,6 +261,7 @@ Implementation notes:
 
 结果：
 
+- `lib unit tests`: 7
 - `application_use_cases`: 22
 - `bootstrap`: 24
 - `daemon_config`: 8
@@ -270,16 +276,17 @@ Implementation notes:
 - `evidence_query_dto`: 2
 - `failure_modes`: 31
 - `first_run_bootstrap_smoke`: 4
-- `local_alpha_release_evidence`: 13
+- `local_alpha_release_evidence`: 15
 - `mcp_stdio`: 36
 - `openai_compatible_model`: 9
 - `operation_log`: 9
-- `provider_config`: 9
+- `provider_config`: 12
 - `self_revision_demo_runner`: 2
 - `sqlite_backup_restore`: 6
 - `sqlite_store`: 20
-- `support_bundle`: 30
-- 合计：255 个测试通过
+- `status_sync`: 3
+- `support_bundle`: 32
+- 合计：270 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`

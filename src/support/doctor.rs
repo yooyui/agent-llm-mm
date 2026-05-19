@@ -4,7 +4,7 @@ use crate::{
     domain::operation_log::{OperationLogKind, OperationLogStatus},
     interfaces,
     ports::{OperationLogQuery, OperationLogStore},
-    support::config::{AppConfig, ModelProviderKind, TransportKind},
+    support::config::{AppConfig, ModelProviderKind, ProviderMatrixEntry, TransportKind},
 };
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -14,6 +14,7 @@ pub struct DoctorReport {
     pub provider: ModelProviderKind,
     pub base_url: Option<String>,
     pub model: Option<String>,
+    pub provider_matrix: Vec<DoctorProviderMatrixEntry>,
     pub dashboard_enabled: bool,
     pub dashboard_host: String,
     pub dashboard_port: u16,
@@ -26,6 +27,22 @@ pub struct DoctorReport {
     pub auto_reflection_runtime_hooks: Vec<String>,
     pub self_revision_write_path: &'static str,
     pub status: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProviderSupportState {
+    Supported,
+    PlannedOnly,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct DoctorProviderMatrixEntry {
+    pub provider: &'static str,
+    pub support_state: ProviderSupportState,
+    pub configurable: bool,
+    pub adapter: &'static str,
+    pub selected: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -53,6 +70,7 @@ pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
         TransportKind::Stdio => interfaces::mcp::validate_stdio_runtime(&config).await?,
     };
     let daemon_observe_only = build_daemon_observe_only_diagnostics(&config, &runtime).await;
+    let provider_matrix = build_provider_matrix(&config);
 
     Ok(DoctorReport {
         transport: config.transport,
@@ -60,6 +78,7 @@ pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
         provider: config.model_provider,
         base_url,
         model,
+        provider_matrix,
         dashboard_enabled: config.dashboard.enabled,
         dashboard_host: config.dashboard.host,
         dashboard_port: config.dashboard.port,
@@ -76,6 +95,29 @@ pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
         self_revision_write_path: interfaces::mcp::server::SELF_REVISION_WRITE_PATH,
         status: "ok",
     })
+}
+
+fn build_provider_matrix(config: &AppConfig) -> Vec<DoctorProviderMatrixEntry> {
+    AppConfig::provider_matrix()
+        .into_iter()
+        .map(|entry| doctor_provider_matrix_entry(config, entry))
+        .collect()
+}
+
+fn doctor_provider_matrix_entry(
+    config: &AppConfig,
+    entry: ProviderMatrixEntry,
+) -> DoctorProviderMatrixEntry {
+    DoctorProviderMatrixEntry {
+        provider: entry.provider,
+        support_state: match entry.state {
+            "supported" => ProviderSupportState::Supported,
+            _ => ProviderSupportState::PlannedOnly,
+        },
+        configurable: entry.configurable,
+        adapter: entry.adapter,
+        selected: entry.provider == config.model_provider.as_str(),
+    }
 }
 
 async fn build_daemon_observe_only_diagnostics(
