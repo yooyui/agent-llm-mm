@@ -43,6 +43,8 @@
   - Local Alpha 支持包 gate，定义首版本地生成器、可分享内容、排除内容、脱敏术语、验证命令和剩余限制；当前不代表生产支持通道或 Local Alpha 已完成
 - [product/data-lifecycle.md](product/data-lifecycle.md)
   - Local Alpha 数据生命周期文档，定义 formal / test / demo `database_url` 隔离、SQLite backup / restore-to-new-path、export 边界、保留预期和 schema migration 验证清单
+- [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
+  - 产品化二次跟进现实 gate，按 `implemented` / `partial` / `simulation-only` / `planning-gate` 等标签追踪哪些模块已有实现、哪些仍是假设或缺 fresh evidence
 - [product/release-engineering.md](product/release-engineering.md)
   - 正式产品化发布工程规则，定义 source-only artifact、版本命名、changelog、release evidence directory、compatibility matrix、soak test 和 deprecation policy
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
@@ -90,6 +92,8 @@
   - 生成或设计本地排障材料前阅读，避免泄露 API keys、raw provider payloads、provider URL secrets、raw TOML 或完整 SQLite 数据库
 - [product/data-lifecycle.md](product/data-lifecycle.md)
   - 做备份、恢复、迁移、正式/测试/demo 数据隔离或支持包导出边界前阅读
+- [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
+  - 做二次跟进、判断规划项是否已经落地或检查假设证据时优先阅读
 - [product/release-engineering.md](product/release-engineering.md)
   - 做 release note、source-only tag、compatibility matrix、soak evidence 或 deprecation 规则前阅读
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
@@ -134,6 +138,8 @@
   - 发布 gate 的最小命令集、self-revision demo artifact 要求，以及 dashboard 边界检查
 - [product/release-engineering.md](product/release-engineering.md)
   - 正式产品化发布工程规则；第一阶段使用 source-only artifact，不添加包装自动化声明
+- [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
+  - 产品化二次跟进现实 gate；把当前模块按实现、模拟、规划和缺证据状态拆开，防止把 roadmap 误读成完成声明
 - [product/prd-local-alpha.md](product/prd-local-alpha.md)
   - Local Product Alpha PRD；后续产品化任务应先确认这里的范围、non-goals、exit gate 与验收命令
 - [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
@@ -199,6 +205,8 @@
   - 12 项后续完善工作的正式产品化执行规划，连接 Local Alpha gate、Beta、remote/team 和 GA readiness 前置工作
 - [product/data-lifecycle.md](product/data-lifecycle.md)
   - Workstream 8 的数据生命周期落地文档
+- [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
+  - 产品化二次跟进现实 gate，用于追踪 12 项规划中哪些已有实现、哪些只是模拟证据、哪些仍是 planning gate
 - [product/release-engineering.md](product/release-engineering.md)
   - Workstream 11 的 release engineering 落地文档
 - [product/remote-team-mode-boundary.md](product/remote-team-mode-boundary.md)
@@ -214,5 +222,5 @@
 - 如果你想确认 runtime hooks、diagnostics 和 durable write path：读 `project-status.md`，再读 `local-mcp-integration-2026-03-26.md`
 - 如果你要接入新 provider：先读 `provider-contract.md`，再按 `testing-guide-2026-03-24.md` 的 provider 验证顺序执行
 - 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md`、`testing-guide-2026-03-24.md` 与 `release-gate.md`
-- 如果你要把项目推进成正式产品：先读 `superpowers/plans/2026-05-09-productization-roadmap.md`，再读 `product/prd-local-alpha.md` 确认 Local Product Alpha 的 scope、non-goals 和 exit gate，然后读 `product/release-gate-local-alpha.md` 确认产品 alpha gate；第一轮按 `superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md` 执行，后续 12 项完善工作按 `superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md` 拆分推进
+- 如果你要把项目推进成正式产品：先读 `superpowers/plans/2026-05-09-productization-roadmap.md`，再读 `product/prd-local-alpha.md` 确认 Local Product Alpha 的 scope、non-goals 和 exit gate，然后读 `product/release-gate-local-alpha.md` 确认产品 alpha gate；执行前先用 `product/follow-up-reality-gates.md` 区分已实现、模拟证据和 planning gate，第一轮按 `superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md` 执行，后续 12 项完善工作按 `superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md` 拆分推进
 - 如果你想追溯设计来源：最后读原始讨论资料和历史快照

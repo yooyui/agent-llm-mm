@@ -161,6 +161,13 @@ Implementation notes:
 - 诊断还暴露 `data_sources`、`cooldown_status`、`in_flight_task_count` 和 `read_errors`，用于本机 preflight 排查
 - 这不是 daemon 写能力：不会启动 daemon loop，不调用 `run_reflection`，不写 identity / commitments / claims / events / reflections，也不代表后台自治或 Local Alpha 已完成
 
+### 14. Productization follow-up reality gates
+
+- 已新增追踪文档：`docs/product/follow-up-reality-gates.md`
+- 该文档把后续产品化模块按 `implemented`、`partial`、`simulation-only`、`planning-gate`、`not-implemented` 等状态拆开
+- 它明确标出 Local Alpha release gate、fresh-machine first-run、Windows parity、daemon lifecycle、remote/team/auth/security、release engineering 和 multi-layer memory 等模块中仍带假设或缺 fresh evidence 的部分
+- 它不是新的产品能力声明，而是二次跟进追踪入口；后续每个模块只有在代码、测试、文档和 fresh evidence 对齐后才能从 open 状态移动
+
 ## 部分实现
 
 ### 1. `decide_with_snapshot`
