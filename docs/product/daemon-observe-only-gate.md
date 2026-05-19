@@ -89,12 +89,27 @@ This `doctor` field is a preflight diagnostic surface. It does not start a
 daemon loop, does not call `run_reflection`, and does not authorize daemon
 writes.
 
+The local daemon handle also has an observe-only lifecycle proof:
+
+- disabled handles exit promptly without running a polling loop
+- observe-only handles can start and stop cleanly under test
+- `mode()` reports `disabled` or `observe_only`
+- `writes_allowed()` is always `false`
+- `remote_listener_enabled()` is always `false`
+
+This lifecycle proof does not connect the daemon to `serve`, MCP requests,
+remote listeners, or semantic memory writes. It only proves that the local
+handle can be exercised and shut down while the write and remote gates remain
+closed.
+
 ## Exit Gate Before Write-Capable Daemon Work
 
 Before any daemon can trigger governed self-revision, a separate gate must prove:
 
 - daemon remains disabled by default
 - observe-only mode has tests for no identity, commitment, or reflection writes
+- local observe-only start / stop has tests for clean shutdown and closed write /
+  remote gates
 - durable operation-log read paths are stable
 - correlation IDs connect daemon diagnostics to operation summaries
 - cooldown and concurrency behavior are tested

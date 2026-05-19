@@ -17,7 +17,7 @@
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
 - 最新 fresh 验证：`2026-05-16`
-  - `cargo test` 全量通过，共 250 个测试
+  - `cargo test` 全量通过，共 255 个测试
   - `doctor` 预检返回 `status = ok`
   - Local Alpha product smoke 通过 staging / promote 流程刷新本地证据链
   - Local Alpha support bundle 生成本地脱敏诊断 JSON，未包含 `.sqlite` 或 `.toml` 文件
@@ -112,6 +112,11 @@
   - 每个 gate 输出 `name`、`status`、`evidence_path` 或 `reason`；fresh-machine 或 Windows 证据缺失时会保持 `in_progress` / `not_verified` 等保守状态
   - 不启动 `serve`，不运行 product smoke，不上传文件，不触发 daemon 写，不新增 durable write path；`run_reflection` 仍是唯一 durable identity / commitment / reflection 写路径
   - 该能力只是可审查的状态汇总，不是自动认证，也不代表 Local Alpha 已完成
+- local alpha release-gate refresh
+  - 提供本地可重复 gate 刷新入口：`./scripts/local-alpha-release-gate-refresh.sh [config_path]`
+  - 串联 product smoke、first-run bootstrap simulation、support bundle generation 和 evidence summary 输出
+  - 只刷新本机可产生的证据，不生成 Windows runner、真实 fresh-machine、remote/team、上传或发布决策证据
+  - 刷新后若 summary 仍为 `in_progress` / `not_verified`，应保留对应 open gate，而不是改写成 Local Alpha 完成声明
 - local first-run bootstrap helper / smoke
   - `./scripts/agent-llm-mm.sh bootstrap-local [config_path]` 和 PowerShell 等价入口可从 dev 示例生成本机配置模板
   - 默认目标是 `agent-llm-mm.local.toml`，也可显式传入目标路径
@@ -129,6 +134,7 @@
 - observe-only daemon diagnostics
   - `doctor` 输出新增 `daemon_observe_only` 本机只读诊断字段，用于展示 observe-only 模式、数据源、候选计数、cooldown 状态、并发占用和读取错误
   - 当 `[daemon].enabled = true` 时，diagnostics 只读取本地 `operation_log` 中 `tool` / `trigger` 的 `failed` 与 `suppressed` 候选，并保持 `write_gate_approved = false`、`writes_allowed = false`、`remote_listener_enabled = false`
+  - `DaemonHandle` 已有本地 start / stop 生命周期回归，证明 disabled 模式会快速退出、observe-only 模式可干净关闭，且写 gate 与 remote listener 仍为关闭
   - 这只是 daemon 写能力前的观察 gate，不调用 `run_reflection`，不新增 identity / commitments / reflection durable write path，也不代表后台自治或 Local Alpha 已完成
 - `namespace` 最小闭环
   - `self`
@@ -226,6 +232,14 @@
 ```
 
 该命令只读取本地已有证据并输出 JSON / Markdown 汇总；它不会生成缺失证据，也不会自动认证 Local Alpha。
+
+如果要刷新本机可产生的 Local Alpha gate 证据，可以运行：
+
+```zsh
+./scripts/local-alpha-release-gate-refresh.sh [config_path]
+```
+
+该命令会依次刷新 product smoke、first-run simulation、support bundle 和 evidence summary；它仍不会生成真实 fresh-machine、Windows runner、remote/team 或发布决策证据。
 
 ## 文档导航
 

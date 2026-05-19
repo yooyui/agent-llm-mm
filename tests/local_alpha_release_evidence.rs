@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, os::unix::fs::PermissionsExt};
 
 use agent_llm_mm::support::local_alpha_evidence::{
     LocalAlphaEvidenceOptions, summarize_local_alpha_evidence,
@@ -376,6 +376,72 @@ fn binary_rejects_missing_option_values_before_generating_summary() {
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("missing value for --output-json"),
         "stderr should name the missing option value"
+    );
+}
+
+#[test]
+fn release_gate_refresh_script_runs_local_gates_without_faking_external_evidence() {
+    let script = fs::read_to_string("scripts/local-alpha-release-gate-refresh.sh")
+        .expect("release gate refresh script should exist");
+    let mode = fs::metadata("scripts/local-alpha-release-gate-refresh.sh")
+        .expect("script metadata")
+        .permissions()
+        .mode();
+
+    assert!(script.contains("scripts/product-smoke-local.sh"));
+    assert!(script.contains("scripts/first-run-bootstrap-smoke-local.sh"));
+    assert!(script.contains("scripts/generate-support-bundle.sh"));
+    assert!(script.contains("scripts/local-alpha-evidence-summary.sh"));
+    assert!(script.contains("target/first-run-bootstrap-smoke/local-alpha-gate"));
+    assert!(script.contains("target/support-bundles/local-alpha-gate"));
+    assert!(script.contains("target/reports/local-alpha/evidence-summary.json"));
+    assert!(script.contains("target/reports/local-alpha/evidence-summary.md"));
+    assert!(script.contains("--output-json"));
+    assert!(script.contains("--output-md"));
+    assert!(
+        !script.contains("target/windows-parity/local-alpha-gate"),
+        "local refresh script must not manufacture Windows runner evidence"
+    );
+    assert!(
+        !script.contains("real_fresh_machine_evidence\": true"),
+        "local refresh script must not manufacture real fresh-machine evidence"
+    );
+    assert!(
+        !script.contains(" ssh "),
+        "refresh script must not call ssh"
+    );
+    assert!(
+        !script.contains(" scp "),
+        "refresh script must not call scp"
+    );
+    assert!(
+        !script.contains(" rsync "),
+        "refresh script must not call rsync"
+    );
+    assert_ne!(mode & 0o111, 0, "script should be directly executable");
+}
+
+#[test]
+fn release_gate_refresh_script_rejects_extra_args_before_running_gates() {
+    let output = std::process::Command::new("bash")
+        .args(["scripts/local-alpha-release-gate-refresh.sh", "one", "two"])
+        .output()
+        .expect("release gate refresh script should run");
+
+    assert!(
+        !output.status.success(),
+        "extra args must fail before running gate commands\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("usage: ./scripts/local-alpha-release-gate-refresh.sh [config_path]"),
+        "stderr should print usage for extra args"
+    );
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("product smoke:"),
+        "argument validation must happen before product smoke runs"
     );
 }
 

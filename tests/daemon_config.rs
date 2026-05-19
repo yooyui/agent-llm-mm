@@ -1,5 +1,6 @@
 use agent_llm_mm::{
     adapters::sqlite::SqliteStore,
+    application::daemon::DaemonHandle,
     domain::operation_log::{ActorKind, OperationLogEntry, OperationLogKind, OperationLogStatus},
     ports::OperationLogStore,
     support::config::{AppConfig, DaemonConfig, TransportKind},
@@ -7,6 +8,7 @@ use agent_llm_mm::{
 use chrono::Utc;
 use sqlx::sqlite::SqlitePool;
 use tempfile::tempdir;
+use tokio::time::{Duration, timeout};
 
 #[test]
 fn daemon_defaults_to_disabled() {
@@ -148,6 +150,57 @@ async fn doctor_observe_only_daemon_diagnostics_count_local_operation_candidates
     assert_eq!(report.daemon_observe_only.trigger_candidates_suppressed, 1);
     assert_eq!(report.daemon_observe_only.cooldown_status, "observe_only");
     assert_eq!(report.daemon_observe_only.read_errors, Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn disabled_daemon_handle_exits_without_running_lifecycle_loop() {
+    let handle = DaemonHandle::start(DaemonConfig {
+        enabled: false,
+        poll_interval_ms: 10,
+        max_concurrent_tasks: 1,
+    });
+
+    assert!(!handle.config_enabled());
+    assert_eq!(handle.mode(), "disabled");
+    assert_eq!(handle.poll_interval_ms(), 10);
+    timeout(Duration::from_millis(250), handle.stop())
+        .await
+        .expect("disabled daemon should stop promptly");
+}
+
+#[tokio::test]
+async fn observe_only_daemon_handle_starts_and_stops_without_write_capability() {
+    let handle = DaemonHandle::start(DaemonConfig {
+        enabled: true,
+        poll_interval_ms: 10,
+        max_concurrent_tasks: 1,
+    });
+
+    assert!(handle.config_enabled());
+    assert_eq!(handle.mode(), "observe_only");
+    assert!(!handle.writes_allowed());
+    assert!(!handle.remote_listener_enabled());
+    assert_eq!(handle.poll_interval_ms(), 10);
+    timeout(Duration::from_secs(1), handle.stop())
+        .await
+        .expect("observe-only daemon should stop promptly");
+}
+
+#[test]
+fn daemon_lifecycle_remains_observe_only_and_has_no_durable_write_or_remote_paths() {
+    let source = std::fs::read_to_string("src/application/daemon.rs")
+        .expect("daemon source should be readable");
+
+    assert!(source.contains("mode"));
+    assert!(source.contains("observe_only"));
+    assert!(source.contains("writes_allowed"));
+    assert!(source.contains("remote_listener_enabled"));
+    assert!(!source.contains("run_reflection"));
+    assert!(!source.contains("append_event"));
+    assert!(!source.contains("append_claim"));
+    assert!(!source.contains("append_reflection"));
+    assert!(!source.contains("TcpListener"));
+    assert!(!source.contains("start_dashboard_service"));
 }
 
 fn sqlite_url(path: impl AsRef<std::path::Path>) -> String {

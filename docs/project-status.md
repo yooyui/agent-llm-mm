@@ -159,6 +159,7 @@ Implementation notes:
 - 该字段固定声明 `mode = "observe_only"`、`local_only = true`、`write_gate_approved = false`、`writes_allowed = false`、`remote_listener_enabled = false`
 - 当 `[daemon].enabled = true` 时，诊断会读取本地 `operation_log` 中 `operation_kind = tool / trigger` 且 `status = failed / suppressed` 的有界候选计数，当前每个 kind/status 读取最多 25 条
 - 诊断还暴露 `data_sources`、`cooldown_status`、`in_flight_task_count` 和 `read_errors`，用于本机 preflight 排查
+- `DaemonHandle` 现在有本地生命周期回归：disabled handle 会快速退出，observe-only handle 可 start / stop，且 `writes_allowed = false`、`remote_listener_enabled = false`
 - 这不是 daemon 写能力：不会启动 daemon loop，不调用 `run_reflection`，不写 identity / commitments / claims / events / reflections，也不代表后台自治或 Local Alpha 已完成
 
 ### 14. Productization follow-up reality gates
@@ -257,7 +258,7 @@ Implementation notes:
 
 - `application_use_cases`: 22
 - `bootstrap`: 24
-- `daemon_config`: 5
+- `daemon_config`: 8
 - `dashboard_config`: 4
 - `dashboard_http`: 7
 - `dashboard_projection`: 2
@@ -278,7 +279,7 @@ Implementation notes:
 - `sqlite_backup_restore`: 6
 - `sqlite_store`: 20
 - `support_bundle`: 30
-- 合计：250 个测试通过
+- 合计：255 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`

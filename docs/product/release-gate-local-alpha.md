@@ -373,6 +373,40 @@ The summary may be attached to release notes or review packets as a gate status
 index. It must not be used to weaken missing real fresh-machine, Windows,
 support bundle, product smoke, dashboard, daemon, or data lifecycle evidence.
 
+## Local Alpha Release-Gate Refresh
+
+When refreshing the locally reproducible part of the Local Alpha gate, use the
+combined local refresh script:
+
+```bash
+./scripts/local-alpha-release-gate-refresh.sh [config_path]
+```
+
+The script runs:
+
+- `scripts/product-smoke-local.sh [config_path]`
+- `scripts/first-run-bootstrap-smoke-local.sh target/first-run-bootstrap-smoke/local-alpha-gate`
+- `scripts/generate-support-bundle.sh target/support-bundles/local-alpha-gate [config_path]`
+- `scripts/local-alpha-evidence-summary.sh --evidence-root . --output-json target/reports/local-alpha/evidence-summary.json --output-md target/reports/local-alpha/evidence-summary.md`
+
+Required boundary:
+
+- it only refreshes local evidence that this checkout can produce
+- it may leave `overall_status = in_progress` or `not_verified`; that is the
+  correct result while real fresh-machine, Windows runner, remote/team, or
+  release-decision evidence is missing
+- it must not create `target/windows-parity/local-alpha-gate` or rewrite
+  first-run simulation evidence into `real_fresh_machine_evidence = true`
+- it does not upload artifacts, start remote listeners, enable daemon writes, or
+  certify Local Alpha completion
+
+Recommended verification when the refresh script changes:
+
+```bash
+bash -n scripts/local-alpha-release-gate-refresh.sh
+cargo test --test local_alpha_release_evidence -v
+```
+
 ## Correlation ID Gate
 
 Runtime observability must keep MCP calls traceable without creating a new
@@ -539,7 +573,9 @@ Allowed wording after this gate passes:
 Local Alpha is not complete unless all sections above have fresh evidence. If a
 section lacks fresh evidence, record it as an open or not-verified gate item
 rather than weakening the gate. The Product Smoke Gate is implemented by
-`scripts/product-smoke-local.sh`, and the Local Alpha Evidence Summary Gate can
-summarize current gate status, but neither one certifies a release unless the
-current successful run provides the required evidence. If any future gate
-section remains unimplemented, record that section separately as open.
+`scripts/product-smoke-local.sh`; the Local Alpha Release-Gate Refresh can
+refresh locally reproducible gate artifacts; and the Local Alpha Evidence
+Summary Gate can summarize current gate status. None of these certifies a
+release unless the current successful run provides the required evidence. If any
+future gate section remains unimplemented, record that section separately as
+open.
