@@ -44,9 +44,9 @@
 - [product/data-lifecycle.md](product/data-lifecycle.md)
   - Local Alpha 数据生命周期文档，定义 formal / test / demo `database_url` 隔离、SQLite backup / restore-to-new-path、export 边界、保留预期和 schema migration 验证清单
 - [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
-  - 产品化二次跟进现实 gate，按 `implemented` / `partial` / `simulation-only` / `planning-gate` 等标签追踪哪些模块已有实现、哪些仍是假设或缺 fresh evidence
+  - 产品化二次跟进现实 gate，按 `implemented` / `partial` / `simulation-only` / `planning-gate` 等标签追踪当前 P1/P2/P3 跟进切片哪些已有代码实现、哪些仍是假设或缺 fresh evidence
 - [product/structured-decision-protocol.md](product/structured-decision-protocol.md)
-  - `decide_with_snapshot` v1 response envelope 兼容契约；当前只增加 protocol metadata、status、reason 和 gate metadata，不代表完整决策引擎
+  - `decide_with_snapshot` v2 response envelope 兼容契约；当前增加 decision id、requested/selected action、policy checks、non-claims 和 bounded confidence metadata，不代表完整决策引擎
 - [product/release-engineering.md](product/release-engineering.md)
   - 正式产品化发布工程规则，定义 source-only artifact、版本命名、changelog、release evidence directory、compatibility matrix、`release-soak-local.sh` 本地 soak evidence 和 deprecation policy
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
@@ -60,7 +60,7 @@
 - [security/threat-model-local-and-remote.md](security/threat-model-local-and-remote.md)
   - 本地与远程 surface 的威胁模型，覆盖 SQLite data、provider credentials、reflection audit、operation log、support bundles、trust boundaries 和 remote/team 前置 mitigations
 - [provider-contract.md](provider-contract.md)
-  - 新增 provider 前的就绪清单，覆盖当前 read-only provider matrix、配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射；planned-only provider 不能当作可配置能力
+  - 新增 provider 前的就绪清单，覆盖当前 read-only provider matrix、planned-only missing implementation checklist、配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射；planned-only provider 不能当作可配置能力
 - [roadmap.md](roadmap.md)
   - 近期 / 中期 / 后期规划，明确哪些是 MVP 延伸，哪些不在近期承诺内
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
@@ -97,7 +97,7 @@
 - [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
   - 做二次跟进、判断规划项是否已经落地或检查假设证据时优先阅读
 - [product/structured-decision-protocol.md](product/structured-decision-protocol.md)
-  - 改 `decide_with_snapshot` 返回结构、MCP schema 或 caller compatibility 前阅读，确认 v1 envelope 和 legacy `blocked` / `decision` 字段保持兼容
+  - 改 `decide_with_snapshot` 返回结构、MCP schema 或 caller compatibility 前阅读，确认 v2 envelope 和 legacy `blocked` / `decision` 字段保持兼容
 - [product/release-engineering.md](product/release-engineering.md)
   - 做 release note、source-only tag、compatibility matrix、本地 soak evidence 或 deprecation 规则前阅读；当前本机 runner 是 `./scripts/release-soak-local.sh <candidate-name> [config_path]`
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
@@ -145,7 +145,7 @@
 - [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
   - 产品化二次跟进现实 gate；把当前模块按实现、模拟、规划和缺证据状态拆开，防止把 roadmap 误读成完成声明
 - [product/structured-decision-protocol.md](product/structured-decision-protocol.md)
-  - `decide_with_snapshot` structured response envelope；用于追踪 v1 compatibility，不包含 planning、confidence scoring、provider JSON decision parsing 或 policy arbitration
+  - `decide_with_snapshot` structured response envelope；用于追踪 v2 compatibility，不包含 planning、calibrated confidence scoring、provider JSON decision parsing 或 policy arbitration
 - [product/prd-local-alpha.md](product/prd-local-alpha.md)
   - Local Product Alpha PRD；后续产品化任务应先确认这里的范围、non-goals、exit gate 与验收命令
 - [product/release-gate-local-alpha.md](product/release-gate-local-alpha.md)
@@ -209,6 +209,10 @@
   - 正式产品化第一轮任务列表，适合拆给 subagent 或按 milestone 执行
 - [2026-05-16-formal-product-readiness-12-workstreams.md](superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
   - 12 项后续完善工作的正式产品化执行规划，连接 Local Alpha gate、Beta、remote/team 和 GA readiness 前置工作
+- [2026-05-24-p1-p2-p3-product-completion-plan.md](superpowers/plans/2026-05-24-p1-p2-p3-product-completion-plan.md)
+  - 本轮 P1/P2/P3 后续实现计划；把 product readiness、release decision、status sync、decision/evidence/episode/provider、remote/team/security、memory projection 和 wording guard 拆成可验证切片
+- [2026-05-24-p1-p2-p3-user-request-record.md](plans/2026-05-24-p1-p2-p3-user-request-record.md)
+  - 本轮用户原始请求和执行边界的本地保存记录，用于后续追溯“按顺序做 P1/P2/P3”和 MVP / technical demo 口径约束
 - [product/data-lifecycle.md](product/data-lifecycle.md)
   - Workstream 8 的数据生命周期落地文档
 - [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)

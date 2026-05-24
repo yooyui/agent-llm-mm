@@ -49,14 +49,17 @@
 - `mcp_stdio`: 36 passed
 - `openai_compatible_model`: 9 passed
 - `operation_log`: 9 passed
+- `product_completion_read_models`: 8 passed
+- `product_readiness`: 4 passed
 - `provider_config`: 12 passed
+- `release_decision`: 3 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_backup_restore`: 6 passed
 - `sqlite_store`: 20 passed
-- `status_sync`: 3 passed
+- `status_sync`: 5 passed
 - `support_bundle`: 32 passed
 
-合计：272 个测试通过。
+合计：291 个测试通过。
 
 ---
 
@@ -111,6 +114,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 13. 如果改动涉及 Local Alpha release-gate refresh 或本机 gate 证据刷新流程，补跑 `bash -n scripts/local-alpha-release-gate-refresh.sh`、`cargo test --test local_alpha_release_evidence -v`，并按需执行 `./scripts/local-alpha-release-gate-refresh.sh [config_path]`；该 refresh 只产生本机可复现证据，不生成真实 fresh-machine、Windows runner、remote/team 或发布决策证据
 14. 如果改动涉及 release engineering、release evidence directory、soak evidence 或候选发布说明，补跑 `bash -n scripts/release-soak-local.sh`、`cargo test --test local_alpha_release_evidence release_soak -v`，并按需执行 `./scripts/release-soak-local.sh <candidate-name> [config_path]`；该 soak 只生成本地 release evidence，不生成真实 fresh-machine、Windows runner、remote/team、上传、tag、安装包或发布认证证据
 15. 如果改动涉及 SQLite 备份、恢复、schema migration 前置检查或 data lifecycle gate，补跑 `bash -n scripts/backup-sqlite.sh scripts/restore-sqlite.sh` 和 `cargo test --test sqlite_backup_restore -v`
+16. 如果改动涉及 product readiness、release decision artifact、产品措辞 gate、remote/team inventory/security gates、evidence relation、episode projection 或 layered memory projection，补跑 `cargo test --test product_readiness -v`、`cargo test --test release_decision -v`、`cargo test --test product_completion_read_models -v`、`cargo test --test provider_config -v` 和 `./scripts/product-readiness-check.sh <candidate-name>` 的本地预检；这些检查只能证明本地门禁和只读投影，不生成真实 fresh-machine、Windows runner、remote/team 产品模式、GA 或发布认证证据
 
 如果当前机器没有 `pwsh`，PowerShell runtime 行为测试会跳过；这种情况下只代表 Rust 测试覆盖了 PowerShell 脚本文本契约和 no-clobber 静态断言，Windows runner 或 Windows 实机验证仍需单独记录。
 

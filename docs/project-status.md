@@ -81,7 +81,7 @@
 - 已支持通过本地 TOML 配置文件选择 provider
 - runtime 已能按配置在 `mock` 与 `openai-compatible` 间切换
 - `doctor` 会输出 provider / base_url / model，但不会泄露 API key
-- `doctor.provider_matrix` 已输出当前只读 provider matrix：`mock` 与 `openai-compatible` 为 `supported` / configurable；`azure-openai`、`openrouter`、`local` 为 `planned-only` / not configurable
+- `doctor.provider_matrix` 已输出当前只读 provider matrix：`mock` 与 `openai-compatible` 为 `supported` / configurable；`azure-openai`、`openrouter`、`local` 为 `planned-only` / not configurable，并列出缺失的 config parser、doctor diagnostics、model adapter、error handling、redaction 和 MCP stdio tests
 - planned-only provider 仍会被配置解析拒绝，不能被当成已实现 adapter
 
 ### 8. automatic self-revision MVP
@@ -172,13 +172,27 @@ Implementation notes:
 - 它明确标出 Local Alpha release gate、fresh-machine first-run、Windows parity、daemon lifecycle、remote/team/auth/security、release engineering 和 multi-layer memory 等模块中仍带假设或缺 fresh evidence 的部分
 - 它不是新的产品能力声明，而是二次跟进追踪入口；后续每个模块只有在代码、测试、文档和 fresh evidence 对齐后才能从 open 状态移动
 
+### 15. P1/P2/P3 follow-up gate slices
+
+- Product readiness checker 已提供候选级本地只读门禁汇总，会把真实 fresh-machine、Windows parity、release decision、remote/team、安全/auth 和产品措辞缺口保持为 blocked
+- Release decision artifact 生成器已能写 source-only decision 模板，并在 evidence summary 仍为 `in_progress` 时拒绝 approved 决策
+- `status-sync-check` 已从测试总数漂移扩展到 plan/reality gate 矛盾检测；勾选完成的计划项如果对应 reality gate 仍是 `partial` / `simulation-only` / `planning-gate` / `not-implemented` 会失败
+- Support bundle manifest 已增加非 manifest 文件的 SHA-256 integrity 列表；daemon observe-only diagnostics 已输出 write/remote blockers
+- `decide_with_snapshot` response envelope 已升级为 `protocol_version = 2`，新增 `decision_id`、requested/selected action、bounded local confidence metadata、policy checks 和 non-claims，同时保留旧 `blocked` / `decision` 字段
+- Evidence relation read model 已能只读展示 trigger window 内 selected evidence、window rank 和 no-widening policy；它不拉取 trigger window 外证据
+- Episode summary projection 已能以只读 local metadata 表达 objective、outcome、linked evidence ids，不写 identity 或 commitments
+- Provider matrix planned-only 行已输出 missing implementation checklist，避免把 future provider 当作可配置 adapter
+- `doctor` 已输出 `remote_team_capability_inventory` 与 `remote_team_security_gates`，所有 remote/team 能力和 security/auth 前置门禁仍默认 blocked，support bundle upload 为 false
+- Multi-layer memory projection 已提供只读分层状态：working / episodic / semantic / self-model 为 partial，procedural 为 not implemented；不新增 durable self-model 写路径
+- Product wording guard 已接入 product readiness，阻断 Beta、GA、production-ready、remote/team、remote write admin 和 complete self-governance 等缺少 gate 的候选措辞
+
 ## 部分实现
 
 ### 1. `decide_with_snapshot`
 
 - commitment gate 是真实能力
 - 下游模型调用已可走 `openai-compatible`
-- 当前返回 envelope 已有 `protocol_version = 1`、`status`、`reason` 和 commitment-gate metadata
+- 当前返回 envelope 已有 `protocol_version = 2`、`decision_id`、requested/selected action、bounded local confidence metadata、policy checks、non-claims 和 commitment-gate metadata
 - 原有 `blocked` / `decision` 字段保留，`decision` 内仍是最小 `action` 字符串
 
 因此它更适合作为最小决策闭环和集成验证能力，而不是完整决策引擎。
@@ -235,19 +249,18 @@ Implementation notes:
 
 ## 未实现
 
-- richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / inclusive recency window / limit 的窄化 evidence-oriented 查询基础）
-- richer evidence weighting / relation / ranking
-- evidence weight / relation
+- richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / inclusive recency window / limit 的窄化 evidence-oriented 查询基础；只读 relation projection 已有首片，但不是 full ranking/weighting engine）
+- richer evidence weighting / full ranking engine
 - `identity_core` 的 richer schema 与版本化形成机制
 - `commitments` 的 richer schema、升级 / 失效策略与更细粒度生命周期
 - 更多 provider 类型
 - richer `claim / episode / identity` schema
-- working memory / procedural memory 的独立建模
+- durable working memory / procedural memory 的独立建模
 - 持续后台自治运行、独立 daemon 与更完整的多层 memory 自治系统
 
 ## 当前验证状态
 
-截至 `2026-05-19`，已 fresh 运行：
+截至 `2026-05-24`，本分支需要 fresh 运行：
 
 - `cargo fmt --check`
 - `git diff --check`
@@ -280,13 +293,16 @@ Implementation notes:
 - `mcp_stdio`: 36
 - `openai_compatible_model`: 9
 - `operation_log`: 9
+- `product_completion_read_models`: 8
+- `product_readiness`: 5
 - `provider_config`: 12
+- `release_decision`: 3
 - `self_revision_demo_runner`: 2
 - `sqlite_backup_restore`: 6
 - `sqlite_store`: 20
-- `status_sync`: 3
+- `status_sync`: 6
 - `support_bundle`: 32
-- 合计：272 个测试通过
+- 合计：291 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`

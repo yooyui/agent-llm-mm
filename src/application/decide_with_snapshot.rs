@@ -4,7 +4,7 @@ use crate::{
     ports::{ModelDecision, ModelDecisionRequest, ModelPort},
 };
 
-const DECISION_PROTOCOL_VERSION: u32 = 1;
+const DECISION_PROTOCOL_VERSION: u32 = 2;
 const COMMITMENT_GATE_NAME: &str = "commitment_gate";
 const COMMITMENT_GATE_BLOCKED_REASON: &str = "commitment_gate_blocked_action";
 
@@ -20,31 +20,52 @@ pub struct DecideWithSnapshotResult {
     pub blocked: bool,
     pub decision: Option<ModelDecision>,
     pub protocol_version: u32,
+    pub decision_id: String,
+    pub requested_action: String,
+    pub selected_action: Option<String>,
+    pub confidence: Option<String>,
     pub status: String,
     pub reason: Option<String>,
     pub gate: DecisionGateMetadata,
+    pub policy_checks: Vec<DecisionGateMetadata>,
+    pub non_claims: Vec<String>,
 }
 
 impl DecideWithSnapshotResult {
-    fn blocked_by_commitment_gate() -> Self {
+    fn blocked_by_commitment_gate(action: String) -> Self {
+        let gate = DecisionGateMetadata::blocked(COMMITMENT_GATE_BLOCKED_REASON);
         Self {
             blocked: true,
             decision: None,
             protocol_version: DECISION_PROTOCOL_VERSION,
+            decision_id: decision_id_for(&action),
+            requested_action: action,
+            selected_action: None,
+            confidence: None,
             status: "blocked".to_string(),
             reason: Some(COMMITMENT_GATE_BLOCKED_REASON.to_string()),
-            gate: DecisionGateMetadata::blocked(COMMITMENT_GATE_BLOCKED_REASON),
+            gate: gate.clone(),
+            policy_checks: vec![gate],
+            non_claims: decision_non_claims(),
         }
     }
 
-    fn model_decision(decision: ModelDecision) -> Self {
+    fn model_decision(requested_action: String, decision: ModelDecision) -> Self {
+        let selected_action = decision.action.clone();
+        let gate = DecisionGateMetadata::passed();
         Self {
             blocked: false,
             decision: Some(decision),
             protocol_version: DECISION_PROTOCOL_VERSION,
+            decision_id: decision_id_for(&requested_action),
+            requested_action,
+            selected_action: Some(selected_action),
+            confidence: Some("bounded-local-metadata".to_string()),
             status: "model_decision".to_string(),
             reason: None,
-            gate: DecisionGateMetadata::passed(),
+            gate: gate.clone(),
+            policy_checks: vec![gate],
+            non_claims: decision_non_claims(),
         }
     }
 }
@@ -83,9 +104,12 @@ where
 {
     let gate = gate_decision(&input.action, &input.snapshot.commitments);
     if gate.blocked {
-        return Ok(DecideWithSnapshotResult::blocked_by_commitment_gate());
+        return Ok(DecideWithSnapshotResult::blocked_by_commitment_gate(
+            input.action,
+        ));
     }
 
+    let requested_action = input.action.clone();
     let decision = deps
         .decide(ModelDecisionRequest::new(
             input.task,
@@ -94,5 +118,21 @@ where
         ))
         .await?;
 
-    Ok(DecideWithSnapshotResult::model_decision(decision))
+    Ok(DecideWithSnapshotResult::model_decision(
+        requested_action,
+        decision,
+    ))
+}
+
+fn decision_id_for(action: &str) -> String {
+    format!("decision:{}", action.replace(char::is_whitespace, "_"))
+}
+
+fn decision_non_claims() -> Vec<String> {
+    vec![
+        "not a full planning engine".to_string(),
+        "not policy arbitration".to_string(),
+        "not provider-native structured decision JSON".to_string(),
+        "not confidence scoring beyond bounded local metadata".to_string(),
+    ]
 }

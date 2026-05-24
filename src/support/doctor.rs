@@ -7,6 +7,11 @@ use crate::{
     support::config::{AppConfig, ModelProviderKind, ProviderMatrixEntry, TransportKind},
 };
 
+use super::remote_team::{
+    RemoteTeamCapabilityInventory, RemoteTeamSecurityGateReport, remote_team_capability_inventory,
+    remote_team_security_gate_report,
+};
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct DoctorReport {
     pub transport: TransportKind,
@@ -24,6 +29,8 @@ pub struct DoctorReport {
     pub daemon_poll_interval_ms: u64,
     pub daemon_max_concurrent_tasks: u32,
     pub daemon_observe_only: DaemonObserveOnlyDiagnostics,
+    pub remote_team_capability_inventory: RemoteTeamCapabilityInventory,
+    pub remote_team_security_gates: RemoteTeamSecurityGateReport,
     pub auto_reflection_runtime_hooks: Vec<String>,
     pub self_revision_write_path: &'static str,
     pub status: &'static str,
@@ -42,6 +49,7 @@ pub struct DoctorProviderMatrixEntry {
     pub support_state: ProviderSupportState,
     pub configurable: bool,
     pub adapter: &'static str,
+    pub missing_implementation: &'static str,
     pub selected: bool,
 }
 
@@ -52,6 +60,8 @@ pub struct DaemonObserveOnlyDiagnostics {
     pub write_gate_approved: bool,
     pub writes_allowed: bool,
     pub remote_listener_enabled: bool,
+    pub write_blockers: Vec<String>,
+    pub remote_blockers: Vec<String>,
     pub data_sources: Vec<String>,
     pub trigger_candidates_observed: usize,
     pub trigger_candidates_suppressed: usize,
@@ -71,6 +81,8 @@ pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
     };
     let daemon_observe_only = build_daemon_observe_only_diagnostics(&config, &runtime).await;
     let provider_matrix = build_provider_matrix(&config);
+    let remote_team_capability_inventory = remote_team_capability_inventory();
+    let remote_team_security_gates = remote_team_security_gate_report();
 
     Ok(DoctorReport {
         transport: config.transport,
@@ -88,6 +100,8 @@ pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
         daemon_poll_interval_ms: config.daemon.poll_interval_ms,
         daemon_max_concurrent_tasks: config.daemon.max_concurrent_tasks,
         daemon_observe_only,
+        remote_team_capability_inventory,
+        remote_team_security_gates,
         auto_reflection_runtime_hooks: interfaces::mcp::server::AUTO_REFLECTION_RUNTIME_HOOKS
             .iter()
             .map(|hook| hook.to_string())
@@ -116,6 +130,7 @@ fn doctor_provider_matrix_entry(
         },
         configurable: entry.configurable,
         adapter: entry.adapter,
+        missing_implementation: entry.missing_implementation,
         selected: entry.provider == config.model_provider.as_str(),
     }
 }
@@ -146,6 +161,15 @@ async fn build_daemon_observe_only_diagnostics(
         write_gate_approved: false,
         writes_allowed: false,
         remote_listener_enabled: false,
+        write_blockers: vec![
+            "daemon write gate is not approved; run_reflection remains the only durable write path"
+                .to_string(),
+            "observe-only diagnostics must not write identity, commitments, claims, events, or reflections".to_string(),
+        ],
+        remote_blockers: vec![
+            "remote listener is blocked until auth, authorization, audit, rollback, and tenant isolation gates exist".to_string(),
+            "remote/team mode is not implemented in the local MVP".to_string(),
+        ],
         data_sources: vec!["daemon_config".to_string(), "operation_log".to_string()],
         trigger_candidates_observed,
         trigger_candidates_suppressed,

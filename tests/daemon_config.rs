@@ -73,6 +73,16 @@ async fn doctor_reports_observe_only_daemon_diagnostics_without_semantic_writes(
     assert!(!report.daemon_observe_only.write_gate_approved);
     assert!(!report.daemon_observe_only.writes_allowed);
     assert!(!report.daemon_observe_only.remote_listener_enabled);
+    assert!(report.daemon_observe_only.write_blockers.contains(
+        &"daemon write gate is not approved; run_reflection remains the only durable write path"
+            .to_string()
+    ));
+    assert!(
+        report
+            .daemon_observe_only
+            .remote_blockers
+            .contains(&"remote listener is blocked until auth, authorization, audit, rollback, and tenant isolation gates exist".to_string())
+    );
     assert_eq!(report.daemon_observe_only.in_flight_task_count, 0);
     assert_eq!(report.daemon_observe_only.trigger_candidates_observed, 0);
     assert_eq!(report.daemon_observe_only.read_errors, Vec::<String>::new());

@@ -74,10 +74,11 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 
 截至 `2026-05-24`，fresh 验证还包括：
 
-- `cargo test` 全量通过，272 个测试通过
-- 其中 `application_use_cases` 22、`failure_modes` 31、`mcp_stdio` 36、`sqlite_store` 20、`dashboard_http` 7、`support_bundle` 32、`status_sync` 3、`local_alpha_release_evidence` 17
+- `cargo test` 全量通过，291 个测试通过
+- 其中 `application_use_cases` 22、`failure_modes` 31、`mcp_stdio` 36、`sqlite_store` 20、`dashboard_http` 7、`support_bundle` 32、`status_sync` 5、`local_alpha_release_evidence` 17、`product_completion_read_models` 8、`product_readiness` 4、`release_decision` 3
 - self-revision demo package wrapper 可生成本地 artifact report
 - `release-soak-local.sh` 已提供本地 release evidence runner，可记录 candidate-specific doctor / dashboard HTTP / product smoke / first-run simulation / support bundle / evidence summary 证据；它不生成 Windows runner、真实 fresh-machine、remote/team、上传、tag、安装包或发布认证证据
+- `product-readiness-check.sh` 已提供本地候选 readiness gate，能够把 release decision、真实 fresh-machine、Windows parity、remote/team、安全/auth 和产品措辞缺口保持为 blocked
 
 ## 4. 启动服务
 

@@ -1,5 +1,5 @@
 use agent_llm_mm::support::status_sync::{
-    CargoTestList, DocumentTestTotal, StatusSyncReport, TEST_TOTAL_DOCUMENTS,
+    CargoTestList, DocumentTestTotal, RealityGateReport, StatusSyncReport, TEST_TOTAL_DOCUMENTS,
 };
 
 #[test]
@@ -50,5 +50,59 @@ fn status_sync_report_flags_documented_total_drift() {
     assert_eq!(
         report.format_mismatches(),
         "- README.md: documented 255, actual 256"
+    );
+}
+
+#[test]
+fn reality_gate_report_flags_implemented_plan_when_gate_is_still_partial() {
+    let plan = "- [x] **P1.3 Plan/status synchronization v2**\n";
+    let gates = "| `P1` | Plan/status synchronization | `partial` | still manual | keep gate open | `cargo test --test status_sync -v` |\n";
+
+    let report = RealityGateReport::from_contents(plan, gates);
+
+    assert!(!report.is_in_sync());
+    assert_eq!(report.contradictions.len(), 1);
+    assert_eq!(
+        report.contradictions[0].workstream,
+        "Plan/status synchronization"
+    );
+    assert_eq!(report.contradictions[0].reality_status, "partial");
+    assert!(
+        report
+            .format_contradictions()
+            .contains("plan marks implemented but reality gate is partial")
+    );
+}
+
+#[test]
+fn reality_gate_report_flags_completed_plan_without_matching_reality_row() {
+    let plan = "- [x] **P2.3 Richer episode semantics first slice**\n";
+    let gates = "| `P2` | Structured decision protocol | `implemented` | code tests docs aligned | keep compatible | `cargo test --test decision_flow -v` |\n";
+
+    let report = RealityGateReport::from_contents(plan, gates);
+
+    assert!(!report.is_in_sync());
+    assert_eq!(report.missing_gates.len(), 1);
+    assert_eq!(
+        report.missing_gates[0].workstream,
+        "Richer episode semantics first slice"
+    );
+    assert!(
+        report
+            .format_contradictions()
+            .contains("no matching reality gate row exists")
+    );
+}
+
+#[test]
+fn reality_gate_report_allows_completed_plan_when_gate_is_implemented() {
+    let plan = "- [x] **P1.1 Product readiness gate checker**\n";
+    let gates = "| `P1` | Product readiness gate checker | `implemented` | code tests docs aligned | keep using checker | `cargo test --test product_readiness -v` |\n";
+
+    let report = RealityGateReport::from_contents(plan, gates);
+
+    assert!(
+        report.is_in_sync(),
+        "implemented gates should not be reported as contradictions"
     );
 }

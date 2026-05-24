@@ -10,6 +10,7 @@ pub const DEFAULT_CONFIG_FILE_NAME: &str = "agent-llm-mm.local.toml";
 const DEFAULT_OPENAI_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_DATABASE_DIR_NAME: &str = "agent-llm-mm";
 const DEFAULT_DATABASE_FILE_NAME: &str = "agent-llm-mm.sqlite";
+const FUTURE_PROVIDER_MISSING_IMPLEMENTATION: &str = "config parser, doctor diagnostics, model adapter, error handling, redaction, and MCP stdio tests";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -40,6 +41,7 @@ pub struct ProviderMatrixEntry {
     pub state: &'static str,
     pub configurable: bool,
     pub adapter: &'static str,
+    pub missing_implementation: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,30 +154,35 @@ impl AppConfig {
                 state: "supported",
                 configurable: true,
                 adapter: "built-in deterministic mock",
+                missing_implementation: "",
             },
             ProviderMatrixEntry {
                 provider: "openai-compatible",
                 state: "supported",
                 configurable: true,
                 adapter: "openai-compatible chat completions",
+                missing_implementation: "",
             },
             ProviderMatrixEntry {
                 provider: "azure-openai",
                 state: "planned-only",
                 configurable: false,
                 adapter: "not implemented",
+                missing_implementation: FUTURE_PROVIDER_MISSING_IMPLEMENTATION,
             },
             ProviderMatrixEntry {
                 provider: "openrouter",
                 state: "planned-only",
                 configurable: false,
                 adapter: "not implemented",
+                missing_implementation: FUTURE_PROVIDER_MISSING_IMPLEMENTATION,
             },
             ProviderMatrixEntry {
                 provider: "local",
                 state: "planned-only",
                 configurable: false,
                 adapter: "not implemented",
+                missing_implementation: FUTURE_PROVIDER_MISSING_IMPLEMENTATION,
             },
         ]
     }

@@ -25,7 +25,11 @@ async fn decision_returns_blocked_without_calling_model_when_gate_fails() {
 
     assert!(result.blocked);
     assert!(result.decision.is_none());
-    assert_eq!(result.protocol_version, 1);
+    assert_eq!(result.protocol_version, 2);
+    assert!(result.decision_id.starts_with("decision:"));
+    assert_eq!(result.requested_action, "write_identity_core_directly");
+    assert_eq!(result.selected_action, None);
+    assert_eq!(result.confidence, None);
     assert_eq!(result.status, "blocked");
     assert_eq!(
         result.reason.as_deref(),
@@ -33,11 +37,29 @@ async fn decision_returns_blocked_without_calling_model_when_gate_fails() {
     );
     assert_eq!(result.gate.name, "commitment_gate");
     assert!(result.gate.blocked);
+    assert_eq!(result.policy_checks[0].name, "commitment_gate");
+    assert!(result.policy_checks[0].blocked);
+    assert!(
+        result
+            .non_claims
+            .contains(&"not a full planning engine".to_string())
+    );
 
     let serialized = serde_json::to_value(&result).unwrap();
     assert_eq!(serialized["blocked"], true);
     assert_eq!(serialized["decision"], serde_json::Value::Null);
-    assert_eq!(serialized["protocol_version"], 1);
+    assert_eq!(serialized["protocol_version"], 2);
+    assert_eq!(
+        serialized["requested_action"],
+        "write_identity_core_directly"
+    );
+    assert_eq!(serialized["selected_action"], serde_json::Value::Null);
+    assert!(
+        serialized["decision_id"]
+            .as_str()
+            .unwrap()
+            .starts_with("decision:")
+    );
     assert_eq!(serialized["status"], "blocked");
     assert_eq!(serialized["reason"], "commitment_gate_blocked_action");
     assert_eq!(
@@ -63,7 +85,17 @@ async fn mock_model_receives_snapshot_context_when_gate_passes() {
         result.decision,
         Some(ModelDecision::new("summarize_memory_state".to_string()))
     );
-    assert_eq!(result.protocol_version, 1);
+    assert_eq!(result.protocol_version, 2);
+    assert!(result.decision_id.starts_with("decision:"));
+    assert_eq!(result.requested_action, "read_identity_core");
+    assert_eq!(
+        result.selected_action.as_deref(),
+        Some("summarize_memory_state")
+    );
+    assert_eq!(
+        result.confidence,
+        Some("bounded-local-metadata".to_string())
+    );
     assert_eq!(result.status, "model_decision");
     assert!(result.reason.is_none());
     assert_eq!(result.gate.name, "commitment_gate");
@@ -75,7 +107,9 @@ async fn mock_model_receives_snapshot_context_when_gate_passes() {
         serialized["decision"],
         json!({ "action": "summarize_memory_state" })
     );
-    assert_eq!(serialized["protocol_version"], 1);
+    assert_eq!(serialized["protocol_version"], 2);
+    assert_eq!(serialized["requested_action"], "read_identity_core");
+    assert_eq!(serialized["selected_action"], "summarize_memory_state");
     assert_eq!(serialized["status"], "model_decision");
     assert_eq!(serialized["reason"], serde_json::Value::Null);
     assert_eq!(

@@ -9,6 +9,7 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
 use serde::Serialize;
+use sha2::Digest;
 use sqlx::{
     Row,
     sqlite::{SqliteConnectOptions, SqlitePool},
@@ -149,6 +150,7 @@ struct Manifest {
     safety_checks: ManifestSafetyChecks,
     excluded_by_default: Vec<&'static str>,
     files: Vec<&'static str>,
+    integrity: ManifestIntegrity,
     bounds: ManifestBounds,
 }
 
@@ -165,6 +167,20 @@ struct ManifestSafetyChecks {
 #[derive(Debug, Serialize)]
 struct ManifestBounds {
     local_log_excerpts: LocalLogBounds,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestIntegrity {
+    algorithm: &'static str,
+    covers: &'static str,
+    files: Vec<ManifestIntegrityFile>,
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestIntegrityFile {
+    path: &'static str,
+    sha256: String,
+    size_bytes: u64,
 }
 
 #[derive(Debug, Serialize, Clone, Copy)]
@@ -245,7 +261,10 @@ pub async fn generate_support_bundle(options: SupportBundleOptions) -> Result<()
         &output_dir.join("local-log-excerpts.json"),
         &local_log_excerpts(local_log_path.as_deref()),
     )?;
-    write_json(&output_dir.join("manifest.json"), &manifest(&generated_at))?;
+    write_json(
+        &output_dir.join("manifest.json"),
+        &manifest(&generated_at, &output_dir)?,
+    )?;
 
     Ok(())
 }
@@ -1248,8 +1267,19 @@ fn product_smoke_summary(project_root: &Path) -> ProductSmokeSummary {
     }
 }
 
-fn manifest(generated_at: &str) -> Manifest {
-    Manifest {
+fn manifest(generated_at: &str, output_dir: &Path) -> Result<Manifest> {
+    let files = vec![
+        "manifest.json",
+        "doctor.json",
+        "config-shape.json",
+        "operation-summaries.json",
+        "release-metadata.json",
+        "product-smoke-summary.json",
+        "local-log-excerpts.json",
+    ];
+    let integrity = manifest_integrity(output_dir, &files)?;
+
+    Ok(Manifest {
         bundle_format: "agent-llm-mm-local-alpha-support-bundle-v1",
         generated_at: generated_at.to_string(),
         local_only: true,
@@ -1275,19 +1305,37 @@ fn manifest(generated_at: &str) -> Manifest {
             "cookies",
             "browser session data",
         ],
-        files: vec![
-            "manifest.json",
-            "doctor.json",
-            "config-shape.json",
-            "operation-summaries.json",
-            "release-metadata.json",
-            "product-smoke-summary.json",
-            "local-log-excerpts.json",
-        ],
+        files,
+        integrity,
         bounds: ManifestBounds {
             local_log_excerpts: local_log_bounds(),
         },
-    }
+    })
+}
+
+fn manifest_integrity(output_dir: &Path, files: &[&'static str]) -> Result<ManifestIntegrity> {
+    let integrity_files = files
+        .iter()
+        .copied()
+        .filter(|file| *file != "manifest.json")
+        .map(|file| manifest_integrity_file(output_dir, file))
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(ManifestIntegrity {
+        algorithm: "sha256",
+        covers: "non-manifest bundle files listed in manifest.files",
+        files: integrity_files,
+    })
+}
+
+fn manifest_integrity_file(output_dir: &Path, file: &'static str) -> Result<ManifestIntegrityFile> {
+    let path = output_dir.join(file);
+    let bytes = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+    Ok(ManifestIntegrityFile {
+        path: file,
+        sha256: format!("{:x}", sha2::Sha256::digest(&bytes)),
+        size_bytes: bytes.len() as u64,
+    })
 }
 
 fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {

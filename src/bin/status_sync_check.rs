@@ -1,7 +1,8 @@
 use std::{fs, process::Command};
 
 use agent_llm_mm::support::status_sync::{
-    CargoTestList, TEST_TOTAL_DOCUMENTS, report_from_document_contents,
+    CargoTestList, PLAN_STATUS_DOCUMENT, REALITY_GATES_DOCUMENT, RealityGateReport,
+    TEST_TOTAL_DOCUMENTS, report_from_document_contents,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -30,16 +31,31 @@ fn main() -> anyhow::Result<()> {
         .map(|(path, contents)| (*path, contents.as_str()));
     let report = report_from_document_contents(list.total, borrowed_documents)?;
 
-    if report.is_in_sync() {
+    let plan_contents = fs::read_to_string(PLAN_STATUS_DOCUMENT)?;
+    let reality_gate_contents = fs::read_to_string(REALITY_GATES_DOCUMENT)?;
+    let reality_report = RealityGateReport::from_contents(&plan_contents, &reality_gate_contents);
+
+    if report.is_in_sync() && reality_report.is_in_sync() {
         println!(
-            "status sync ok: documented cargo test totals match {}",
+            "status sync ok: documented cargo test totals match {}; plan/status reality gates are in sync",
             report.actual_total
         );
         return Ok(());
     }
 
-    anyhow::bail!(
-        "status sync drift detected:\n{}",
-        report.format_mismatches()
-    );
+    let mut sections = Vec::new();
+    if !report.is_in_sync() {
+        sections.push(format!(
+            "cargo test total drift:\n{}",
+            report.format_mismatches()
+        ));
+    }
+    if !reality_report.is_in_sync() {
+        sections.push(format!(
+            "plan/status reality gate drift:\n{}",
+            reality_report.format_contradictions()
+        ));
+    }
+
+    anyhow::bail!("status sync drift detected:\n{}", sections.join("\n\n"));
 }

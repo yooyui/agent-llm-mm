@@ -187,6 +187,15 @@ fn provider_matrix_lists_supported_and_future_providers_as_contract_only() {
             entry.provider
         );
         assert_eq!(entry.adapter, "not implemented");
+        assert!(
+            entry.missing_implementation.contains("config parser")
+                && entry.missing_implementation.contains("doctor diagnostics")
+                && entry.missing_implementation.contains("model adapter")
+                && entry.missing_implementation.contains("MCP stdio tests"),
+            "future provider {} must explain every readiness prerequisite; got {}",
+            entry.provider,
+            entry.missing_implementation
+        );
     }
 
     let future_names: Vec<_> = entries[2..].iter().map(|entry| entry.provider).collect();
@@ -309,6 +318,11 @@ async fn doctor_reports_provider_matrix_without_marking_future_providers_support
         assert_eq!(entry.support_state, ProviderSupportState::PlannedOnly);
         assert!(!entry.configurable);
         assert!(!entry.selected);
+        assert!(
+            entry.missing_implementation.contains("model adapter"),
+            "{} should expose missing implementation details",
+            entry.provider
+        );
     }
 
     let json = serde_json::to_string(&report).expect("serialize");
@@ -316,6 +330,7 @@ async fn doctor_reports_provider_matrix_without_marking_future_providers_support
     assert!(json.contains(r#""provider":"azure-openai""#));
     assert!(json.contains(r#""provider":"openrouter""#));
     assert!(json.contains(r#""provider":"local""#));
+    assert!(json.contains("MCP stdio tests"));
 }
 
 fn sqlite_url(path: PathBuf) -> String {

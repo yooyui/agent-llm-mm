@@ -168,6 +168,22 @@ async fn support_bundle_generates_redacted_local_diagnostics() {
             .iter()
             .any(|entry| entry == "provider url userinfo and query values")
     );
+    assert_eq!(manifest["integrity"]["algorithm"], "sha256");
+    assert_eq!(
+        manifest["integrity"]["covers"],
+        "non-manifest bundle files listed in manifest.files"
+    );
+    let manifest_files = manifest["files"].as_array().expect("manifest files");
+    let integrity_files = manifest["integrity"]["files"]
+        .as_array()
+        .expect("integrity file entries");
+    assert_eq!(integrity_files.len(), manifest_files.len() - 1);
+    assert!(integrity_files.iter().any(|entry| {
+        entry["path"] == "doctor.json"
+            && entry["sha256"].as_str().is_some_and(|value| {
+                value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit())
+            })
+    }));
 
     let config_shape = read_json(output_dir.join("config-shape.json"));
     assert_eq!(config_shape["model"]["provider"], "openai-compatible");
