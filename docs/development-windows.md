@@ -116,6 +116,7 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 发布前请按 [Release Gate](release-gate.md) 跑完整 gate；本节只是 Windows 日常验证入口。Release gate 中的 `./scripts/agent-llm-mm.sh doctor` 在 Windows 上对应 `pwsh -File .\scripts\agent-llm-mm.ps1 doctor`。
 如果判断 Local Product Alpha / product alpha 口径，还必须改用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)；普通 `doctor` 通过不等于 Local Alpha 完成。
 当前 macOS 本机验证环境没有 `pwsh`，所以 PowerShell `bootstrap-local` 行为需要 Windows runner 或 Windows 实机补充 runtime parity 证据；Rust bootstrap 测试仍保留脚本文本契约和 no-clobber 静态断言。
+当前 release soak runner 是 bash 脚本：`./scripts/release-soak-local.sh <candidate-name> [config_path]`。在 Windows 上请从 Git Bash、WSL 或等价 bash 环境运行；它只生成本机候选证据，不替代 Windows runner parity、真实 fresh-machine、安装包或发布认证证据。
 
 ## 7.1 本地接入排障
 

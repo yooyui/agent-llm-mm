@@ -276,7 +276,7 @@ Implementation notes:
 - `evidence_query_dto`: 2
 - `failure_modes`: 31
 - `first_run_bootstrap_smoke`: 4
-- `local_alpha_release_evidence`: 15
+- `local_alpha_release_evidence`: 17
 - `mcp_stdio`: 36
 - `openai_compatible_model`: 9
 - `operation_log`: 9
@@ -286,11 +286,12 @@ Implementation notes:
 - `sqlite_store`: 20
 - `status_sync`: 3
 - `support_bundle`: 32
-- 合计：270 个测试通过
+- 合计：272 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`
 - Local Alpha support bundle 生成允许的 JSON 文件，敏感词扫描无未脱敏命中，且未包含 `.sqlite`、`.toml` 或原始 `.log` 文件
+- Local release soak runner 可生成 `target/reports/releases/<candidate-name>/` 候选证据，覆盖 doctor、dashboard HTTP 回归、product smoke、first-run simulation、support bundle、secret/artifact scan、support bundle / product smoke SHA-256 manifest 和 Local Alpha evidence summary；它不生成 Windows runner、真实 fresh-machine、remote/team、上传、tag、安装包或发布认证证据
 - `first-run-bootstrap-smoke-local.sh` 已提供 `bootstrap-local -> doctor` 的本地 fresh-machine simulation evidence，包含 env 隔离、输出目录隔离、`doctor.json` / `summary.json` 和 isolated SQLite 证据；但真实 fresh-machine install / Windows runner 实机验证仍需单独记录，当前本机没有 `pwsh` 时，PowerShell runtime parity 只能视为待补证据
 - SQLite backup / restore 本地脚本门禁已覆盖 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份、拒绝 in-memory / invalid URL 和拒绝 `..` restore target；这不是远程备份、云同步或生产灾备证明
 

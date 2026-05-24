@@ -107,6 +107,7 @@ SQLite 落盘已经可用，默认路径语义也已收口为“本机用户共�
 
 - 按 [Release Gate](release-gate.md) 跑完整发布 gate（minimum gate、self-revision 证据 gate、dashboard gate），并单独记录 sandbox-only failure 与代码失败的区别
 - 按 [Release Engineering](product/release-engineering.md) 记录 release evidence directory、version naming、changelog、compatibility matrix、soak 证据和 deprecation 状态
+- 若候选变更涉及 runtime、persistence、dashboard、daemon、provider 或 MCP 行为，运行 `./scripts/release-soak-local.sh <candidate-name> [config_path]` 生成本机候选证据；该脚本不生成真实 fresh-machine、Windows runner、remote/team、安装包、tag 或发布认证证据
 - 确认 README、状态文档、路线图、三语说明都已更新
 - 确认接入命令与验证命令可以直接复制使用
 - 确认对“已实现 / 部分实现 / 未实现”的边界没有过度承诺

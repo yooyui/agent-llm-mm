@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat >&2 <<'USAGE'
+usage: ./scripts/release-soak-local.sh <candidate-name> [config_path]
+
+Runs a bounded local release soak and writes candidate-specific evidence under:
+  target/reports/releases/<candidate-name>/
+
+The soak covers:
+  1. ./scripts/agent-llm-mm.sh doctor [config_path]
+  2. cargo test --test dashboard_http -v
+  3. scripts/product-smoke-local.sh [config_path]
+  4. scripts/first-run-bootstrap-smoke-local.sh target/first-run-bootstrap-smoke/local-alpha-gate
+  5. scripts/generate-support-bundle.sh target/support-bundles/local-alpha-gate [config_path]
+  6. support-bundle secret and raw-artifact scans
+  7. support-bundle and product-smoke SHA-256 manifests
+  8. scripts/local-alpha-evidence-summary.sh into the release evidence directory
+
+This command only creates local release evidence. It does not create Windows
+runner evidence, real fresh-machine evidence, remote/team evidence, uploads,
+daemon write capability, service-manager state, or release certification.
+USAGE
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  usage
+  exit 2
+fi
+
+candidate_name="$1"
+config_path="${2:-}"
+
+if [[ ! "${candidate_name}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ || "${candidate_name}" == *..* ]]; then
+  printf 'release soak failed: candidate name must use only letters, numbers, dot, underscore, or dash, must not start with dot, and must not contain "..": %s\n' "${candidate_name}" >&2
+  exit 2
+fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+project_root="$(cd "${script_dir}/.." && pwd -P)"
+resolved_config_path=""
+
+if [[ -n "${config_path}" ]]; then
+  if [[ ! -e "${config_path}" ]]; then
+    printf 'release soak failed: config path does not exist: %s\n' "${config_path}" >&2
+    exit 2
+  fi
+  if [[ "${config_path}" = /* ]]; then
+    resolved_config_path="${config_path}"
+  else
+    resolved_config_path="$(cd "$(dirname "${config_path}")" && pwd -P)/$(basename "${config_path}")"
+  fi
+fi
+
+cd "${project_root}"
+
+evidence_dir="target/reports/releases/${candidate_name}"
+commands_dir="${evidence_dir}/commands"
+command_summary="${evidence_dir}/command-summary.tsv"
+soak_log="${evidence_dir}/release-soak.log"
+support_bundle_dir="target/support-bundles/local-alpha-gate"
+first_run_dir="target/first-run-bootstrap-smoke/local-alpha-gate"
+secret_scan_log="${evidence_dir}/secret-scan.log"
+artifact_scan_log="${evidence_dir}/artifact-scan.log"
+release_summary_md="${evidence_dir}/release-soak-summary.md"
+local_alpha_summary_json="${evidence_dir}/local-alpha-evidence-summary.json"
+local_alpha_summary_md="${evidence_dir}/local-alpha-evidence-summary.md"
+support_bundle_sha256="${evidence_dir}/support-bundle-sha256.txt"
+product_smoke_latest_sha256="${evidence_dir}/product-smoke-latest-sha256.txt"
+
+if [[ -e "${evidence_dir}" && -n "$(find "${evidence_dir}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+  printf 'release soak failed: evidence directory must be absent or empty: %s\n' "${evidence_dir}" >&2
+  exit 2
+fi
+
+mkdir -p "${commands_dir}"
+
+started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf 'step\tstarted_at\tended_at\texit_code\tcommand\n' > "${command_summary}"
+printf 'release soak: candidate=%s started_at=%s\n' "${candidate_name}" "${started_at}" | tee "${soak_log}"
+
+git rev-parse HEAD > "${evidence_dir}/git-head.txt"
+git status --short --branch > "${evidence_dir}/git-status-before.txt"
+rustc --version > "${evidence_dir}/rustc-version.txt" 2>&1 || true
+cargo --version > "${evidence_dir}/cargo-version.txt" 2>&1 || true
+
+quote_command() {
+  printf '%q ' "$@"
+}
+
+run_step() {
+  local step_name="$1"
+  shift
+  local log_path="${commands_dir}/${step_name}.log"
+  local step_started_at
+  local step_ended_at
+  local status
+
+  step_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf 'release soak: running %s\n' "${step_name}" | tee -a "${soak_log}"
+  printf '$ ' > "${log_path}"
+  quote_command "$@" >> "${log_path}"
+  printf '\n\n' >> "${log_path}"
+
+  set +e
+  "$@" >> "${log_path}" 2>&1
+  status=$?
+  set -e
+
+  step_ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '%s\t%s\t%s\t%s\t' "${step_name}" "${step_started_at}" "${step_ended_at}" "${status}" >> "${command_summary}"
+  quote_command "$@" >> "${command_summary}"
+  printf '\n' >> "${command_summary}"
+
+  if [[ "${status}" -ne 0 ]]; then
+    printf 'release soak failed: %s exited with %s; see %s\n' "${step_name}" "${status}" "${log_path}" >&2
+    exit "${status}"
+  fi
+}
+
+write_sha256_manifest() {
+  local source_dir="$1"
+  local output_file="$2"
+  local has_files=0
+
+  : > "${output_file}"
+  if command -v shasum >/dev/null 2>&1; then
+    while IFS= read -r file; do
+      has_files=1
+      shasum -a 256 "${file}" >> "${output_file}"
+    done < <(find "${source_dir}" -maxdepth 1 -type f -print | sort)
+  elif command -v sha256sum >/dev/null 2>&1; then
+    while IFS= read -r file; do
+      has_files=1
+      sha256sum "${file}" >> "${output_file}"
+    done < <(find "${source_dir}" -maxdepth 1 -type f -print | sort)
+  else
+    printf 'release soak failed: no shasum or sha256sum command found for SHA-256 evidence\n' >&2
+    exit 2
+  fi
+  if [[ "${has_files}" -eq 0 ]]; then
+    printf 'release soak failed: no files found for SHA-256 evidence in %s\n' "${source_dir}" >&2
+    exit 1
+  fi
+}
+
+doctor_command=(./scripts/agent-llm-mm.sh doctor)
+product_smoke_command=(scripts/product-smoke-local.sh)
+support_bundle_command=(scripts/generate-support-bundle.sh "${support_bundle_dir}")
+
+if [[ -n "${resolved_config_path}" ]]; then
+  doctor_command+=("${resolved_config_path}")
+  product_smoke_command+=("${resolved_config_path}")
+  support_bundle_command+=("${resolved_config_path}")
+fi
+
+run_step doctor "${doctor_command[@]}"
+run_step dashboard-http cargo test --test dashboard_http -v
+run_step product-smoke "${product_smoke_command[@]}"
+
+rm -rf "${first_run_dir}"
+run_step first-run-bootstrap-smoke scripts/first-run-bootstrap-smoke-local.sh "${first_run_dir}"
+
+rm -rf "${support_bundle_dir}"
+run_step support-bundle "${support_bundle_command[@]}"
+
+printf 'release soak: scanning support bundle for secret-like markers\n' | tee -a "${soak_log}"
+set +e
+rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' "${support_bundle_dir}" > "${secret_scan_log}" 2>&1
+secret_scan_status=$?
+set -e
+if [[ "${secret_scan_status}" -eq 0 ]]; then
+  printf 'release soak failed: secret-like marker found in support bundle; see %s\n' "${secret_scan_log}" >&2
+  exit 1
+fi
+if [[ "${secret_scan_status}" -gt 1 ]]; then
+  printf 'release soak failed: secret scan command failed; see %s\n' "${secret_scan_log}" >&2
+  exit "${secret_scan_status}"
+fi
+
+printf 'release soak: scanning support bundle for raw SQLite, TOML, or log artifacts\n' | tee -a "${soak_log}"
+find "${support_bundle_dir}" \( -name '*.sqlite' -o -name '*.toml' -o -name '*.log' \) -print > "${artifact_scan_log}"
+if [[ -s "${artifact_scan_log}" ]]; then
+  printf 'release soak failed: support bundle contains raw artifacts; see %s\n' "${artifact_scan_log}" >&2
+  exit 1
+fi
+
+find "${support_bundle_dir}" -maxdepth 1 -type f -print | sort > "${evidence_dir}/support-bundle-files.txt"
+find target/reports/self-revision-demo/latest -maxdepth 1 -type f -print | sort > "${evidence_dir}/product-smoke-latest-files.txt"
+write_sha256_manifest "${support_bundle_dir}" "${support_bundle_sha256}"
+write_sha256_manifest "target/reports/self-revision-demo/latest" "${product_smoke_latest_sha256}"
+
+run_step local-alpha-evidence-summary scripts/local-alpha-evidence-summary.sh \
+  --evidence-root . \
+  --output-json "${local_alpha_summary_json}" \
+  --output-md "${local_alpha_summary_md}"
+
+git status --short --branch > "${evidence_dir}/git-status-after.txt"
+ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+cat > "${release_summary_md}" <<EOF
+# Local Release Soak Evidence
+
+- candidate: \`${candidate_name}\`
+- started_at: \`${started_at}\`
+- ended_at: \`${ended_at}\`
+- evidence_dir: \`${evidence_dir}\`
+- config_path: \`${resolved_config_path:-default config}\`
+- boundary: local-only release evidence; not Windows parity, real fresh-machine evidence, remote/team evidence, upload, release certification, or GA readiness
+
+## Evidence Files
+
+- \`git-head.txt\`
+- \`git-status-before.txt\`
+- \`git-status-after.txt\`
+- \`command-summary.tsv\`
+- \`commands/\`
+- \`secret-scan.log\`
+- \`artifact-scan.log\`
+- \`support-bundle-files.txt\`
+- \`support-bundle-sha256.txt\`
+- \`product-smoke-latest-files.txt\`
+- \`product-smoke-latest-sha256.txt\`
+- \`local-alpha-evidence-summary.json\`
+- \`local-alpha-evidence-summary.md\`
+EOF
+
+printf 'release soak: evidence written to %s\n' "${evidence_dir}" | tee -a "${soak_log}"
+printf 'release soak: summary: %s\n' "${release_summary_md}" | tee -a "${soak_log}"

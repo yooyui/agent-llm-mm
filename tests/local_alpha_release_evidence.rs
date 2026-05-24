@@ -445,6 +445,81 @@ fn release_gate_refresh_script_rejects_extra_args_before_running_gates() {
     );
 }
 
+#[test]
+fn release_soak_script_captures_local_evidence_without_remote_or_write_claims() {
+    let script =
+        fs::read_to_string("scripts/release-soak-local.sh").expect("release soak script exists");
+    let mode = fs::metadata("scripts/release-soak-local.sh")
+        .expect("script metadata")
+        .permissions()
+        .mode();
+
+    assert!(
+        script.contains("usage: ./scripts/release-soak-local.sh <candidate-name> [config_path]")
+    );
+    assert!(script.contains("target/reports/releases"));
+    assert!(script.contains("./scripts/agent-llm-mm.sh"));
+    assert!(script.contains("doctor"));
+    assert!(script.contains("cargo test --test dashboard_http -v"));
+    assert!(script.contains("scripts/product-smoke-local.sh"));
+    assert!(script.contains("scripts/generate-support-bundle.sh"));
+    assert!(script.contains("scripts/local-alpha-evidence-summary.sh"));
+    assert!(script.contains("secret-scan.log"));
+    assert!(script.contains("artifact-scan.log"));
+    assert!(script.contains("support-bundle-sha256.txt"));
+    assert!(script.contains("product-smoke-latest-sha256.txt"));
+    assert!(script.contains("shasum -a 256"));
+    assert!(script.contains("sha256sum"));
+    assert!(script.contains("release-soak-summary.md"));
+    assert!(script.contains("git rev-parse HEAD"));
+    assert!(script.contains("git status --short --branch"));
+    assert!(
+        !script.contains(" ssh "),
+        "release soak script must not call ssh"
+    );
+    assert!(
+        !script.contains(" scp "),
+        "release soak script must not call scp"
+    );
+    assert!(
+        !script.contains(" rsync "),
+        "release soak script must not call rsync"
+    );
+    assert!(
+        !script.contains("agent-llm-mm.sh serve"),
+        "release soak script must not start the MCP service"
+    );
+    assert!(
+        !script.contains("run_reflection("),
+        "release soak script must not call durable self-revision writes directly"
+    );
+    assert_ne!(mode & 0o111, 0, "script should be directly executable");
+}
+
+#[test]
+fn release_soak_script_rejects_unsafe_candidate_before_running_evidence_steps() {
+    let output = std::process::Command::new("bash")
+        .args(["scripts/release-soak-local.sh", "../bad"])
+        .output()
+        .expect("release soak script should run");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "unsafe candidate names should be rejected with usage error; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("candidate name"),
+        "stderr should explain candidate-name safety; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("product smoke"),
+        "argument validation must happen before product smoke runs"
+    );
+}
+
 fn summary_json(
     summary: &agent_llm_mm::support::local_alpha_evidence::LocalAlphaEvidenceSummary,
 ) -> Value {

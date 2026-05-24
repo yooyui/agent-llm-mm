@@ -16,14 +16,15 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
-- 最新 fresh 验证：`2026-05-19`
-  - `cargo test` 全量通过，共 270 个测试
+- 最新 fresh 验证：`2026-05-24`
+  - `cargo test` 全量通过，共 272 个测试
   - `doctor` 预检返回 `status = ok`
   - `status-sync-check` 已加入本地只读文档漂移检查，用于对齐当前测试总数声明
   - Local Alpha product smoke 通过 staging / promote 流程刷新本地证据链
   - Local Alpha support bundle 生成本地脱敏诊断 JSON，未包含 `.sqlite` 或 `.toml` 文件
   - Local first-run bootstrap smoke 已加入脚本入口，用于模拟 `bootstrap-local -> doctor` 的本地首启证据
   - Local Alpha evidence summary 已加入本地只读 gate 状态汇总入口；它不运行 product smoke、不启动服务、不上传文件、不认证 Local Alpha 完成
+  - Local release soak runner 已加入本地 release evidence 入口；它生成 candidate-specific evidence directory，不生成 Windows runner、真实 fresh-machine、remote/team 或发布认证证据
   - SQLite backup / restore 本地脚本门禁已覆盖备份恢复 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份和拒绝 `..` restore target
 
 ## 先看这些
@@ -121,6 +122,10 @@
   - 串联 product smoke、first-run bootstrap simulation、support bundle generation 和 evidence summary 输出
   - 只刷新本机可产生的证据，不生成 Windows runner、真实 fresh-machine、remote/team、上传或发布决策证据
   - 刷新后若 summary 仍为 `in_progress` / `not_verified`，应保留对应 open gate，而不是改写成 Local Alpha 完成声明
+- local release soak runner
+  - 提供本地 release evidence 入口：`./scripts/release-soak-local.sh <candidate-name> [config_path]`
+  - 写入 `target/reports/releases/<candidate-name>/`，记录 git HEAD / status、命令日志、doctor、dashboard HTTP 回归、product smoke、first-run simulation、support bundle、secret / artifact scan、support bundle / product smoke SHA-256 manifest 和 Local Alpha evidence summary
+  - 只生成本地候选证据，不创建 source tag、binary package、installer、service manager、auto-updater、Windows runner、真实 fresh-machine、remote/team、上传或发布认证证据
 - local first-run bootstrap helper / smoke
   - `./scripts/agent-llm-mm.sh bootstrap-local [config_path]` 和 PowerShell 等价入口可从 dev 示例生成本机配置模板
   - 默认目标是 `agent-llm-mm.local.toml`，也可显式传入目标路径
@@ -246,6 +251,14 @@
 ```
 
 该命令会依次刷新 product smoke、first-run simulation、support bundle 和 evidence summary；它仍不会生成真实 fresh-machine、Windows runner、remote/team 或发布决策证据。
+
+如果要为 release candidate 生成本机 soak evidence，可以运行：
+
+```zsh
+./scripts/release-soak-local.sh local-alpha-YYYYMMDD.1-rc.1 [config_path]
+```
+
+该命令会写入 `target/reports/releases/<candidate-name>/`，并记录 doctor、dashboard HTTP 回归、product smoke、first-run simulation、support bundle、secret/artifact scan、support bundle / product smoke SHA-256 manifest 和 evidence summary。它仍不会生成真实 fresh-machine、Windows runner、remote/team、上传、tag、二进制包或发布认证证据。
 
 ## 文档导航
 

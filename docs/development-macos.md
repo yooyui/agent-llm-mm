@@ -153,6 +153,7 @@ cargo test
 
 发布前请按 [Release Gate](release-gate.md) 跑完整 gate；本节只是 macOS 日常验证入口。
 如果判断 Local Product Alpha / product alpha 口径，还必须改用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)；普通 `doctor` 通过不等于 Local Alpha 完成。
+需要本机 release soak 证据时，可以运行 `./scripts/release-soak-local.sh <candidate-name> [config_path]`。该命令写入 `target/reports/releases/<candidate-name>/`，只生成本机候选证据，不生成真实 fresh-machine、Windows runner、remote/team、上传、tag、安装包或发布认证证据。
 
 ## 7.1 本地支持包
 

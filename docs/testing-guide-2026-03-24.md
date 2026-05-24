@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-19 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-24 fresh 验证更新）
 
 ## 1. 目标
 
@@ -28,7 +28,7 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-05-19`，`cargo test` 全量通过，摘要如下：
+截至 `2026-05-24`，`cargo test` 全量通过，摘要如下：
 
 - `lib unit tests`: 7 passed
 - `application_use_cases`: 22 passed
@@ -45,7 +45,7 @@
 - `evidence_query_dto`: 2 passed
 - `failure_modes`: 31 passed
 - `first_run_bootstrap_smoke`: 4 passed
-- `local_alpha_release_evidence`: 15 passed
+- `local_alpha_release_evidence`: 17 passed
 - `mcp_stdio`: 36 passed
 - `openai_compatible_model`: 9 passed
 - `operation_log`: 9 passed
@@ -56,7 +56,7 @@
 - `status_sync`: 3 passed
 - `support_bundle`: 32 passed
 
-合计：270 个测试通过。
+合计：272 个测试通过。
 
 ---
 
@@ -109,7 +109,8 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 11. 如果改动涉及 first-run bootstrap smoke、本地首启证据或 `bootstrap-local -> doctor` 产品化路径，补跑 `bash -n scripts/first-run-bootstrap-smoke-local.sh` 和 `cargo test --test first_run_bootstrap_smoke -v`
 12. 如果改动涉及 Local Alpha evidence summary、发布证据汇总或 gate status 输出，补跑 `bash -n scripts/local-alpha-evidence-summary.sh`、`cargo test --test local_alpha_release_evidence -v`，并用 `cargo run --quiet --bin local_alpha_evidence_summary -- --evidence-root .` spot-check JSON 输出；该 summary 只是本地只读 gate 状态汇总，不是自动认证
 13. 如果改动涉及 Local Alpha release-gate refresh 或本机 gate 证据刷新流程，补跑 `bash -n scripts/local-alpha-release-gate-refresh.sh`、`cargo test --test local_alpha_release_evidence -v`，并按需执行 `./scripts/local-alpha-release-gate-refresh.sh [config_path]`；该 refresh 只产生本机可复现证据，不生成真实 fresh-machine、Windows runner、remote/team 或发布决策证据
-14. 如果改动涉及 SQLite 备份、恢复、schema migration 前置检查或 data lifecycle gate，补跑 `bash -n scripts/backup-sqlite.sh scripts/restore-sqlite.sh` 和 `cargo test --test sqlite_backup_restore -v`
+14. 如果改动涉及 release engineering、release evidence directory、soak evidence 或候选发布说明，补跑 `bash -n scripts/release-soak-local.sh`、`cargo test --test local_alpha_release_evidence release_soak -v`，并按需执行 `./scripts/release-soak-local.sh <candidate-name> [config_path]`；该 soak 只生成本地 release evidence，不生成真实 fresh-machine、Windows runner、remote/team、上传、tag、安装包或发布认证证据
+15. 如果改动涉及 SQLite 备份、恢复、schema migration 前置检查或 data lifecycle gate，补跑 `bash -n scripts/backup-sqlite.sh scripts/restore-sqlite.sh` 和 `cargo test --test sqlite_backup_restore -v`
 
 如果当前机器没有 `pwsh`，PowerShell runtime 行为测试会跳过；这种情况下只代表 Rust 测试覆盖了 PowerShell 脚本文本契约和 no-clobber 静态断言，Windows runner 或 Windows 实机验证仍需单独记录。
 
@@ -635,6 +636,34 @@ cargo test --test first_run_bootstrap_smoke -v
 
 ---
 
+### 6.14 Local release soak runner
+
+如果改动涉及 release engineering、候选发布证据目录、soak evidence、release note 或产品化发布口径，需要补跑本地 release soak：
+
+```zsh
+bash -n scripts/release-soak-local.sh
+cargo test --test local_alpha_release_evidence release_soak -v
+./scripts/release-soak-local.sh local-alpha-YYYYMMDD.1-rc.1
+```
+
+如果要验证某个本地配置文件的 `doctor` / product smoke / support bundle 分支，可传入可选 config path：
+
+```zsh
+./scripts/release-soak-local.sh local-alpha-YYYYMMDD.1-rc.1 agent-llm-mm.local.toml
+```
+
+通过标准：
+
+- candidate name 只能包含字母、数字、点、下划线或短横线，且不能包含 `..`
+- evidence directory 写入 `target/reports/releases/<candidate-name>/`，目录必须不存在或为空
+- 目录内包含 `git-head.txt`、`git-status-before.txt`、`git-status-after.txt`、`command-summary.tsv`、`commands/`、`secret-scan.log`、`artifact-scan.log`、`support-bundle-files.txt`、`support-bundle-sha256.txt`、`product-smoke-latest-files.txt`、`product-smoke-latest-sha256.txt`、`local-alpha-evidence-summary.json`、`local-alpha-evidence-summary.md` 和 `release-soak-summary.md`
+- 运行顺序覆盖 `doctor`、`cargo test --test dashboard_http -v`、product smoke、first-run simulation、support bundle generation、secret scan、raw artifact scan 和 Local Alpha evidence summary
+- support bundle secret scan 不应发现未脱敏 secret-like marker；raw artifact scan 不应发现 `.sqlite`、`.toml` 或 `.log`
+
+这条 soak 只生成本地候选证据；它不生成真实 fresh-machine evidence、Windows runner evidence、remote/team evidence、上传、source tag、binary package、installer、service manager、auto-updater、release decision 或 GA / production-ready 证明。
+
+---
+
 ## 7. 手工 Smoke Test
 
 `MCP` `stdio` 是 JSON-RPC 交互协议，手工敲消息成本较高。当前项目更推荐直接运行自动化 E2E 测试，而不是纯手工交互。
@@ -1012,6 +1041,25 @@ git diff --check
 ```
 
 这组命令验证首版本地 support bundle 生成器、脚本入口、脱敏边界、read-only operation-log 查询、显式 `--correlation-id mcp-tool-call-<uuid-v4>` operation summary 过滤、显式 `--log-file` 本地日志摘要/摘录，以及文档口径。输出目录必须不存在或为空；测试会覆盖非空目录被拒绝，避免旧的本地文件混入可分享支持包。敏感词扫描应无实际泄露；`find` 命令不应打印 `.sqlite`、`.toml` 或原始 `.log` 文件。operation summary 过滤只接受生成型 `mcp-tool-call-<uuid-v4>` correlation id，并仍只输出 metadata，不输出 request / response / diagnostic payload summary；user/project namespace 只输出 shape，secret-like operation metadata 会被替换。日志摘录只允许显式传入单个本地文件，secret-like config/log 文件名会折叠成 `<local-path>/<redacted-name>`；不允许扫描默认日志目录、home、系统日志、browser profile、SSH/cookie/session、shell history 或 `target/` 输出。超大日志只读取有界尾部窗口，并以 `line_number_scope = "tail"` 标记行号语义。该生成器不会创建或迁移缺失 SQLite 数据库，也不会通过 runtime bootstrap seed 默认 identity / commitments；它仍是本地诊断辅助，不代表远程上传、生产支持通道或 Local Alpha 完成。
+
+### 改 release engineering / local soak evidence
+
+```zsh
+bash -n scripts/release-soak-local.sh
+cargo test --test local_alpha_release_evidence release_soak -v
+rm -rf target/reports/releases/manual-local-soak
+./scripts/release-soak-local.sh manual-local-soak
+test -s target/reports/releases/manual-local-soak/release-soak-summary.md
+test -s target/reports/releases/manual-local-soak/command-summary.tsv
+test -s target/reports/releases/manual-local-soak/local-alpha-evidence-summary.json
+test -s target/reports/releases/manual-local-soak/support-bundle-sha256.txt
+test -s target/reports/releases/manual-local-soak/product-smoke-latest-sha256.txt
+test ! -s target/reports/releases/manual-local-soak/secret-scan.log
+test ! -s target/reports/releases/manual-local-soak/artifact-scan.log
+git diff --check
+```
+
+这组命令验证本地 release soak runner、candidate-specific evidence directory、doctor / dashboard HTTP / product smoke / first-run simulation / support bundle / evidence summary 串联，以及 support bundle secret/raw-artifact scan 和 support bundle / product smoke SHA-256 manifest。它不创建 release tag、安装包、Windows runner evidence、真实 fresh-machine evidence、remote/team evidence、上传或发布认证证据；`local-alpha-evidence-summary.json` 若仍为 `in_progress` / `not_verified`，必须保留 open gate。
 
 ### 改 daemon observe-only gate
 

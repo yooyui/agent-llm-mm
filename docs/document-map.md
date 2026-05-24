@@ -48,7 +48,7 @@
 - [product/structured-decision-protocol.md](product/structured-decision-protocol.md)
   - `decide_with_snapshot` v1 response envelope 兼容契约；当前只增加 protocol metadata、status、reason 和 gate metadata，不代表完整决策引擎
 - [product/release-engineering.md](product/release-engineering.md)
-  - 正式产品化发布工程规则，定义 source-only artifact、版本命名、changelog、release evidence directory、compatibility matrix、soak test 和 deprecation policy
+  - 正式产品化发布工程规则，定义 source-only artifact、版本命名、changelog、release evidence directory、compatibility matrix、`release-soak-local.sh` 本地 soak evidence 和 deprecation policy
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
   - daemon observe-only gate，定义 Local Alpha 阶段只读诊断边界、forbidden behavior、required diagnostics 和进入写能力前的退出 gate
 - [product/remote-team-mode-boundary.md](product/remote-team-mode-boundary.md)
@@ -99,7 +99,7 @@
 - [product/structured-decision-protocol.md](product/structured-decision-protocol.md)
   - 改 `decide_with_snapshot` 返回结构、MCP schema 或 caller compatibility 前阅读，确认 v1 envelope 和 legacy `blocked` / `decision` 字段保持兼容
 - [product/release-engineering.md](product/release-engineering.md)
-  - 做 release note、source-only tag、compatibility matrix、soak evidence 或 deprecation 规则前阅读
+  - 做 release note、source-only tag、compatibility matrix、本地 soak evidence 或 deprecation 规则前阅读；当前本机 runner 是 `./scripts/release-soak-local.sh <candidate-name> [config_path]`
 - [product/daemon-observe-only-gate.md](product/daemon-observe-only-gate.md)
   - 任何 daemon 代码或文档推进前阅读，确认 observe-only 阶段不调用 `run_reflection`、不写 identity / commitments、不开远程监听
 - [product/remote-team-mode-boundary.md](product/remote-team-mode-boundary.md)
@@ -141,7 +141,7 @@
 - [release-gate.md](release-gate.md)
   - 发布 gate 的最小命令集、self-revision demo artifact 要求，以及 dashboard 边界检查
 - [product/release-engineering.md](product/release-engineering.md)
-  - 正式产品化发布工程规则；第一阶段使用 source-only artifact，不添加包装自动化声明
+  - 正式产品化发布工程规则；第一阶段使用 source-only artifact，本地 soak runner 只生成候选证据，不添加包装自动化声明
 - [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
   - 产品化二次跟进现实 gate；把当前模块按实现、模拟、规划和缺证据状态拆开，防止把 roadmap 误读成完成声明
 - [product/structured-decision-protocol.md](product/structured-decision-protocol.md)
@@ -214,7 +214,7 @@
 - [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md)
   - 产品化二次跟进现实 gate，用于追踪 12 项规划中哪些已有实现、哪些只是模拟证据、哪些仍是 planning gate
 - [product/release-engineering.md](product/release-engineering.md)
-  - Workstream 11 的 release engineering 落地文档
+  - Workstream 11 的 release engineering 落地文档，包含本地 release soak runner 入口与边界
 - [product/remote-team-mode-boundary.md](product/remote-team-mode-boundary.md)
   - Workstream 10 的远程 / 团队模式边界文档
 - [product/memory-layering-roadmap.md](product/memory-layering-roadmap.md)

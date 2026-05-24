@@ -28,6 +28,10 @@ candidate is described publicly.
   hosted service, Beta, GA, or production-ready delivery.
 - Record a candidate-specific release evidence directory instead of relying on
   stale `latest` artifacts.
+- For local release soak evidence, use
+  `./scripts/release-soak-local.sh <candidate-name> [config_path]` and keep the
+  generated `target/reports/releases/<candidate-name>/` directory as candidate
+  evidence.
 - Record version naming, changelog boundaries, compatibility matrix results,
   soak command results when required, and deprecation status according to
   [`product/release-engineering.md`](product/release-engineering.md).

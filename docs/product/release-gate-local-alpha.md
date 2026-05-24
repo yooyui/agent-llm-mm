@@ -407,6 +407,52 @@ bash -n scripts/local-alpha-release-gate-refresh.sh
 cargo test --test local_alpha_release_evidence -v
 ```
 
+## Local Release Soak Evidence
+
+When preparing a candidate-specific local release evidence directory, use:
+
+```bash
+./scripts/release-soak-local.sh <candidate-name> [config_path]
+```
+
+The script writes to `target/reports/releases/<candidate-name>/` and runs:
+
+- `./scripts/agent-llm-mm.sh doctor [config_path]`
+- `cargo test --test dashboard_http -v`
+- `scripts/product-smoke-local.sh [config_path]`
+- `scripts/first-run-bootstrap-smoke-local.sh target/first-run-bootstrap-smoke/local-alpha-gate`
+- `scripts/generate-support-bundle.sh target/support-bundles/local-alpha-gate [config_path]`
+- support-bundle secret scan and raw artifact scan
+- support-bundle and product-smoke SHA-256 manifest generation
+- `scripts/local-alpha-evidence-summary.sh` into the release evidence directory
+
+Required boundary:
+
+- candidate names must be path-safe and cannot contain `..`
+- the evidence directory must be absent or empty before the run
+- command logs and exit codes must be recorded in `commands/` and
+  `command-summary.tsv`
+- `support-bundle-sha256.txt` and `product-smoke-latest-sha256.txt` must be
+  non-empty so the candidate evidence can be tied back to the generated local
+  artifacts
+- support bundle scans must not report unredacted secret-like markers or raw
+  `.sqlite`, `.toml`, or `.log` files
+- the generated Local Alpha evidence summary remains a status summary; if it
+  reports `in_progress` or `not_verified`, the corresponding gate remains open
+
+The release soak runner creates local candidate evidence only. It does not
+create real fresh-machine evidence, Windows runner evidence, remote/team
+evidence, upload artifacts, source tags, binary packages, installers,
+service-manager state, auto-updaters, release decisions, or Local Alpha
+certification.
+
+Recommended verification when the release soak runner changes:
+
+```bash
+bash -n scripts/release-soak-local.sh
+cargo test --test local_alpha_release_evidence release_soak -v
+```
+
 ## Correlation ID Gate
 
 Runtime observability must keep MCP calls traceable without creating a new
@@ -533,6 +579,9 @@ Required boundary:
 - no binary package, installer, service manager, auto-updater, remote
   bootstrapper, or packaging automation claim is made before a separate gate
 - release notes point to the exact evidence directory for the candidate
+- local soak evidence can be generated with
+  `./scripts/release-soak-local.sh <candidate-name> [config_path]`, which writes
+  candidate-specific evidence under `target/reports/releases/<candidate-name>/`
 - compatibility matrix records what was actually checked instead of inferring
   platform parity
 - soak evidence is required when runtime, persistence, dashboard, daemon,
@@ -540,8 +589,11 @@ Required boundary:
 - deprecations name the deprecated behavior, replacement path, announcement
   candidate, earliest removal candidate, and migration or rollback note
 
-This gate does not certify Beta, GA, production support, remote write admin,
-remote team service, or multi-tenancy.
+The local soak runner does not create source tags, binary packages,
+installers, service-manager state, auto-updaters, Windows runner evidence, real
+fresh-machine evidence, remote/team evidence, upload artifacts, release
+decisions, or Local Alpha certification. This gate does not certify Beta, GA,
+production support, remote write admin, remote team service, or multi-tenancy.
 
 ## Product Wording Gate
 

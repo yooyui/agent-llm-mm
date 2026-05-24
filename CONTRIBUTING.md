@@ -37,6 +37,10 @@ This repository is a public technical demo and MVP. Please keep changes aligned 
 Before release claims or public release notes, also run the applicable
 [Release Gate](docs/release-gate.md) and record the release engineering evidence
 described in [docs/product/release-engineering.md](docs/product/release-engineering.md).
+For local release soak evidence, use
+`./scripts/release-soak-local.sh <candidate-name> [config_path]` and preserve the
+generated `target/reports/releases/<candidate-name>/` evidence directory with
+the release note or review record.
 Do not claim Beta, GA, production-ready status, remote write admin, remote team
 service, multi-tenancy, or a replacement for `run_reflection` unless a later
 gate explicitly approves that boundary.

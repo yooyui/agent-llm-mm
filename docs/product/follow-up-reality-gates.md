@@ -45,7 +45,7 @@ Current baseline:
 | `P2` | Provider matrix | `partial` | Only `mock` and first `openai-compatible` are runnable. The current branch exposes a read-only matrix in config and `doctor`; `azure-openai`, `openrouter`, and `local` remain planned-only and non-configurable. | Add adapters only with config, doctor, parsing, redaction, timeout/error-mode, and MCP stdio path tests. Do not turn matrix rows into accepted config values without a real adapter in the same change. | `docs/provider-contract.md`; `cargo test --test provider_config -v`; provider-specific tests before any future provider is marked supported. |
 | `P2` | Data lifecycle and migration | `partial` | Backup/restore local scripts are covered, but this is not remote backup, cloud sync, scheduled backup, or production disaster recovery. | Add migration tests when schema changes; keep restore-to-new-path and manual database switch boundary. | `cargo test --test sqlite_backup_restore -v`; schema migration tests for any future migration. |
 | `P3` | Remote/team/auth/security | `planning-gate` | Boundary and threat model docs exist, but remote/team mode is not implemented. | Start with remote read-only inventory and auth/audit design; block remote writes until separate security gates pass. | Security review, route inventory, auth/authorization tests, audit tests, and no write-capable remote routes before gate approval. |
-| `P3` | Release engineering | `planning-gate` | Rules exist, but there is no installer, binary package, service manager, auto-updater, or soak automation. | Keep first artifact source-only; add repeatable release evidence and compatibility matrix before Beta language. | Release evidence directory, changelog, compatibility matrix, soak command/result, and wording scan. |
+| `P3` | Release engineering | `partial` | Rules and a local release soak runner exist, but there is still no installer, binary package, service manager, auto-updater, Windows/fresh-machine release evidence, compatibility matrix automation, or release decision workflow. | Use `scripts/release-soak-local.sh <candidate-name> [config_path]` for local candidate evidence, keep first artifact source-only, and add real compatibility matrix / release decision evidence before Beta language. | `bash -n scripts/release-soak-local.sh`; `cargo test --test local_alpha_release_evidence release_soak -v`; candidate-specific `target/reports/releases/<candidate-name>/` with command logs, summary, support-bundle scans, SHA-256 manifests, and Local Alpha evidence summary. |
 | `P3` | Multi-layer memory | `planning-gate` | Roadmap exists; working / episodic / semantic / procedural memory layers are not product implementation. | Wait until schema, evidence policy, data lifecycle, and migration gates stabilize; then implement one small richer episode slice. | New specs and tests for the first slice only; no Local Alpha claim that multi-layer memory is complete. |
 
 ## Required Review Loop
@@ -68,10 +68,12 @@ cargo fmt --check
 git diff --check
 bash -n scripts/local-alpha-evidence-summary.sh
 bash -n scripts/local-alpha-release-gate-refresh.sh
+bash -n scripts/release-soak-local.sh
 bash -n scripts/status-sync-check.sh
 cargo test --test status_sync -v
 ./scripts/status-sync-check.sh
 cargo test --test local_alpha_release_evidence -v
+cargo test --test local_alpha_release_evidence release_soak -v
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ./scripts/agent-llm-mm.sh doctor
@@ -95,7 +97,7 @@ terse` test list against the total declarations in:
 - `docs/progress-tracker.md`
 - `docs/product/follow-up-reality-gates.md`
 
-Current branch `cargo test` total declaration: 270 tests.
+Current branch `cargo test` total declaration: 272 tests.
 
 This check only protects the documented cargo-test total from drifting. It does
 not certify Local Alpha, does not turn simulation evidence into real

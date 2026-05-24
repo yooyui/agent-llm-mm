@@ -726,7 +726,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 
 **Implementation steps:**
 
-- [ ] **Step 1: Create release engineering doc**
+- [x] **Step 1: Create release engineering doc**
 
   Create `docs/product/release-engineering.md` with:
 
@@ -738,7 +738,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - soak test command requirements
   - deprecation policy
 
-- [ ] **Step 2: Define artifact packaging**
+- [x] **Step 2: Define artifact packaging**
 
   Decide whether the first release artifact is:
 
@@ -748,7 +748,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 
   Document the chosen first artifact and the reason. Do not add packaging automation until the artifact contract is written.
 
-- [ ] **Step 3: Add long-run smoke / soak command**
+- [x] **Step 3: Add long-run smoke / soak command**
 
   Define a repeatable command that can run without external writes. It should cover:
 
@@ -758,7 +758,20 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - support bundle generation
   - no secret leakage scan
 
-- [ ] **Step 4: Update contribution workflow**
+  Current local runner:
+
+  ```bash
+  ./scripts/release-soak-local.sh <candidate-name> [config_path]
+  ```
+
+  It writes candidate evidence under `target/reports/releases/<candidate-name>/`
+  with command logs, support-bundle / product-smoke file lists, SHA-256
+  manifests, and Local Alpha evidence summary. It remains local-only: no Windows
+  runner evidence, real fresh-machine evidence, remote/team evidence, upload,
+  tag, binary package, installer, service manager, auto-updater, release
+  decision, or Local Alpha certification is generated.
+
+- [x] **Step 4: Update contribution workflow**
 
   Update `CONTRIBUTING.md` with:
 

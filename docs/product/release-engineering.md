@@ -110,28 +110,38 @@ When a candidate changes runtime behavior, persistence, dashboard behavior,
 daemon behavior, provider behavior, or MCP tool handling, release evidence must
 include a bounded local soak command.
 
-Until a dedicated soak runner exists, use the most conservative manual command
-set available for the changed surface, for example:
+The current local runner is:
 
 ```bash
-./scripts/agent-llm-mm.sh doctor
-./scripts/product-smoke-local.sh
-cargo test --test mcp_stdio -v
-cargo test --test operation_log -v
-cargo test --test dashboard_http -v
+./scripts/release-soak-local.sh <candidate-name> [config_path]
 ```
 
-The evidence must record:
+It writes candidate-specific evidence under
+`target/reports/releases/<candidate-name>/` and runs:
+
+- `./scripts/agent-llm-mm.sh doctor [config_path]`
+- `cargo test --test dashboard_http -v`
+- `scripts/product-smoke-local.sh [config_path]`
+- `scripts/first-run-bootstrap-smoke-local.sh target/first-run-bootstrap-smoke/local-alpha-gate`
+- `scripts/generate-support-bundle.sh target/support-bundles/local-alpha-gate [config_path]`
+- support-bundle secret and raw-artifact scans
+- support-bundle and product-smoke SHA-256 manifests
+- `scripts/local-alpha-evidence-summary.sh` into the release evidence directory
+
+The evidence records:
 
 - exact commands run
 - exit codes
 - start and end time or elapsed duration
-- config file shape, with secrets redacted
-- whether the run used deterministic, mock, or real provider configuration
+- git HEAD and before / after working tree status
+- config path shape, without embedding secrets
+- support bundle file list, product smoke latest file list, their SHA-256 manifests, and Local Alpha gate summary
 - any sandbox-only blocker separately from code failures
 
-This document requires soak evidence; it does not add packaging automation code
-or a new soak runner.
+This runner creates local soak evidence only. It does not create a source tag,
+binary package, installer, service manager, auto-updater, Windows runner
+evidence, real fresh-machine evidence, remote/team evidence, upload, release
+decision, or Local Alpha certification.
 
 ## Deprecation Policy
 
