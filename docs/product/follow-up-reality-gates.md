@@ -7,8 +7,9 @@ evidence, and product wording all line up.
 
 Current baseline:
 
-- implementation branch: `codex/unimplemented-followup`
-- carried implementation: P1/P2/P3 follow-up slices in the current branch
+- implementation branch: `codex/physics-layer-report`
+- carried implementation: P1/P2/P3 follow-up slices plus the read-only
+  physics-informed architecture report and wording guards in the current branch
 - `run_reflection` remains the only durable identity / commitment / reflection
   write path
 - Local Product Alpha is still in progress until every release gate has fresh,
@@ -27,6 +28,37 @@ Current baseline:
 
 For current-branch plan/status sync, `implemented-unmerged` is treated as incomplete until the work lands in the checked-out branch.
 
+## Remaining Incomplete Items After Physics-Informed Architecture Slice
+
+The current branch implements the local-safe slice as read-only reports,
+machine-readable gates, and product wording guards. The following items remain
+incomplete and must not be promoted to completed capability without later code,
+tests, docs, fresh evidence, and review:
+
+- `partial`: Local Alpha full release gate; still missing real fresh-machine
+  evidence, Windows runtime parity evidence, and human release decision.
+- `simulation-only`: Fresh-machine first-run; local simulation is not real
+  clone/unpack/install evidence.
+- `planning-gate`: Windows parity; macOS execution and static PowerShell
+  checks do not prove Windows runtime parity.
+- `partial`: Provider matrix; only `mock` and `openai-compatible` are runnable,
+  while Azure OpenAI, OpenRouter, and local providers remain planned-only.
+- `partial`: Observe-only daemon; diagnostics and handle lifecycle exist, but
+  daemon-triggered writes and connected background service behavior are blocked.
+- `planning-gate`: Remote/team/security foundation; remote writes, team shared
+  memory, support bundle upload, public dashboard exposure, auth,
+  authorization, audit, rate limit, tenant isolation, and rollback remain
+  unimplemented.
+- `partial`: Release engineering; installer, binary package, service manager,
+  auto-updater, compatibility matrix automation, Beta/GA evidence, and
+  production-ready claims remain blocked.
+- `partial`: Multi-layer memory; current support is read-only projection only,
+  not procedural memory, slow variables, durable self-model writes, or complete
+  multi-layer cognition.
+- `blocked claim`: Physics-informed runtime, solver/controller behavior,
+  constraint optimizer, physical controller, and scientific validation claims
+  remain wording-gated non-claims.
+
 ## Follow-Up Modules
 
 | Priority | Module | Current Status | Assumption / Gap | Required Follow-Up | Evidence To Accept |
@@ -39,6 +71,7 @@ For current-branch plan/status sync, `implemented-unmerged` is treated as incomp
 | `P1` | Product readiness gate checker | `implemented` | The checker is local-only and conservative; it intentionally reports blocked while release decision, real fresh-machine, Windows parity, remote/team, or security gates are missing. | Use it as a candidate review preflight, not as Local Alpha certification. | `cargo test --test product_readiness -v`; `./scripts/product-readiness-check.sh <candidate-name>`; `ready = false` until external gates exist. |
 | `P1` | Release decision artifact | `implemented` | The generator writes a source-only decision artifact, but cannot supply the human decision itself. | Record actual human reviewer, decision, rollback note, open gates, and non-claims before treating a candidate as approved. | `cargo test --test release_decision -v`; `./scripts/release-decision-local.sh <candidate-name> <evidence-root>`. |
 | `P1` | Plan/status synchronization | `implemented` | Planning checkboxes, test counts, and reality gate rows can drift from code. The current branch implements read-only cargo-test total drift plus plan/reality contradiction detection. | Use `status-sync-check` after each productization slice, then reconcile any flagged docs against commands run in the current branch. | `cargo test --test status_sync -v`; `./scripts/status-sync-check.sh`; matching test counts and no stale completed plan items against incomplete reality rows. |
+| `P1` | System layer report | `implemented` | Architecture-layer planning previously lived in docs only. The current branch exposes a read-only `doctor.system_layer_report` with substrate, signal, memory, policy, control loop, actuator, interface, and release-boundary status plus blockers, physics principle mappings, dependency rules, Phase 0-8 coverage, and non-claims. | Keep it read-only and status-only. It must not grant daemon writes, remote/team behavior, provider adapters, durable memory layer writes, physics-informed runtime behavior, or Local Alpha certification. | `cargo test --test product_completion_read_models -v`; `./scripts/agent-llm-mm.sh doctor`; `doctor.system_layer_report.read_only = true`; every layer keeps `writes_allowed = false`. |
 | `P1` | Support bundle and daemon lifecycle hardening | `implemented` | The current slice adds support-bundle integrity hashes and observe-only daemon lifecycle/write-blocker diagnostics; it does not make support bundles a production support channel or turn the daemon into a background product service. | Keep the underlying support bundle and daemon product rows partial until upload/service/write gates exist. | `cargo test --test support_bundle -v`; `cargo test --test daemon_config -v`; `./scripts/agent-llm-mm.sh doctor`. |
 | `P1` | Observe-only daemon lifecycle | `partial` | `doctor.daemon_observe_only` is real, and `DaemonHandle` now has local start / stop proof, but it is still not connected as a running background product service. | Keep write capability blocked; use lifecycle tests to preserve clean shutdown and closed write / remote gates before any future daemon write path. | `cargo test --test daemon_config -v`; tests prove disabled quick exit, observe-only start / stop, no remote listener, no semantic writes, and clean shutdown. |
 | `P1` | Runtime self-revision coverage | `partial` | Four hooks are wired, but this is not all-entry auto-reflection or continuous autonomy. | Tighten diagnostics and tests for the existing four hooks before widening trigger coverage. | Focused `mcp_stdio`, `failure_modes`, and `bootstrap` tests showing hook list, opt-in requirements, best-effort failure semantics, and no direct `run_reflection` recursion. |
@@ -53,7 +86,7 @@ For current-branch plan/status sync, `implemented-unmerged` is treated as incomp
 | `P3` | Security and auth gate contracts | `implemented` | Machine-readable auth, authorization, audit, rate-limit, tenant-isolation, and rollback gate contracts exist; no remote write is enabled. | Keep these as blocking contracts until real auth/authz/audit/rate-limit/tenant/rollback implementation and route tests land. | `cargo test --test product_completion_read_models -v`; `doctor.remote_team_security_gates`; `remote_writes_allowed = false`. |
 | `P3` | Release engineering | `partial` | Rules and a local release soak runner exist, but there is still no installer, binary package, service manager, auto-updater, Windows/fresh-machine release evidence, compatibility matrix automation, or release decision workflow. | Use `scripts/release-soak-local.sh <candidate-name> [config_path]` for local candidate evidence, keep first artifact source-only, and add real compatibility matrix / release decision evidence before Beta language. | `bash -n scripts/release-soak-local.sh`; `cargo test --test local_alpha_release_evidence release_soak -v`; candidate-specific `target/reports/releases/<candidate-name>/` with command logs, summary, support-bundle scans, SHA-256 manifests, and Local Alpha evidence summary. |
 | `P3` | Multi-layer memory | `implemented` | A read-only layered projection exists and labels working / episodic / semantic / procedural / self-model layers as `partial` or `not_implemented`; it is not a complete memory architecture and does not add durable self-model writes. | Keep procedural memory, richer semantic extraction, slow variables, and durable self-model writes behind later schema/evidence/migration gates. | `cargo test --test product_completion_read_models -v`; no Local Alpha claim that multi-layer memory is complete. |
-| `P3` | Product wording guard | `implemented` | Product readiness checks candidate wording for blocked Beta, GA, production-ready, remote/team, remote write admin, and complete self-governance claims. | Keep this wired into product readiness and extend only when matching gates actually pass. | `cargo test --test product_readiness -v`; blocked claims appear as `product_wording` gate failures. |
+| `P3` | Product wording guard | `implemented` | Product readiness checks candidate wording for blocked Beta, GA, production-ready, remote/team, remote write admin, complete self-governance, physics-informed runtime, solver/controller, and scientific validation claims. | Keep this wired into product readiness and extend only when matching gates actually pass. | `cargo test --test product_readiness -v`; blocked claims appear as `product_wording` gate failures. |
 
 ## Required Review Loop
 
@@ -105,7 +138,7 @@ declarations in:
 - `docs/progress-tracker.md`
 - `docs/product/follow-up-reality-gates.md`
 
-Current branch `cargo test` total declaration: 292 tests.
+Current branch `cargo test` total declaration: 295 tests.
 
 It also reads
 `docs/superpowers/plans/2026-05-24-p1-p2-p3-product-completion-plan.md` and

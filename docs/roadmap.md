@@ -31,6 +31,7 @@
 - Local Product Alpha 的 data lifecycle 已有本地 backup / restore 脚本和回归门禁；restore 仍默认写到新路径，正式 `database_url` 切换必须由人工在 `doctor` 验证后决定
 - daemon 先经过 observe-only gate：Local Alpha 阶段不调用 `run_reflection`、不写 identity / commitments、不启动 remote listener；当前 `doctor.daemon_observe_only` 只提供本机只读 preflight 诊断和 operation-log failed / suppressed 候选计数
 - correlation ID 先用于 observability：成功/失败 MCP tool call、dashboard event 和 operation-log metadata 可按 `mcp-tool-call-<uuid-v4>` 串联，但不新增语义写路径
+- 架构结构优化先以只读诊断落地：`doctor.system_layer_report` 展示 substrate / signal / memory / policy / control_loop / actuator / interface / release_boundary 的当前状态和 blocker，不代表大规模重构、daemon 写能力、remote/team、完整 memory layering 或 Local Alpha 完成
 
 当前权威规划：
 

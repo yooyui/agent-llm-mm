@@ -6,6 +6,7 @@ pub struct ClaimGateState {
     pub remote_write_admin: bool,
     pub remote_team_service: bool,
     pub complete_self_governance: bool,
+    pub physics_informed_runtime: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,6 +92,34 @@ pub fn check_product_claims(input: ProductClaimGuardInput) -> ProductClaimGuardR
         gate_state.complete_self_governance,
         "complete_self_governance",
         "self_governance_gate",
+    );
+    push_if_claimed(
+        &mut violations,
+        &text,
+        &[
+            "physics-informed runtime",
+            "physics informed runtime",
+            "physics-informed-runtime",
+            "physics solver",
+            "physics-solver",
+            "physics-informed solver",
+            "physics informed solver",
+            "physics-informed-solver",
+            "physics informed controller",
+            "physics-informed controller",
+            "physics-informed-controller",
+            "constraint solver",
+            "constraint-solver",
+            "constraint optimizer",
+            "constraint-optimizer",
+            "physical controller",
+            "physical-controller",
+            "scientific validation",
+            "scientific-validation",
+        ],
+        gate_state.physics_informed_runtime,
+        "physics_informed_runtime",
+        "physics_informed_runtime_gate",
     );
 
     ProductClaimGuardReport {

@@ -16,8 +16,8 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
-- 最新 fresh 验证：`2026-05-24`
-  - `cargo test` 全量通过，共 292 个测试
+- 最新 fresh 验证：`2026-05-28`
+  - `cargo test` 全量通过，共 295 个测试
   - `doctor` 预检返回 `status = ok`
   - `status-sync-check` 已加入本地只读文档漂移检查，用于对齐当前测试总数声明，并阻断已勾选计划项与 reality gate 状态不一致的完成声明
   - Local Alpha product smoke 通过 staging / promote 流程刷新本地证据链
@@ -163,6 +163,7 @@
 - remote/team and memory gates
   - `doctor` 现在输出 `remote_team_capability_inventory` 和 `remote_team_security_gates` 机器可读字段，所有 remote/team 能力默认 blocked，support bundle upload 为 false
   - security/auth gates 覆盖 auth、authorization、audit、rate limit、tenant isolation 和 rollback，全部通过前 remote writes 保持 blocked
+  - `doctor.system_layer_report` 现在输出只读 architecture layer summary，覆盖 substrate / signal / memory / policy / control_loop / actuator / interface / release_boundary，并把 physics principle mapping、dependency rules、Phase 0-8 coverage、non-claims 以及 Local Alpha、Windows parity、fresh-machine、remote/team、daemon writes、security/auth 和 memory layering blocker 保持为可机器读取；该报告不授予新运行时能力
   - 新增只读 layered memory projection，标记 working / episodic / semantic / procedural / self_model 层为 `partial` 或 `not_implemented`，不新增 durable self-model 写路径
 - `namespace` 最小闭环
   - `self`

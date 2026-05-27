@@ -183,8 +183,9 @@ Implementation notes:
 - Episode summary projection 已能以只读 local metadata 表达 objective、outcome、linked evidence ids，不写 identity 或 commitments
 - Provider matrix planned-only 行已输出 missing implementation checklist，避免把 future provider 当作可配置 adapter
 - `doctor` 已输出 `remote_team_capability_inventory` 与 `remote_team_security_gates`，所有 remote/team 能力和 security/auth 前置门禁仍默认 blocked，support bundle upload 为 false
+- `doctor.system_layer_report` 已输出只读 architecture layer summary，八层固定为 substrate / signal / memory / policy / control_loop / actuator / interface / release_boundary；报告本身 `writes_performed = false`，actuator 仍只锚定 `run_reflection` 且不新增写授权；physics principle mappings、dependency rules、Phase 0-8 coverage 和 non-claims 均为报告/门禁信息，不是 runtime、solver、controller 或 scientific validation 能力
 - Multi-layer memory projection 已提供只读分层状态：working / episodic / semantic / self-model 为 partial，procedural 为 not implemented；不新增 durable self-model 写路径
-- Product wording guard 已接入 product readiness，阻断 Beta、GA、production-ready、remote/team、remote write admin 和 complete self-governance 等缺少 gate 的候选措辞
+- Product wording guard 已接入 product readiness，阻断 Beta、GA、production-ready、remote/team、remote write admin、complete self-governance、physics-informed runtime、solver/controller 和 scientific validation 等缺少 gate 的候选措辞
 
 ## 部分实现
 
@@ -260,7 +261,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-05-24`，本分支需要 fresh 运行：
+截至 `2026-05-28`，本分支需要 fresh 运行：
 
 - `cargo fmt --check`
 - `git diff --check`
@@ -293,16 +294,16 @@ Implementation notes:
 - `mcp_stdio`: 36
 - `openai_compatible_model`: 9
 - `operation_log`: 9
-- `product_completion_read_models`: 8
-- `product_readiness`: 5
+- `product_completion_read_models`: 9
+- `product_readiness`: 7
 - `provider_config`: 12
 - `release_decision`: 3
 - `self_revision_demo_runner`: 2
 - `sqlite_backup_restore`: 6
 - `sqlite_store`: 20
-- `status_sync`: 6
+- `status_sync`: 7
 - `support_bundle`: 32
-- 合计：292 个测试通过
+- 合计：295 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`

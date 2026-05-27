@@ -3,6 +3,9 @@ use std::fs;
 use agent_llm_mm::support::product_readiness::{
     ProductReadinessOptions, remote_team_readiness_gate_from_inventory, summarize_product_readiness,
 };
+use agent_llm_mm::support::product_wording::{
+    ClaimGateState, ProductClaimGuardInput, check_product_claims,
+};
 use agent_llm_mm::support::remote_team::{
     RemoteTeamCapability, RemoteTeamCapabilityInventory, RemoteTeamCapabilityState,
 };
@@ -67,6 +70,12 @@ fn product_readiness_blocks_simulation_windows_and_missing_release_decision() {
             .non_claims
             .contains(&"not Local Alpha certification".to_string())
     );
+    assert!(
+        summary.non_claims.contains(
+            &"not physics-informed runtime / solver / controller / scientific validation evidence"
+                .to_string()
+        )
+    );
 }
 
 #[test]
@@ -90,6 +99,62 @@ fn product_readiness_blocks_overstated_release_candidate_wording() {
         "product_wording",
         "blocked",
         "blocked product claims",
+    );
+}
+
+#[test]
+fn product_wording_blocks_physics_informed_capability_claims_without_gate() {
+    for claimed_text in [
+        "physics-informed runtime",
+        "physics solver",
+        "physics-informed solver",
+        "physics informed controller",
+        "constraint solver",
+        "constraint optimizer",
+        "physical controller",
+        "scientific validation",
+    ] {
+        let report = check_product_claims(ProductClaimGuardInput {
+            text: format!("Agent LLM MM provides {claimed_text}."),
+            gate_state: ClaimGateState::default(),
+        });
+
+        assert!(
+            !report.allowed,
+            "{claimed_text:?} should be blocked as a product capability claim"
+        );
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|violation| violation.claim == "physics_informed_runtime"),
+            "{claimed_text:?} should report physics_informed_runtime claim; got {:?}",
+            report.violations
+        );
+    }
+}
+
+#[test]
+fn product_readiness_blocks_physics_informed_release_candidate_wording() {
+    let temp_dir = tempdir().expect("temp dir");
+    write_satisfied_product_smoke(temp_dir.path());
+    write_first_run_simulation(temp_dir.path());
+    write_support_bundle(temp_dir.path());
+
+    let summary = summarize_product_readiness(ProductReadinessOptions {
+        evidence_root: temp_dir.path().to_path_buf(),
+        release_candidate: "physics-informed-runtime-rc.1".to_string(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("product readiness summary should be generated");
+
+    assert!(!summary.ready);
+    assert_gate(
+        &summary,
+        "product_wording",
+        "blocked",
+        "physics_informed_runtime",
     );
 }
 

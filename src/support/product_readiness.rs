@@ -83,6 +83,8 @@ pub fn summarize_product_readiness(
         "not real fresh-machine evidence".to_string(),
         "not remote/team readiness".to_string(),
         "not GA or production-ready evidence".to_string(),
+        "not physics-informed runtime / solver / controller / scientific validation evidence"
+            .to_string(),
     ];
     let markdown = render_markdown(overall_status, &options.release_candidate, &gates);
 

@@ -170,6 +170,188 @@ async fn doctor_exposes_remote_team_inventory_and_security_gates_as_machine_read
     );
 }
 
+#[tokio::test]
+async fn doctor_exposes_read_only_system_layer_report_with_architecture_blockers() {
+    let temp_dir = tempdir().expect("temp dir");
+    let report = run_doctor(agent_llm_mm::support::config::AppConfig {
+        database_url: format!(
+            "sqlite://{}",
+            temp_dir
+                .path()
+                .join("doctor-system-layer.sqlite")
+                .to_string_lossy()
+        ),
+        ..Default::default()
+    })
+    .await
+    .expect("doctor should pass");
+
+    let system_layer_report = &report.system_layer_report;
+    assert!(system_layer_report.read_only);
+    assert!(!system_layer_report.writes_performed);
+
+    let layer_names: Vec<&str> = system_layer_report
+        .layers
+        .iter()
+        .map(|layer| layer.name.as_str())
+        .collect();
+    assert_eq!(
+        layer_names,
+        [
+            "substrate",
+            "signal",
+            "memory",
+            "policy",
+            "control_loop",
+            "actuator",
+            "interface",
+            "release_boundary",
+        ]
+    );
+
+    let allowed_statuses = [
+        "implemented",
+        "partial",
+        "simulation-only",
+        "planning-gate",
+        "not-implemented",
+    ];
+    assert!(
+        system_layer_report
+            .layers
+            .iter()
+            .all(|layer| allowed_statuses.contains(&layer.status.as_str()))
+    );
+
+    let blockers = system_layer_report.blockers.join("\n").to_lowercase();
+    for expected_blocker in [
+        "local alpha",
+        "windows parity",
+        "fresh-machine",
+        "remote/team",
+        "daemon writes",
+        "security/auth",
+        "memory layering",
+    ] {
+        assert!(
+            blockers.contains(expected_blocker),
+            "missing blocker: {expected_blocker}"
+        );
+    }
+
+    let physics_principles: Vec<&str> = system_layer_report
+        .physics_principles
+        .iter()
+        .map(|principle| principle.principle.as_str())
+        .collect();
+    assert_eq!(
+        physics_principles,
+        [
+            "causality",
+            "conservation",
+            "arrow_of_time",
+            "locality",
+            "feedback_control",
+            "entropy_increase",
+            "energy_budget",
+            "boundary_conditions",
+        ]
+    );
+    assert!(
+        system_layer_report
+            .physics_principles
+            .iter()
+            .all(|principle| principle.report_only && !principle.grants_capability)
+    );
+
+    let dependency_rule_names: Vec<&str> = system_layer_report
+        .dependency_rules
+        .iter()
+        .map(|rule| rule.name.as_str())
+        .collect();
+    assert_eq!(
+        dependency_rule_names,
+        [
+            "actuator_has_no_dashboard_or_release_dependency",
+            "write_capable_interface_requires_run_reflection_or_adr",
+            "observe_only_daemon_must_not_call_actuator",
+            "release_boundary_cannot_generate_external_evidence",
+            "memory_writes_require_migration_and_lifecycle_gates",
+        ]
+    );
+    assert!(
+        system_layer_report
+            .dependency_rules
+            .iter()
+            .all(|rule| rule.enforced_as == "read-only-boundary")
+    );
+
+    let phase_numbers: Vec<u8> = system_layer_report
+        .phase_coverage
+        .iter()
+        .map(|phase| phase.phase)
+        .collect();
+    assert_eq!(phase_numbers, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    let phase_coverage =
+        serde_json::to_string(&system_layer_report.phase_coverage).expect("phase coverage json");
+    for expected_boundary in [
+        "real fresh-machine evidence",
+        "Windows runtime parity",
+        "human release decision",
+        "provider adapter expansion",
+        "daemon-triggered writes",
+        "remote write admin",
+        "tenant isolation",
+        "installer",
+        "Beta/GA claims",
+    ] {
+        assert!(
+            phase_coverage.contains(expected_boundary),
+            "missing phase boundary: {expected_boundary}"
+        );
+    }
+
+    let non_claims = system_layer_report.non_claims.join("\n").to_lowercase();
+    for non_claim in [
+        "not a physics solver",
+        "not a constraint optimizer",
+        "not scientific validation evidence",
+        "not complete multi-layer cognition",
+        "not a remote/team product",
+    ] {
+        assert!(
+            non_claims.contains(non_claim),
+            "missing non-claim: {non_claim}"
+        );
+    }
+
+    let actuator_layer = system_layer_report
+        .layers
+        .iter()
+        .find(|layer| layer.name == "actuator")
+        .expect("actuator layer");
+    assert!(
+        actuator_layer
+            .anchors
+            .contains(&"run_reflection".to_string())
+    );
+    assert!(!actuator_layer.writes_allowed);
+
+    let serialized = serde_json::to_value(&report).expect("doctor JSON");
+    assert!(serialized.get("system_layer_report").is_some());
+    assert_eq!(
+        serialized["system_layer_report"]["layers"][5]["writes_allowed"],
+        false
+    );
+    let serialized_text = serde_json::to_string(&report).expect("doctor JSON text");
+    assert!(serialized_text.contains("\"system_layer_report\""));
+    assert!(serialized_text.contains("\"physics_principles\""));
+    assert!(serialized_text.contains("\"dependency_rules\""));
+    assert!(serialized_text.contains("\"phase_coverage\""));
+    assert!(!serialized_text.contains("\"remote_writes_allowed\":true"));
+    assert!(!serialized_text.contains("\"daemon_writes_allowed\":true"));
+}
+
 #[test]
 fn memory_layer_projection_is_read_only_and_keeps_self_model_durable_writes_blocked() {
     let projection = build_memory_layer_projection(MemoryLayerProjectionInput {
