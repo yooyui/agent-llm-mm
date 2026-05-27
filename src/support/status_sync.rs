@@ -330,14 +330,23 @@ fn clean_markdown_cell(cell: &str) -> String {
 fn is_known_reality_status(status: &str) -> bool {
     matches!(
         status,
-        "implemented" | "partial" | "simulation-only" | "planning-gate" | "not-implemented"
+        "implemented"
+            | "implemented-unmerged"
+            | "partial"
+            | "simulation-only"
+            | "planning-gate"
+            | "not-implemented"
     )
 }
 
 fn is_incomplete_reality_status(status: &str) -> bool {
     matches!(
         status,
-        "partial" | "simulation-only" | "planning-gate" | "not-implemented"
+        "implemented-unmerged"
+            | "partial"
+            | "simulation-only"
+            | "planning-gate"
+            | "not-implemented"
     )
 }
 

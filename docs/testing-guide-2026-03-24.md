@@ -59,7 +59,7 @@
 - `status_sync`: 5 passed
 - `support_bundle`: 32 passed
 
-合计：291 个测试通过。
+合计：292 个测试通过。
 
 ---
 

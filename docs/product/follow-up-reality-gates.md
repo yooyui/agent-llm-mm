@@ -25,6 +25,8 @@ Current baseline:
 | `planning-gate` | Boundary or design docs exist, but no product implementation is present. |
 | `not-implemented` | The module is still future work. |
 
+For current-branch plan/status sync, `implemented-unmerged` is treated as incomplete until the work lands in the checked-out branch.
+
 ## Follow-Up Modules
 
 | Priority | Module | Current Status | Assumption / Gap | Required Follow-Up | Evidence To Accept |
@@ -103,13 +105,13 @@ declarations in:
 - `docs/progress-tracker.md`
 - `docs/product/follow-up-reality-gates.md`
 
-Current branch `cargo test` total declaration: 291 tests.
+Current branch `cargo test` total declaration: 292 tests.
 
 It also reads
 `docs/superpowers/plans/2026-05-24-p1-p2-p3-product-completion-plan.md` and
 this document, then fails if a checked plan item has no matching reality-gate
-row or if the matching row is still `partial`, `simulation-only`,
-`planning-gate`, or `not-implemented`.
+row or if the matching row is still `implemented-unmerged`, `partial`,
+`simulation-only`, `planning-gate`, or `not-implemented`.
 
 This check protects the documented cargo-test total and the current
 P1/P2/P3 plan-to-reality status alignment from drifting. It does not certify

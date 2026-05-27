@@ -95,6 +95,27 @@ fn reality_gate_report_flags_completed_plan_without_matching_reality_row() {
 }
 
 #[test]
+fn reality_gate_report_flags_implemented_unmerged_as_still_incomplete_for_current_branch() {
+    let plan = "- [x] **P3.4 Product wording guard**\n";
+    let gates = "| `P3` | Product wording guard | `implemented-unmerged` | isolated branch only | keep blocked | `cargo test --test product_readiness -v` |\n";
+
+    let report = RealityGateReport::from_contents(plan, gates);
+
+    assert!(!report.is_in_sync());
+    assert_eq!(report.contradictions.len(), 1);
+    assert_eq!(report.contradictions[0].workstream, "Product wording guard");
+    assert_eq!(
+        report.contradictions[0].reality_status,
+        "implemented-unmerged"
+    );
+    assert!(
+        report
+            .format_contradictions()
+            .contains("plan marks implemented but reality gate is implemented-unmerged")
+    );
+}
+
+#[test]
 fn reality_gate_report_allows_completed_plan_when_gate_is_implemented() {
     let plan = "- [x] **P1.1 Product readiness gate checker**\n";
     let gates = "| `P1` | Product readiness gate checker | `implemented` | code tests docs aligned | keep using checker | `cargo test --test product_readiness -v` |\n";

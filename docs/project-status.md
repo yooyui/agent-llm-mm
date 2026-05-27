@@ -176,7 +176,7 @@ Implementation notes:
 
 - Product readiness checker 已提供候选级本地只读门禁汇总，会把真实 fresh-machine、Windows parity、release decision、remote/team、安全/auth 和产品措辞缺口保持为 blocked
 - Release decision artifact 生成器已能写 source-only decision 模板，并在 evidence summary 仍为 `in_progress` 时拒绝 approved 决策
-- `status-sync-check` 已从测试总数漂移扩展到 plan/reality gate 矛盾检测；勾选完成的计划项如果对应 reality gate 仍是 `partial` / `simulation-only` / `planning-gate` / `not-implemented` 会失败
+- `status-sync-check` 已从测试总数漂移扩展到 plan/reality gate 矛盾检测；勾选完成的计划项如果对应 reality gate 仍是 `implemented-unmerged` / `partial` / `simulation-only` / `planning-gate` / `not-implemented` 会失败
 - Support bundle manifest 已增加非 manifest 文件的 SHA-256 integrity 列表；daemon observe-only diagnostics 已输出 write/remote blockers
 - `decide_with_snapshot` response envelope 已升级为 `protocol_version = 2`，新增 `decision_id`、requested/selected action、bounded local confidence metadata、policy checks 和 non-claims，同时保留旧 `blocked` / `decision` 字段
 - Evidence relation read model 已能只读展示 trigger window 内 selected evidence、window rank 和 no-widening policy；它不拉取 trigger window 外证据
@@ -302,7 +302,7 @@ Implementation notes:
 - `sqlite_store`: 20
 - `status_sync`: 6
 - `support_bundle`: 32
-- 合计：291 个测试通过
+- 合计：292 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`
