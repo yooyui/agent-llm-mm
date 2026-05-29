@@ -212,6 +212,44 @@ async fn support_bundle_generates_redacted_local_diagnostics() {
 }
 
 #[tokio::test]
+async fn support_bundle_manifest_marks_bundle_as_local_artifact_not_support_channel() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: None,
+        operation_correlation_id: None,
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let manifest = read_json(output_dir.join("manifest.json"));
+    assert_eq!(manifest["artifact_scope"], "local-only-diagnostic-artifact");
+    assert_eq!(manifest["production_support_channel"], false);
+    assert_eq!(manifest["remote_support_surface"], false);
+
+    let rendered = serde_json::to_string_pretty(&manifest).expect("json text");
+    let lower_rendered = rendered.to_lowercase();
+    for forbidden in [
+        "upload_url",
+        "ticket",
+        "support channel",
+        "team support",
+        "remote support",
+        "remote management",
+    ] {
+        assert!(
+            !lower_rendered.contains(forbidden),
+            "manifest claimed a remote or production support surface: {forbidden}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn support_bundle_does_not_create_or_bootstrap_missing_database() {
     let temp_dir = tempdir().expect("temp dir");
     let database_path = temp_dir.path().join("missing.sqlite");
@@ -821,6 +859,60 @@ async fn support_bundle_skips_unquoted_provider_payload_fields() {
         assert!(
             !rendered.contains(forbidden),
             "local log excerpts leaked provider payload field: {forbidden}"
+        );
+    }
+    assert!(rendered.contains("INFO startup ok"));
+    assert!(rendered.contains("INFO safe summary retained"));
+}
+
+#[tokio::test]
+async fn support_bundle_skips_raw_provider_payload_and_diagnostic_fields() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_dir = temp_dir.path().join("bundle");
+    let log_path = temp_dir.path().join("raw-provider-diagnostics.log");
+    fs::write(
+        &log_path,
+        "INFO startup ok\n\
+         INFO provider_payload=raw provider prompt text should not enter\n\
+         INFO provider_request_body=raw request body should not enter\n\
+         INFO provider_response_body=raw response body should not enter\n\
+         INFO provider_diagnostic=raw provider diagnostic should not enter\n\
+         INFO raw_diagnostics=raw diagnostic text should not enter\n\
+         INFO diagnostic_summary_json=raw diagnostic json should not enter\n\
+         INFO safe summary retained\n",
+    )
+    .expect("log file");
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig::default(),
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: Some(log_path),
+        operation_correlation_id: None,
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let log_excerpts = read_json(output_dir.join("local-log-excerpts.json"));
+    let rendered = serde_json::to_string_pretty(&log_excerpts).expect("json text");
+    for forbidden in [
+        "raw provider prompt text should not enter",
+        "raw request body should not enter",
+        "raw response body should not enter",
+        "raw provider diagnostic should not enter",
+        "raw diagnostic text should not enter",
+        "raw diagnostic json should not enter",
+        "provider_payload=",
+        "provider_request_body=",
+        "provider_response_body=",
+        "provider_diagnostic=",
+        "raw_diagnostics=",
+        "diagnostic_summary_json=",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "local log excerpts leaked raw provider diagnostic field: {forbidden}"
         );
     }
     assert!(rendered.contains("INFO startup ok"));

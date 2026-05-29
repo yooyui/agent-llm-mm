@@ -76,6 +76,7 @@ fn episode_summary_projection_is_read_only_local_metadata_over_episode_events() 
         ],
         objective: Some("stabilize local evidence gate".to_string()),
         outcome: Some("blocked remote claims until auth gates exist".to_string()),
+        lesson: None,
         linked_evidence_ids: vec!["evt-action".to_string(), "evt-outcome".to_string()],
     })
     .expect("episode event projection should build");
@@ -90,6 +91,49 @@ fn episode_summary_projection_is_read_only_local_metadata_over_episode_events() 
         ["evt-action", "evt-outcome"]
     );
     assert_eq!(projection.event_count, 3);
+    assert!(!projection.writes_performed);
+    assert_eq!(projection.durable_self_model_write_path, "run_reflection");
+    assert_eq!(
+        projection.identity_or_commitment_updates,
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn episode_summary_projection_exposes_lesson_with_goal_outcome_and_evidence() {
+    let projection = build_episode_summary_projection(EpisodeProjectionInput {
+        episode_reference: "episode:task-lesson".to_string(),
+        episode_event_ids: vec![
+            "evt-goal".to_string(),
+            "evt-outcome".to_string(),
+            "evt-lesson".to_string(),
+        ],
+        objective: Some("keep phase 4 memory work read-only".to_string()),
+        outcome: Some("projected richer episode semantics without new writes".to_string()),
+        lesson: Some(
+            "Bounded lessons stay inspectable only when linked evidence remains visible"
+                .to_string(),
+        ),
+        linked_evidence_ids: vec!["evt-outcome".to_string(), "evt-lesson".to_string()],
+    })
+    .expect("lesson projection should build from episode metadata");
+
+    assert_eq!(
+        projection.objective.as_deref(),
+        Some("keep phase 4 memory work read-only")
+    );
+    assert_eq!(
+        projection.outcome.as_deref(),
+        Some("projected richer episode semantics without new writes")
+    );
+    assert_eq!(
+        projection.lesson.as_deref(),
+        Some("Bounded lessons stay inspectable only when linked evidence remains visible")
+    );
+    assert_eq!(
+        projection.linked_evidence_ids,
+        ["evt-outcome", "evt-lesson"]
+    );
     assert!(!projection.writes_performed);
     assert_eq!(projection.durable_self_model_write_path, "run_reflection");
     assert_eq!(

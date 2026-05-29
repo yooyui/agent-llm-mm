@@ -86,6 +86,44 @@ fn missing_windows_parity_is_not_verified() {
 }
 
 #[test]
+fn local_alpha_summary_exposes_machine_readable_external_and_human_blockers() {
+    let temp_dir = tempdir().expect("temp dir");
+    write_first_run_summary(temp_dir.path(), false);
+    write_product_smoke_latest(temp_dir.path());
+    write_support_bundle(temp_dir.path(), &allowed_support_bundle_files());
+
+    let summary = summarize_local_alpha_evidence(LocalAlphaEvidenceOptions {
+        evidence_root: temp_dir.path().to_path_buf(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("summary should be generated");
+    let summary_json = summary_json(&summary);
+
+    assert_blocker(
+        &summary_json,
+        "external_blockers",
+        "fresh_machine",
+        "blocked",
+        "real fresh-machine evidence is false",
+    );
+    assert_blocker(
+        &summary_json,
+        "external_blockers",
+        "windows_parity",
+        "not_verified",
+        "missing Windows runtime parity evidence",
+    );
+    assert_blocker(
+        &summary_json,
+        "human_blockers",
+        "release_decision",
+        "required",
+        "human release decision is required",
+    );
+}
+
+#[test]
 fn incomplete_first_run_summary_does_not_satisfy_read_only_boundary_gate() {
     let temp_dir = tempdir().expect("temp dir");
     let output_dir = temp_dir.path().join("first-run-bootstrap");
@@ -471,8 +509,29 @@ fn release_soak_script_captures_local_evidence_without_remote_or_write_claims() 
     assert!(script.contains("shasum -a 256"));
     assert!(script.contains("sha256sum"));
     assert!(script.contains("release-soak-summary.md"));
+    assert!(script.contains("compatibility-matrix.json"));
+    assert!(script.contains("release-boundaries.json"));
+    assert!(script.contains("redacted_config_path"));
+    assert!(script.contains("<local-path>/<redacted-name>"));
+    assert!(script.contains("config_path_shape"));
+    assert!(script.contains("scanning release evidence for secret-like markers"));
+    assert!(script.contains(r#"local_platform="macOS""#));
+    assert!(script.contains(r#""platform": "${local_platform}""#));
+    assert!(script.contains(r#""platform": "Windows""#));
+    assert!(script.contains(r#""result": "not_checked""#));
+    assert!(script.contains(r#""fresh_machine""#));
+    assert!(script.contains(r#""daemon_writes""#));
+    assert!(script.contains(r#""status": "blocked""#));
     assert!(script.contains("git rev-parse HEAD"));
     assert!(script.contains("git status --short --branch"));
+    assert!(
+        !script.contains("- config_path: `${resolved_config_path:-default config}`"),
+        "release soak summary must not embed raw resolved config paths"
+    );
+    assert!(
+        !script.contains("quote_command \"$@\" >> \"${log_path}\""),
+        "release soak command logs must not persist raw argv with config paths"
+    );
     assert!(
         !script.contains(" ssh "),
         "release soak script must not call ssh"
@@ -538,6 +597,27 @@ fn assert_gate(summary: &Value, name: &str, status: &str, reason_contains: &str)
     assert!(
         reason.contains(reason_contains),
         "gate {name} reason should contain {reason_contains:?}; got {reason:?}"
+    );
+}
+
+fn assert_blocker(
+    summary: &Value,
+    field: &str,
+    subject: &str,
+    status: &str,
+    reason_contains: &str,
+) {
+    let blockers = summary[field].as_array().expect("blockers array");
+    let blocker = blockers
+        .iter()
+        .find(|blocker| blocker["subject"] == subject)
+        .unwrap_or_else(|| panic!("missing blocker {subject} in {field}; blockers={blockers:?}"));
+
+    assert_eq!(blocker["status"], status);
+    let reason = blocker["reason"].as_str().unwrap_or_default();
+    assert!(
+        reason.contains(reason_contains),
+        "blocker {subject} reason should contain {reason_contains:?}; got {reason:?}"
     );
 }
 

@@ -337,9 +337,14 @@ Expected inputs under `--evidence-root`:
 Required boundary:
 
 - JSON output must include `overall_status`, `local_only`, `summary_boundary`,
-  and `gates`
+  `gates`, `external_blockers`, `human_blockers`, and
+  `unimplemented_capability_blockers`
 - every gate must include `name`, `status`, and either `evidence_path` or a
   concrete `reason`
+- blocker arrays must remain machine-readable and must not turn missing
+  external evidence into local evidence; fresh-machine and Windows blockers
+  stay explicit until real evidence is recorded, and the human release decision
+  remains a separate blocker
 - missing required artifacts keep the relevant gate `open`
 - missing Windows runner / Windows machine evidence keeps Windows parity
   `not_verified`
@@ -422,19 +427,29 @@ The script writes to `target/reports/releases/<candidate-name>/` and runs:
 - `scripts/product-smoke-local.sh [config_path]`
 - `scripts/first-run-bootstrap-smoke-local.sh target/first-run-bootstrap-smoke/local-alpha-gate`
 - `scripts/generate-support-bundle.sh target/support-bundles/local-alpha-gate [config_path]`
-- support-bundle secret scan and raw artifact scan
+- support-bundle secret scan, support-bundle raw artifact scan, and release
+  evidence secret scan after command logs and summaries are redacted
 - support-bundle and product-smoke SHA-256 manifest generation
 - `scripts/local-alpha-evidence-summary.sh` into the release evidence directory
+- `compatibility-matrix.json` and `release-boundaries.json` with local checked
+  rows and explicit blocked / not-checked rows for external and unimplemented
+  capabilities
 
 Required boundary:
 
 - candidate names must be path-safe and cannot contain `..`
 - the evidence directory must be absent or empty before the run
 - command logs and exit codes must be recorded in `commands/` and
-  `command-summary.tsv`
+  `command-summary.tsv`, with config paths recorded only as redacted shapes
 - `support-bundle-sha256.txt` and `product-smoke-latest-sha256.txt` must be
   non-empty so the candidate evidence can be tied back to the generated local
   artifacts
+- `compatibility-matrix.json` may record the current local shell wrapper path as
+  checked by the soak, but Windows must remain `not_checked` unless a Windows
+  runner or Windows machine generated separate evidence
+- `release-boundaries.json` must keep fresh-machine, Windows parity, human
+  release decision, remote/team, security/auth, daemon-write, and packaging
+  blockers explicit
 - support bundle scans must not report unredacted secret-like markers or raw
   `.sqlite`, `.toml`, or `.log` files
 - the generated Local Alpha evidence summary remains a status summary; if it

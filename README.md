@@ -16,16 +16,16 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
-- 最新 fresh 验证：`2026-05-28`
-  - `cargo test` 全量通过，共 295 个测试
+- 最新 fresh 验证：`2026-05-29`
+  - `cargo test` 全量通过，共 303 个测试
   - `doctor` 预检返回 `status = ok`
   - `status-sync-check` 已加入本地只读文档漂移检查，用于对齐当前测试总数声明，并阻断已勾选计划项与 reality gate 状态不一致的完成声明
   - Local Alpha product smoke 通过 staging / promote 流程刷新本地证据链
   - Local Alpha support bundle 生成本地脱敏诊断 JSON，未包含 `.sqlite` 或 `.toml` 文件
   - Local first-run bootstrap smoke 已加入脚本入口，用于模拟 `bootstrap-local -> doctor` 的本地首启证据
   - Local Alpha evidence summary 已加入本地只读 gate 状态汇总入口；它不运行 product smoke、不启动服务、不上传文件、不认证 Local Alpha 完成
-  - Product readiness checker 已加入候选级本地门禁汇总，会把真实 fresh-machine、Windows parity、release decision、remote/team、安全/auth 和产品措辞 gate 缺口保持为 blocked
-  - Local release soak runner 已加入本地 release evidence 入口；它生成 candidate-specific evidence directory，不生成 Windows runner、真实 fresh-machine、remote/team 或发布认证证据
+  - Product readiness checker 已加入候选级本地门禁汇总，会把真实 fresh-machine、Windows parity、release decision、release engineering、remote/team、安全/auth、daemon writes 和产品措辞 gate 缺口保持为 blocked
+  - Local release soak runner 已加入本地 release evidence 入口；它生成 candidate-specific evidence directory、`compatibility-matrix.json` 和 `release-boundaries.json`，并对发布证据日志做路径形状化和敏感标记扫描；它不生成 Windows runner、真实 fresh-machine、remote/team、daemon writes 或发布认证证据
   - SQLite backup / restore 本地脚本门禁已覆盖备份恢复 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份和拒绝 `..` restore target
 
 ## 先看这些
@@ -121,7 +121,7 @@
 - product readiness checker
   - 提供候选级本地只读 gate 入口：`./scripts/product-readiness-check.sh <release-candidate> [evidence_root]`
   - 读取 Local Alpha evidence summary、release decision artifact、remote/team capability inventory、security/auth gates 和 product wording guard
-  - `real_fresh_machine`、`windows_parity`、`release_decision`、`remote_team`、`security_auth` 或 blocked wording 缺失时保持 `ready = false`
+  - `real_fresh_machine`、`windows_parity`、`release_decision`、`remote_team`、`security_auth`、`daemon_writes` 或 blocked wording 缺失时保持 `ready = false`
   - 不运行 smoke、不启动服务、不上传文件、不认证 Local Alpha、Beta、remote/team 或 GA
 - local release decision artifact
   - 提供 source-only release decision 模板/生成器：`./scripts/release-decision-local.sh <candidate-name> <evidence-root>`
@@ -134,8 +134,8 @@
   - 刷新后若 summary 仍为 `in_progress` / `not_verified`，应保留对应 open gate，而不是改写成 Local Alpha 完成声明
 - local release soak runner
   - 提供本地 release evidence 入口：`./scripts/release-soak-local.sh <candidate-name> [config_path]`
-  - 写入 `target/reports/releases/<candidate-name>/`，记录 git HEAD / status、命令日志、doctor、dashboard HTTP 回归、product smoke、first-run simulation、support bundle、secret / artifact scan、support bundle / product smoke SHA-256 manifest 和 Local Alpha evidence summary
-  - 只生成本地候选证据，不创建 source tag、binary package、installer、service manager、auto-updater、Windows runner、真实 fresh-machine、remote/team、上传或发布认证证据
+  - 写入 `target/reports/releases/<candidate-name>/`，记录 git HEAD / status、redacted command logs、doctor、dashboard HTTP 回归、product smoke、first-run simulation、support bundle、secret / artifact scan、support bundle / product smoke SHA-256 manifest 和 Local Alpha evidence summary
+  - 只生成本地候选证据，不创建 source tag、binary package、installer、service manager、auto-updater、Windows runner、真实 fresh-machine、remote/team、daemon writes、上传或发布认证证据
 - local first-run bootstrap helper / smoke
   - `./scripts/agent-llm-mm.sh bootstrap-local [config_path]` 和 PowerShell 等价入口可从 dev 示例生成本机配置模板
   - 默认目标是 `agent-llm-mm.local.toml`，也可显式传入目标路径

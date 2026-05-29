@@ -49,6 +49,12 @@ fn product_readiness_blocks_simulation_windows_and_missing_release_decision() {
     );
     assert_gate(
         &summary,
+        "release_engineering",
+        "blocked",
+        "missing source-only release engineering artifacts",
+    );
+    assert_gate(
+        &summary,
         "product_wording",
         "satisfied",
         "candidate wording contains no blocked product claims",
@@ -76,6 +82,50 @@ fn product_readiness_blocks_simulation_windows_and_missing_release_decision() {
                 .to_string()
         )
     );
+
+    let summary_json = serde_json::to_value(&summary).expect("summary serializes");
+    assert_structured_blocker(
+        &summary_json,
+        "external_blockers",
+        "fresh_machine",
+        "blocked",
+        "real fresh-machine evidence is false",
+    );
+    assert_structured_blocker(
+        &summary_json,
+        "external_blockers",
+        "windows_parity",
+        "blocked",
+        "missing Windows runtime parity evidence",
+    );
+    assert_structured_blocker(
+        &summary_json,
+        "human_blockers",
+        "release_decision",
+        "blocked",
+        "missing release decision summary",
+    );
+    assert_structured_blocker(
+        &summary_json,
+        "unimplemented_capability_blockers",
+        "remote_team",
+        "blocked",
+        "remote/team capability inventory keeps remote and team features blocked",
+    );
+    assert_structured_blocker(
+        &summary_json,
+        "unimplemented_capability_blockers",
+        "security_auth",
+        "blocked",
+        "blocked security gates",
+    );
+    assert_structured_blocker(
+        &summary_json,
+        "unimplemented_capability_blockers",
+        "daemon_writes",
+        "blocked",
+        "daemon write capability remains disabled",
+    );
 }
 
 #[test]
@@ -99,6 +149,75 @@ fn product_readiness_blocks_overstated_release_candidate_wording() {
         "product_wording",
         "blocked",
         "blocked product claims",
+    );
+}
+
+#[test]
+fn product_readiness_accepts_source_only_release_engineering_artifacts() {
+    let temp_dir = tempdir().expect("temp dir");
+    let release_candidate = "local-alpha-20260524.1-rc.1";
+    write_satisfied_product_smoke(temp_dir.path());
+    write_first_run_simulation(temp_dir.path());
+    write_support_bundle(temp_dir.path());
+    write_release_engineering_artifacts(temp_dir.path(), release_candidate);
+
+    let summary = summarize_product_readiness(ProductReadinessOptions {
+        evidence_root: temp_dir.path().to_path_buf(),
+        release_candidate: release_candidate.to_string(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("product readiness summary should be generated");
+
+    assert_gate(
+        &summary,
+        "release_engineering",
+        "satisfied",
+        "source-only release engineering artifacts are present",
+    );
+    assert!(
+        summary
+            .unimplemented_capability_blockers
+            .iter()
+            .any(|blocker| blocker.subject == "release_packaging"),
+        "release packaging must remain blocked even when source-only artifacts exist"
+    );
+}
+
+#[test]
+fn product_readiness_rejects_incomplete_release_boundary_blockers() {
+    let temp_dir = tempdir().expect("temp dir");
+    let release_candidate = "local-alpha-20260524.1-rc.1";
+    write_satisfied_product_smoke(temp_dir.path());
+    write_first_run_simulation(temp_dir.path());
+    write_support_bundle(temp_dir.path());
+    write_incomplete_release_engineering_artifacts(temp_dir.path(), release_candidate);
+
+    let summary = summarize_product_readiness(ProductReadinessOptions {
+        evidence_root: temp_dir.path().to_path_buf(),
+        release_candidate: release_candidate.to_string(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("product readiness summary should be generated");
+
+    assert_gate(
+        &summary,
+        "release_engineering",
+        "blocked",
+        "remote/team blocker is missing",
+    );
+    assert_gate(
+        &summary,
+        "release_engineering",
+        "blocked",
+        "security/auth blocker is missing",
+    );
+    assert_gate(
+        &summary,
+        "release_engineering",
+        "blocked",
+        "daemon write blocker is missing",
     );
 }
 
@@ -271,6 +390,27 @@ fn assert_gate(
     );
 }
 
+fn assert_structured_blocker(
+    summary: &serde_json::Value,
+    field: &str,
+    subject: &str,
+    status: &str,
+    reason_contains: &str,
+) {
+    let blockers = summary[field].as_array().expect("blockers array");
+    let blocker = blockers
+        .iter()
+        .find(|blocker| blocker["subject"] == subject)
+        .unwrap_or_else(|| panic!("missing blocker {subject} in {field}; blockers={blockers:?}"));
+
+    assert_eq!(blocker["status"], status);
+    let reason = blocker["reason"].as_str().unwrap_or_default();
+    assert!(
+        reason.contains(reason_contains),
+        "blocker {subject} reason should contain {reason_contains:?}; got {reason:?}"
+    );
+}
+
 fn write_satisfied_product_smoke(root: &std::path::Path) {
     let output_dir = root.join("target/reports/self-revision-demo/latest");
     fs::create_dir_all(&output_dir).expect("create product smoke dir");
@@ -358,4 +498,133 @@ fn write_support_bundle(root: &std::path::Path) {
         )
         .expect("write support bundle file");
     }
+}
+
+fn write_release_engineering_artifacts(root: &std::path::Path, candidate: &str) {
+    let output_dir = root.join("target/reports/releases").join(candidate);
+    fs::create_dir_all(&output_dir).expect("create release engineering dir");
+    fs::write(
+        output_dir.join("compatibility-matrix.json"),
+        serde_json::to_vec_pretty(&json!({
+            "kind": "release_compatibility_matrix",
+            "candidate": candidate,
+            "local_only": true,
+            "rows": [
+                {
+                    "platform": "macOS",
+                    "result": "passed"
+                },
+                {
+                    "platform": "Windows",
+                    "result": "not_checked",
+                    "reason": "release-soak-local.sh does not create Windows runner evidence"
+                }
+            ]
+        }))
+        .expect("json"),
+    )
+    .expect("write compatibility matrix");
+    fs::write(
+        output_dir.join("release-boundaries.json"),
+        serde_json::to_vec_pretty(&json!({
+            "kind": "release_boundaries",
+            "candidate": candidate,
+            "local_only": true,
+            "product_boundary": "local Rust MCP stdio memory MVP / technical demo entering productization",
+            "external_blockers": [
+                {
+                    "subject": "fresh_machine",
+                    "status": "blocked"
+                },
+                {
+                    "subject": "windows_parity",
+                    "status": "not_checked"
+                }
+            ],
+            "human_blockers": [
+                {
+                    "subject": "release_decision",
+                    "status": "required"
+                }
+            ],
+            "unimplemented_capability_blockers": [
+                {
+                    "subject": "remote_team",
+                    "status": "blocked"
+                },
+                {
+                    "subject": "security_auth",
+                    "status": "blocked"
+                },
+                {
+                    "subject": "daemon_writes",
+                    "status": "blocked"
+                },
+                {
+                    "subject": "release_packaging",
+                    "status": "blocked"
+                }
+            ]
+        }))
+        .expect("json"),
+    )
+    .expect("write release boundaries");
+}
+
+fn write_incomplete_release_engineering_artifacts(root: &std::path::Path, candidate: &str) {
+    let output_dir = root.join("target/reports/releases").join(candidate);
+    fs::create_dir_all(&output_dir).expect("create release engineering dir");
+    fs::write(
+        output_dir.join("compatibility-matrix.json"),
+        serde_json::to_vec_pretty(&json!({
+            "kind": "release_compatibility_matrix",
+            "candidate": candidate,
+            "local_only": true,
+            "rows": [
+                {
+                    "platform": "macOS",
+                    "result": "passed"
+                },
+                {
+                    "platform": "Windows",
+                    "result": "not_checked"
+                }
+            ]
+        }))
+        .expect("json"),
+    )
+    .expect("write compatibility matrix");
+    fs::write(
+        output_dir.join("release-boundaries.json"),
+        serde_json::to_vec_pretty(&json!({
+            "kind": "release_boundaries",
+            "candidate": candidate,
+            "local_only": true,
+            "product_boundary": "local Rust MCP stdio memory MVP / technical demo entering productization",
+            "external_blockers": [
+                {
+                    "subject": "fresh_machine",
+                    "status": "blocked"
+                },
+                {
+                    "subject": "windows_parity",
+                    "status": "not_checked"
+                }
+            ],
+            "human_blockers": [
+                {
+                    "subject": "release_decision",
+                    "status": "required"
+                }
+            ],
+            "unimplemented_capability_blockers": [
+                {
+                    "subject": "release_packaging",
+                    "status": "blocked"
+                }
+            ]
+        }))
+        .expect("json"),
+    )
+    .expect("write release boundaries");
 }

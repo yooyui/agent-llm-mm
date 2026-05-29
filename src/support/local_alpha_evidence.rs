@@ -47,12 +47,23 @@ pub struct LocalAlphaEvidenceSummary {
     pub local_only: bool,
     pub summary_boundary: &'static str,
     pub gates: Vec<LocalAlphaGateSummary>,
+    pub external_blockers: Vec<ReleaseBlocker>,
+    pub human_blockers: Vec<ReleaseBlocker>,
+    pub unimplemented_capability_blockers: Vec<ReleaseBlocker>,
     pub markdown: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct LocalAlphaGateSummary {
     pub name: &'static str,
+    pub status: &'static str,
+    pub evidence_path: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ReleaseBlocker {
+    pub subject: &'static str,
     pub status: &'static str,
     pub evidence_path: Option<String>,
     pub reason: String,
@@ -91,6 +102,9 @@ pub fn summarize_local_alpha_evidence(
         boundary_guard_gate(&evidence_root),
     ];
     let overall_status = overall_status(&gates);
+    let external_blockers = external_blockers(&gates);
+    let human_blockers = human_blockers();
+    let unimplemented_capability_blockers = unimplemented_capability_blockers();
     let generated_at = Utc::now().to_rfc3339();
     let markdown = render_markdown(overall_status, &gates);
 
@@ -101,6 +115,9 @@ pub fn summarize_local_alpha_evidence(
         local_only: true,
         summary_boundary: "read-only gate status summary; not automatic certification; run_reflection remains the only durable write path",
         gates,
+        external_blockers,
+        human_blockers,
+        unimplemented_capability_blockers,
         markdown,
     };
 
@@ -548,6 +565,63 @@ fn overall_status(gates: &[LocalAlphaGateSummary]) -> &'static str {
     }
 }
 
+fn external_blockers(gates: &[LocalAlphaGateSummary]) -> Vec<ReleaseBlocker> {
+    gates
+        .iter()
+        .filter_map(|gate| match gate.name {
+            "first_run_bootstrap" if gate.status != "satisfied" => Some(blocker(
+                "fresh_machine",
+                if gate.reason.contains("real fresh-machine evidence is false") {
+                    "blocked"
+                } else {
+                    gate.status
+                },
+                gate.evidence_path.clone(),
+                gate.reason.clone(),
+            )),
+            "windows_parity" if gate.status != "satisfied" => Some(blocker(
+                "windows_parity",
+                gate.status,
+                gate.evidence_path.clone(),
+                gate.reason.clone(),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+fn human_blockers() -> Vec<ReleaseBlocker> {
+    vec![blocker(
+        "release_decision",
+        "required",
+        None,
+        "human release decision is required before Local Alpha certification",
+    )]
+}
+
+fn unimplemented_capability_blockers() -> Vec<ReleaseBlocker> {
+    vec![
+        blocker(
+            "remote_team",
+            "blocked",
+            None,
+            "remote/team capability remains unimplemented and blocked by auth, audit, isolation, and rollback gates",
+        ),
+        blocker(
+            "security_auth",
+            "blocked",
+            None,
+            "auth, authorization, audit, rate limit, tenant isolation, and rollback gates are not implemented for remote writes",
+        ),
+        blocker(
+            "daemon_writes",
+            "blocked",
+            None,
+            "daemon write capability is unimplemented; run_reflection remains the only durable write path",
+        ),
+    ]
+}
+
 fn render_markdown(overall_status: &str, gates: &[LocalAlphaGateSummary]) -> String {
     let mut output = String::new();
     output.push_str("# Local Alpha Evidence Summary\n\n");
@@ -567,6 +641,20 @@ fn render_markdown(overall_status: &str, gates: &[LocalAlphaGateSummary]) -> Str
         ));
     }
     output
+}
+
+fn blocker(
+    subject: &'static str,
+    status: &'static str,
+    evidence_path: Option<String>,
+    reason: impl Into<String>,
+) -> ReleaseBlocker {
+    ReleaseBlocker {
+        subject,
+        status,
+        evidence_path,
+        reason: reason.into(),
+    }
 }
 
 fn gate(

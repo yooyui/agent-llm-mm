@@ -10,6 +10,12 @@ Local Alpha remains a local MCP memory service plus governed self-revision. It
 is not a complete multi-layer cognitive architecture, not a production
 self-governing system, and not a remote/team memory product.
 
+Current implemented slice: the episode summary read model can project
+objective, outcome, `lesson`, and linked evidence ids together. This is
+projection-only local metadata over existing episode events. It does not add a
+durable episode table, schema migration, procedural memory, slow variables,
+semantic memory, lifecycle policy, or durable self-model write path.
+
 ## Product Wording Boundary
 
 Use conservative stage wording until the matching gates pass:
@@ -45,11 +51,11 @@ foundation contracts are stable and tested:
 | Layer | Future Role | Local Alpha Status | First Gate |
 | --- | --- | --- | --- |
 | Working memory | Short-lived task context, active goals, temporary constraints, and current evidence handles | Not implemented as a distinct layer | Define expiry, visibility, and no-durable-commit rules |
-| Episodic memory | Structured records of tasks, outcomes, lessons, and linked evidence | Current events/reflections are partial inputs only | Add richer episode semantics behind tests |
+| Episodic memory | Structured records of tasks, outcomes, lessons, and linked evidence | First read-only projection slice exposes objective, outcome, lesson, and linked evidence ids; richer durable episode records remain incomplete | Add richer episode semantics behind tests without adding ungoverned durable writes |
 | Semantic memory | Stable distilled concepts, project facts, domain rules, and cross-episode summaries | Not implemented as a distinct layer | Prove evidence-backed extraction and contradiction handling |
 | Procedural memory | Reusable workflows, policies, checklists, and operational playbooks | Current docs and scripts are human-facing, not a runtime layer | Define approval, versioning, and rollback rules |
 | Slow variables | Long-horizon preferences, calibrated thresholds, trust levels, and policy weights | Not implemented | Define governance, review cadence, and bounded update paths |
-| Self-model layering | Explicit model of agent capabilities, limits, commitments, and known failure modes | Current self-revision diagnostics are partial evidence only | Define read-only projection before any durable self-model writes |
+| Self-model layering | Explicit model of agent capabilities, limits, commitments, and known failure modes | Current self-revision diagnostics are partial evidence only; durable self-model writes remain blocked outside `run_reflection` | Define read-only projection before any durable self-model writes |
 
 ## Phased Direction
 
@@ -71,9 +77,12 @@ tested without relying on demo-only assumptions.
 Goal: turn task history into structured episodes without introducing a full
 semantic or self-model layer.
 
-The first implementable slice is `richer episodes semantics`.
+The first implemented local-safe slice is the read-only lesson projection in
+the existing episode summary read model. It allows objective, outcome,
+`lesson`, and linked evidence ids to be inspected together without creating a
+new durable write path. The complete richer episode record remains future work.
 
-Minimum episode fields:
+Minimum future episode fields:
 
 - `goal`: what the task attempted to accomplish.
 - `outcome`: what actually happened, including success, partial success,
@@ -83,7 +92,7 @@ Minimum episode fields:
 - `snapshot_projection_test`: a deterministic test proving the episode appears
   in the expected snapshot projection without corrupting existing projections.
 
-Acceptance expectations:
+Acceptance expectations for a complete durable episode layer:
 
 - An episode can be written and read without changing identity or commitments.
 - Episode summaries preserve linked evidence ids rather than copying raw
@@ -93,8 +102,11 @@ Acceptance expectations:
 - The feature remains local-only and does not imply semantic memory,
   procedural memory, slow variables, or self-model writes are implemented.
 
-Exit: richer episode records are test-covered, migration-covered, and projected
-read-only before any later layer consumes them.
+Current slice exit: the projection is test-covered and read-only. It has no
+migration because no durable table or storage contract changed.
+
+Full phase exit: richer episode records are test-covered, migration-covered, and
+projected read-only before any later layer consumes them.
 
 ### Phase 2: Semantic Memory Candidate
 
@@ -157,6 +169,9 @@ broader autonomy claim is made.
   autonomous agent behavior.
 - This roadmap does not allow Local Alpha wording to imply a complete
   multi-layer cognitive architecture.
+- This roadmap does not treat the read-only `lesson` projection as procedural
+  memory, semantic memory, slow variables, durable self-model writes, migration
+  coverage, backup/retention policy, or complete lifecycle governance.
 
 ## Verification Hooks for Future Work
 

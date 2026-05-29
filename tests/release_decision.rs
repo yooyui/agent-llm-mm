@@ -66,6 +66,49 @@ fn release_decision_writes_blocked_template_with_open_gates() {
             .non_claims
             .contains(&"not release approval".to_string())
     );
+    let artifact_json = serde_json::to_value(&artifact).expect("artifact serializes");
+    assert_structured_blocker(
+        &artifact_json,
+        "external_blockers",
+        "fresh_machine",
+        "open",
+        "missing first-run bootstrap summary",
+    );
+    assert_structured_blocker(
+        &artifact_json,
+        "external_blockers",
+        "windows_parity",
+        "not_verified",
+        "missing Windows runtime parity evidence",
+    );
+    assert_structured_blocker(
+        &artifact_json,
+        "human_blockers",
+        "release_approval",
+        "blocked",
+        "decision is blocked",
+    );
+    assert_structured_blocker(
+        &artifact_json,
+        "unimplemented_capability_blockers",
+        "remote_team",
+        "blocked",
+        "remote/team capability remains unimplemented",
+    );
+    assert_structured_blocker(
+        &artifact_json,
+        "unimplemented_capability_blockers",
+        "security_auth",
+        "blocked",
+        "remote auth, authorization, audit",
+    );
+    assert_structured_blocker(
+        &artifact_json,
+        "unimplemented_capability_blockers",
+        "daemon_writes",
+        "blocked",
+        "daemon write capability remains disabled",
+    );
 
     let written = fs::read_to_string(output_json).expect("json output");
     assert!(written.contains(r#""decision": "blocked""#));
@@ -73,6 +116,27 @@ fn release_decision_writes_blocked_template_with_open_gates() {
         fs::read_to_string(output_md)
             .expect("markdown output")
             .contains("Release Decision")
+    );
+}
+
+fn assert_structured_blocker(
+    artifact: &serde_json::Value,
+    field: &str,
+    subject: &str,
+    status: &str,
+    reason_contains: &str,
+) {
+    let blockers = artifact[field].as_array().expect("blockers array");
+    let blocker = blockers
+        .iter()
+        .find(|blocker| blocker["subject"] == subject)
+        .unwrap_or_else(|| panic!("missing blocker {subject} in {field}; blockers={blockers:?}"));
+
+    assert_eq!(blocker["status"], status);
+    let reason = blocker["reason"].as_str().unwrap_or_default();
+    assert!(
+        reason.contains(reason_contains),
+        "blocker {subject} reason should contain {reason_contains:?}; got {reason:?}"
     );
 }
 

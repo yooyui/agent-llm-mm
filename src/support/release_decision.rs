@@ -39,6 +39,9 @@ pub struct ReleaseDecisionArtifact {
     pub evidence_status: &'static str,
     pub evidence_root: String,
     pub open_gates: Vec<ReleaseDecisionGate>,
+    pub external_blockers: Vec<ReleaseDecisionBlocker>,
+    pub human_blockers: Vec<ReleaseDecisionBlocker>,
+    pub unimplemented_capability_blockers: Vec<ReleaseDecisionBlocker>,
     pub non_claims: Vec<String>,
     pub markdown: String,
 }
@@ -46,6 +49,14 @@ pub struct ReleaseDecisionArtifact {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ReleaseDecisionGate {
     pub name: &'static str,
+    pub status: &'static str,
+    pub evidence_path: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ReleaseDecisionBlocker {
+    pub subject: &'static str,
     pub status: &'static str,
     pub evidence_path: Option<String>,
     pub reason: String,
@@ -85,6 +96,13 @@ pub fn write_release_decision(options: ReleaseDecisionOptions) -> Result<Release
         .filter(|gate| gate.status != "satisfied")
         .map(release_decision_gate)
         .collect::<Vec<_>>();
+    let external_blockers = external_blockers(&open_gates);
+    let human_blockers = human_blockers(
+        decision,
+        human_reviewer.as_deref(),
+        rollback_note.as_deref(),
+    );
+    let unimplemented_capability_blockers = unimplemented_capability_blockers();
     let non_claims = non_claims(approved);
     let generated_at = Utc::now().to_rfc3339();
     let release_candidate = options.release_candidate;
@@ -110,6 +128,9 @@ pub fn write_release_decision(options: ReleaseDecisionOptions) -> Result<Release
         evidence_status: evidence.overall_status,
         evidence_root,
         open_gates,
+        external_blockers,
+        human_blockers,
+        unimplemented_capability_blockers,
         non_claims,
         markdown,
     };
@@ -150,6 +171,89 @@ fn release_decision_gate(gate: &LocalAlphaGateSummary) -> ReleaseDecisionGate {
     }
 }
 
+fn external_blockers(open_gates: &[ReleaseDecisionGate]) -> Vec<ReleaseDecisionBlocker> {
+    open_gates
+        .iter()
+        .filter_map(|gate| match gate.name {
+            "first_run_bootstrap" => Some(release_blocker(
+                "fresh_machine",
+                gate.status,
+                gate.evidence_path.clone(),
+                gate.reason.clone(),
+            )),
+            "windows_parity" => Some(release_blocker(
+                "windows_parity",
+                gate.status,
+                gate.evidence_path.clone(),
+                gate.reason.clone(),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+fn human_blockers(
+    decision: &str,
+    human_reviewer: Option<&str>,
+    rollback_note: Option<&str>,
+) -> Vec<ReleaseDecisionBlocker> {
+    let mut blockers = Vec::new();
+    if decision != "approved" {
+        blockers.push(release_blocker(
+            "release_approval",
+            "blocked",
+            None,
+            format!("decision is {decision}; human release approval has not been recorded"),
+        ));
+    }
+    if human_reviewer.is_none() {
+        blockers.push(release_blocker(
+            "human_reviewer",
+            "blocked",
+            None,
+            "human reviewer has not been recorded",
+        ));
+    }
+    if rollback_note.is_none() {
+        blockers.push(release_blocker(
+            "rollback_note",
+            "blocked",
+            None,
+            "rollback note has not been recorded",
+        ));
+    }
+    blockers
+}
+
+fn unimplemented_capability_blockers() -> Vec<ReleaseDecisionBlocker> {
+    vec![
+        release_blocker(
+            "remote_team",
+            "blocked",
+            None,
+            "remote/team capability remains unimplemented and blocked by auth, audit, isolation, and rollback gates",
+        ),
+        release_blocker(
+            "security_auth",
+            "blocked",
+            None,
+            "remote auth, authorization, audit, rate limit, tenant isolation, and rollback implementation is absent",
+        ),
+        release_blocker(
+            "daemon_writes",
+            "blocked",
+            None,
+            "daemon write capability remains disabled; observe-only diagnostics do not create durable semantic writes or background autonomy",
+        ),
+        release_blocker(
+            "release_packaging",
+            "blocked",
+            None,
+            "binary packaging, installer, service manager, and auto-updater evidence are not implemented",
+        ),
+    ]
+}
+
 fn non_claims(approved: bool) -> Vec<String> {
     let mut claims = vec![
         "not binary packaging".to_string(),
@@ -163,6 +267,20 @@ fn non_claims(approved: bool) -> Vec<String> {
         claims.insert(0, "not release approval".to_string());
     }
     claims
+}
+
+fn release_blocker(
+    subject: &'static str,
+    status: &'static str,
+    evidence_path: Option<String>,
+    reason: impl Into<String>,
+) -> ReleaseDecisionBlocker {
+    ReleaseDecisionBlocker {
+        subject,
+        status,
+        evidence_path,
+        reason: reason.into(),
+    }
 }
 
 fn render_markdown(

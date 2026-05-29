@@ -77,6 +77,8 @@ Required contents:
 - product smoke output when Local Alpha claims are being considered
 - self-revision demo artifacts when the release notes mention that evidence
 - compatibility matrix result for supported local platforms
+- release boundary JSON that separates external blockers, human blockers, and
+  unimplemented capability blockers
 - soak test command result when the candidate changes runtime, persistence,
   dashboard, daemon, provider, or MCP behavior
 
@@ -104,6 +106,13 @@ Minimum matrix fields:
 Do not infer platform support from another platform. If Windows was not checked,
 record it as not checked instead of claiming parity.
 
+The local soak runner writes `compatibility-matrix.json` with the current local
+shell-wrapper row checked and a Windows row marked `not_checked`. It also writes
+`release-boundaries.json` with machine-readable blocker arrays for
+fresh-machine evidence, Windows parity, human release decision, remote/team,
+security/auth, daemon writes, and packaging. These artifacts are boundary
+records only; they do not create external evidence.
+
 ## Soak Test Command Requirements
 
 When a candidate changes runtime behavior, persistence, dashboard behavior,
@@ -125,17 +134,19 @@ It writes candidate-specific evidence under
 - `scripts/first-run-bootstrap-smoke-local.sh target/first-run-bootstrap-smoke/local-alpha-gate`
 - `scripts/generate-support-bundle.sh target/support-bundles/local-alpha-gate [config_path]`
 - support-bundle secret and raw-artifact scans
+- release evidence secret scan after command logs and summaries are redacted
 - support-bundle and product-smoke SHA-256 manifests
 - `scripts/local-alpha-evidence-summary.sh` into the release evidence directory
 
 The evidence records:
 
-- exact commands run
+- redacted command shapes
 - exit codes
 - start and end time or elapsed duration
 - git HEAD and before / after working tree status
 - config path shape, without embedding secrets
 - support bundle file list, product smoke latest file list, their SHA-256 manifests, and Local Alpha gate summary
+- `compatibility-matrix.json` and `release-boundaries.json`
 - any sandbox-only blocker separately from code failures
 
 This runner creates local soak evidence only. It does not create a source tag,

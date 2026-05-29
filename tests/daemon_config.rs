@@ -163,6 +163,115 @@ async fn doctor_observe_only_daemon_diagnostics_count_local_operation_candidates
 }
 
 #[tokio::test]
+async fn doctor_observe_only_daemon_diagnostics_explain_read_only_boundary() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(temp_dir.path().join("daemon-boundary-diagnostics.sqlite"));
+
+    let report = agent_llm_mm::run_doctor(AppConfig {
+        database_url,
+        daemon: DaemonConfig {
+            enabled: true,
+            poll_interval_ms: 250,
+            max_concurrent_tasks: 1,
+        },
+        ..Default::default()
+    })
+    .await
+    .expect("doctor should report observe-only diagnostics");
+    let diagnostics = serde_json::to_value(&report.daemon_observe_only)
+        .expect("daemon diagnostics should serialize");
+
+    assert_eq!(diagnostics["candidate_read_data_source"], "operation_log");
+    assert_eq!(
+        diagnostics["candidate_read_operation_kinds"],
+        serde_json::json!(["tool", "trigger"])
+    );
+    assert_eq!(
+        diagnostics["candidate_read_statuses"],
+        serde_json::json!(["failed", "suppressed"])
+    );
+    assert_eq!(diagnostics["candidate_read_limit_per_kind_status"], 25);
+    assert_eq!(diagnostics["candidate_reads_are_read_only"], true);
+    assert_eq!(
+        diagnostics["suppression_diagnostics"],
+        "read_only_status_count"
+    );
+    assert_eq!(
+        diagnostics["cooldown_diagnostics"],
+        "diagnostic_only_no_scheduling"
+    );
+    assert_eq!(
+        diagnostics["clean_shutdown_status"],
+        "verified_by_handle_stop"
+    );
+    assert_eq!(diagnostics["semantic_writes_allowed"], false);
+    assert_eq!(diagnostics["run_reflection_allowed_from_daemon"], false);
+    assert_eq!(diagnostics["write_capable_daemon_gate_status"], "blocked");
+    assert_eq!(diagnostics["background_autonomy_enabled"], false);
+    assert_eq!(diagnostics["daemon_loop_connected"], false);
+}
+
+#[tokio::test]
+async fn doctor_observe_only_candidate_reads_are_bounded_and_do_not_claim_daemon_writes() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(
+        temp_dir
+            .path()
+            .join("daemon-bounded-candidate-reads.sqlite"),
+    );
+    let store = SqliteStore::bootstrap(&database_url).await.unwrap();
+    for index in 0..30 {
+        store
+            .append_operation(operation_entry(
+                &format!("op-failed-tool-{index}"),
+                OperationLogKind::Tool,
+                OperationLogStatus::Failed,
+            ))
+            .await
+            .unwrap();
+        store
+            .append_operation(operation_entry(
+                &format!("op-failed-trigger-{index}"),
+                OperationLogKind::Trigger,
+                OperationLogStatus::Failed,
+            ))
+            .await
+            .unwrap();
+    }
+
+    let report = agent_llm_mm::run_doctor(AppConfig {
+        database_url,
+        daemon: DaemonConfig {
+            enabled: true,
+            poll_interval_ms: 250,
+            max_concurrent_tasks: 1,
+        },
+        ..Default::default()
+    })
+    .await
+    .expect("doctor should report bounded candidate reads");
+    let diagnostics = serde_json::to_value(&report.daemon_observe_only)
+        .expect("daemon diagnostics should serialize");
+
+    assert_eq!(report.daemon_observe_only.trigger_candidates_observed, 50);
+    assert_eq!(diagnostics["candidate_read_limit_per_kind_status"], 25);
+    assert_eq!(diagnostics["semantic_writes_allowed"], false);
+    assert_eq!(diagnostics["background_autonomy_enabled"], false);
+    assert_eq!(diagnostics["daemon_loop_connected"], false);
+    assert_eq!(diagnostics["write_capable_daemon_gate_status"], "blocked");
+    assert!(
+        diagnostics["write_blockers"]
+            .as_array()
+            .expect("write blockers should be an array")
+            .iter()
+            .any(|blocker| blocker
+                .as_str()
+                .is_some_and(|text| text.contains("write-capable daemon gate is blocked"))),
+        "observe-only diagnostics should name the blocked write-capable daemon gate"
+    );
+}
+
+#[tokio::test]
 async fn disabled_daemon_handle_exits_without_running_lifecycle_loop() {
     let handle = DaemonHandle::start(DaemonConfig {
         enabled: false,

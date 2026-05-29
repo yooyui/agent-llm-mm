@@ -54,13 +54,19 @@ authority:
 - daemon enabled/disabled state and effective config
 - polling interval and max concurrency settings
 - local-only data sources inspected
+- candidate read data source, operation kinds, statuses, and per-query bound
+- explicit read-only marker for candidate reads
 - trigger candidates observed
 - trigger candidates skipped or suppressed
-- cooldown status
+- suppression diagnostics
+- cooldown status and diagnostics
+- clean shutdown status
 - in-flight task count
 - errors encountered while reading local state
 - whether a write-capable daemon gate has been approved; for Local Alpha this is
   `false`
+- explicit closure of semantic writes, daemon `run_reflection` calls, connected
+  daemon loops, and background autonomy
 
 Diagnostics may be logged or displayed as local observation data, but they must
 not be treated as identity or commitment updates.
@@ -74,6 +80,11 @@ Current Local Alpha implementation exposes these diagnostics through
 - `writes_allowed = false`
 - `remote_listener_enabled = false`
 - `data_sources` includes `daemon_config` and `operation_log`
+- `candidate_read_data_source = "operation_log"`
+- `candidate_read_operation_kinds = ["tool", "trigger"]`
+- `candidate_read_statuses = ["failed", "suppressed"]`
+- `candidate_read_limit_per_kind_status = 25`
+- `candidate_reads_are_read_only = true`
 - `trigger_candidates_observed` counts bounded local `operation_log` entries
   with `operation_kind` in `tool` / `trigger` and `status = failed`, capped
   at 25 rows per kind/status read
@@ -81,13 +92,22 @@ Current Local Alpha implementation exposes these diagnostics through
   with `operation_kind` in `tool` / `trigger` and `status = suppressed`,
   capped at 25 rows per kind/status read
 - `cooldown_status = "observe_only"`
+- `cooldown_diagnostics = "diagnostic_only_no_scheduling"`
+- `suppression_diagnostics = "read_only_status_count"`
+- `clean_shutdown_status = "verified_by_handle_stop"`
+- `semantic_writes_allowed = false`
+- `run_reflection_allowed_from_daemon = false`
+- `write_capable_daemon_gate_status = "blocked"`
+- `background_autonomy_enabled = false`
+- `daemon_loop_connected = false`
 - `in_flight_task_count = 0`
 - `read_errors` records operation-log read failures as diagnostics, not as
   semantic memory updates
 
 This `doctor` field is a preflight diagnostic surface. It does not start a
 daemon loop, does not call `run_reflection`, and does not authorize daemon
-writes.
+writes. The explicit false/blocked fields are part of the Local Alpha wording
+guardrail: they are diagnostic boundaries, not latent feature flags.
 
 The local daemon handle also has an observe-only lifecycle proof:
 

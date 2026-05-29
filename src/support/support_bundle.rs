@@ -146,7 +146,10 @@ struct Manifest {
     bundle_format: &'static str,
     generated_at: String,
     local_only: bool,
+    artifact_scope: &'static str,
     upload_performed: bool,
+    production_support_channel: bool,
+    remote_support_surface: bool,
     safety_checks: ManifestSafetyChecks,
     excluded_by_default: Vec<&'static str>,
     files: Vec<&'static str>,
@@ -414,6 +417,10 @@ fn should_skip_log_line(line: &str) -> bool {
         return true;
     }
 
+    if line_has_raw_provider_or_diagnostic_payload_field(&lower) {
+        return true;
+    }
+
     if [
         "messages", "content", "input", "prompt", "request", "response",
     ]
@@ -450,6 +457,35 @@ fn should_skip_log_line(line: &str) -> bool {
     .iter()
     .any(|needle| lower.contains(needle))
         || is_key_material_like(line)
+}
+
+fn line_has_raw_provider_or_diagnostic_payload_field(line: &str) -> bool {
+    [
+        "provider_payload",
+        "provider_request",
+        "provider_request_body",
+        "provider_response",
+        "provider_response_body",
+        "provider_diagnostic",
+        "provider_diagnostics",
+        "provider_diagnostic_payload",
+        "provider_diagnostics_payload",
+        "raw_diagnostic",
+        "raw_diagnostics",
+        "diagnostic",
+        "diagnostics",
+        "diagnostic_payload",
+        "diagnostics_payload",
+        "diagnostic_summary",
+        "diagnostic_summary_json",
+        "raw_provider_payload",
+        "raw_provider_diagnostic",
+        "raw_provider_diagnostics",
+        "request_body",
+        "response_body",
+    ]
+    .iter()
+    .any(|field| line_has_payload_field(line, field))
 }
 
 fn should_skip_private_key_block_line(line: &str, skipping_private_key_block: &mut bool) -> bool {
@@ -1283,7 +1319,10 @@ fn manifest(generated_at: &str, output_dir: &Path) -> Result<Manifest> {
         bundle_format: "agent-llm-mm-local-alpha-support-bundle-v1",
         generated_at: generated_at.to_string(),
         local_only: true,
+        artifact_scope: "local-only-diagnostic-artifact",
         upload_performed: false,
+        production_support_channel: false,
+        remote_support_surface: false,
         safety_checks: ManifestSafetyChecks {
             read_only: true,
             runtime_bootstrap_performed: false,

@@ -174,7 +174,7 @@ Implementation notes:
 
 ### 15. P1/P2/P3 follow-up gate slices
 
-- Product readiness checker 已提供候选级本地只读门禁汇总，会把真实 fresh-machine、Windows parity、release decision、remote/team、安全/auth 和产品措辞缺口保持为 blocked
+- Product readiness checker 已提供候选级本地只读门禁汇总，会把真实 fresh-machine、Windows parity、release decision、remote/team、安全/auth、daemon writes 和产品措辞缺口保持为 blocked
 - Release decision artifact 生成器已能写 source-only decision 模板，并在 evidence summary 仍为 `in_progress` 时拒绝 approved 决策
 - `status-sync-check` 已从测试总数漂移扩展到 plan/reality gate 矛盾检测；勾选完成的计划项如果对应 reality gate 仍是 `implemented-unmerged` / `partial` / `simulation-only` / `planning-gate` / `not-implemented` 会失败
 - Support bundle manifest 已增加非 manifest 文件的 SHA-256 integrity 列表；daemon observe-only diagnostics 已输出 write/remote blockers
@@ -261,7 +261,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-05-28`，本分支需要 fresh 运行：
+截至 `2026-05-29`，本分支需要 fresh 运行：
 
 - `cargo fmt --check`
 - `git diff --check`
@@ -278,7 +278,7 @@ Implementation notes:
 - `lib unit tests`: 7
 - `application_use_cases`: 22
 - `bootstrap`: 24
-- `daemon_config`: 8
+- `daemon_config`: 10
 - `dashboard_config`: 4
 - `dashboard_http`: 7
 - `dashboard_projection`: 2
@@ -290,25 +290,26 @@ Implementation notes:
 - `evidence_query_dto`: 2
 - `failure_modes`: 31
 - `first_run_bootstrap_smoke`: 4
-- `local_alpha_release_evidence`: 17
+- `local_alpha_release_evidence`: 18
 - `mcp_stdio`: 36
 - `openai_compatible_model`: 9
 - `operation_log`: 9
-- `product_completion_read_models`: 9
-- `product_readiness`: 7
+- `product_completion_read_models`: 10
+- `product_readiness`: 9
 - `provider_config`: 12
 - `release_decision`: 3
 - `self_revision_demo_runner`: 2
 - `sqlite_backup_restore`: 6
 - `sqlite_store`: 20
 - `status_sync`: 7
-- `support_bundle`: 32
-- 合计：295 个测试通过
+- `support_bundle`: 34
+- 合计：303 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`
 - Local Alpha support bundle 生成允许的 JSON 文件，敏感词扫描无未脱敏命中，且未包含 `.sqlite`、`.toml` 或原始 `.log` 文件
-- Local release soak runner 可生成 `target/reports/releases/<candidate-name>/` 候选证据，覆盖 doctor、dashboard HTTP 回归、product smoke、first-run simulation、support bundle、secret/artifact scan、support bundle / product smoke SHA-256 manifest 和 Local Alpha evidence summary；它不生成 Windows runner、真实 fresh-machine、remote/team、上传、tag、安装包或发布认证证据
+- Local release soak runner 生成 source-only `compatibility-matrix.json` 和 `release-boundaries.json` blocker artifacts；它们记录边界，不生成真实 Windows / fresh-machine / daemon write / release approval 证据
+- Local release soak runner 可生成 `target/reports/releases/<candidate-name>/` 候选证据，覆盖 doctor、dashboard HTTP 回归、product smoke、first-run simulation、support bundle、redacted command logs、secret/artifact scan、release evidence secret scan、support bundle / product smoke SHA-256 manifest 和 Local Alpha evidence summary；它不生成 Windows runner、真实 fresh-machine、remote/team、daemon writes、上传、tag、安装包或发布认证证据
 - `first-run-bootstrap-smoke-local.sh` 已提供 `bootstrap-local -> doctor` 的本地 fresh-machine simulation evidence，包含 env 隔离、输出目录隔离、`doctor.json` / `summary.json` 和 isolated SQLite 证据；但真实 fresh-machine install / Windows runner 实机验证仍需单独记录，当前本机没有 `pwsh` 时，PowerShell runtime parity 只能视为待补证据
 - SQLite backup / restore 本地脚本门禁已覆盖 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份、拒绝 in-memory / invalid URL 和拒绝 `..` restore target；这不是远程备份、云同步或生产灾备证明
 

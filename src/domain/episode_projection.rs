@@ -8,6 +8,7 @@ pub struct EpisodeProjectionInput {
     pub episode_event_ids: Vec<String>,
     pub objective: Option<String>,
     pub outcome: Option<String>,
+    pub lesson: Option<String>,
     pub linked_evidence_ids: Vec<String>,
 }
 
@@ -16,6 +17,7 @@ pub struct EpisodeSummaryProjection {
     pub episode_reference: String,
     pub objective: Option<String>,
     pub outcome: Option<String>,
+    pub lesson: Option<String>,
     pub linked_evidence_ids: Vec<String>,
     pub event_count: usize,
     pub writes_performed: bool,
@@ -47,6 +49,7 @@ pub fn build_episode_summary_projection(
         episode_reference: input.episode_reference,
         objective: input.objective,
         outcome: input.outcome,
+        lesson: input.lesson,
         linked_evidence_ids: dedupe(input.linked_evidence_ids),
         event_count: episode_event_ids.len(),
         writes_performed: false,

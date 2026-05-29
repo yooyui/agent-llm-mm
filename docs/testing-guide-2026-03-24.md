@@ -28,12 +28,12 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-05-28`，`cargo test` 全量通过，摘要如下：
+截至 `2026-05-29`，`cargo test` 全量通过，摘要如下：
 
 - `lib unit tests`: 7 passed
 - `application_use_cases`: 22 passed
 - `bootstrap`: 24 passed
-- `daemon_config`: 8 passed
+- `daemon_config`: 10 passed
 - `dashboard_config`: 4 passed
 - `dashboard_http`: 7 passed
 - `dashboard_projection`: 2 passed
@@ -45,21 +45,21 @@
 - `evidence_query_dto`: 2 passed
 - `failure_modes`: 31 passed
 - `first_run_bootstrap_smoke`: 4 passed
-- `local_alpha_release_evidence`: 17 passed
+- `local_alpha_release_evidence`: 18 passed
 - `mcp_stdio`: 36 passed
 - `openai_compatible_model`: 9 passed
 - `operation_log`: 9 passed
-- `product_completion_read_models`: 9 passed
-- `product_readiness`: 7 passed
+- `product_completion_read_models`: 10 passed
+- `product_readiness`: 9 passed
 - `provider_config`: 12 passed
 - `release_decision`: 3 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_backup_restore`: 6 passed
 - `sqlite_store`: 20 passed
 - `status_sync`: 7 passed
-- `support_bundle`: 32 passed
+- `support_bundle`: 34 passed
 
-合计：295 个测试通过。
+合计：303 个测试通过。
 
 ---
 
@@ -660,7 +660,7 @@ cargo test --test local_alpha_release_evidence release_soak -v
 
 - candidate name 只能包含字母、数字、点、下划线或短横线，且不能包含 `..`
 - evidence directory 写入 `target/reports/releases/<candidate-name>/`，目录必须不存在或为空
-- 目录内包含 `git-head.txt`、`git-status-before.txt`、`git-status-after.txt`、`command-summary.tsv`、`commands/`、`secret-scan.log`、`artifact-scan.log`、`support-bundle-files.txt`、`support-bundle-sha256.txt`、`product-smoke-latest-files.txt`、`product-smoke-latest-sha256.txt`、`local-alpha-evidence-summary.json`、`local-alpha-evidence-summary.md` 和 `release-soak-summary.md`
+- 目录内包含 `git-head.txt`、`git-status-before.txt`、`git-status-after.txt`、`command-summary.tsv`、`commands/`、`secret-scan.log`、`artifact-scan.log`、`support-bundle-files.txt`、`support-bundle-sha256.txt`、`product-smoke-latest-files.txt`、`product-smoke-latest-sha256.txt`、`local-alpha-evidence-summary.json`、`local-alpha-evidence-summary.md`、`compatibility-matrix.json`、`release-boundaries.json` 和 `release-soak-summary.md`
 - 运行顺序覆盖 `doctor`、`cargo test --test dashboard_http -v`、product smoke、first-run simulation、support bundle generation、secret scan、raw artifact scan 和 Local Alpha evidence summary
 - support bundle secret scan 不应发现未脱敏 secret-like marker；raw artifact scan 不应发现 `.sqlite`、`.toml` 或 `.log`
 

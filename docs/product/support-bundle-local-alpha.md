@@ -39,8 +39,10 @@ The current generator writes these JSON files into the requested output
 directory:
 
 - `manifest.json`: bundle format, generated timestamp, local-only flag,
-  `upload_performed = false`, explicit `safety_checks`, excluded content list,
-  and file inventory
+  `artifact_scope = "local-only-diagnostic-artifact"`,
+  `upload_performed = false`, `production_support_channel = false`,
+  `remote_support_surface = false`, explicit `safety_checks`, excluded content
+  list, and file inventory
 - `doctor.json`: config-derived safe `doctor` shape, including transport,
   database URL shape, provider kind, URL shape, model, dashboard settings,
   daemon settings, runtime hook names, `self_revision_write_path`,
@@ -82,8 +84,10 @@ serialize raw provider request or response summaries.
 `safety_checks`: `read_only = true`, `runtime_bootstrap_performed = false`,
 `sqlite_files_included = false`, `toml_files_included = false`,
 `raw_log_files_included = false`, and `provider_payloads_included = false`.
-These fields are evidence markers only; they do not turn the support bundle into
-a remote upload channel or production support workflow.
+Together with `artifact_scope`, `production_support_channel = false`, and
+`remote_support_surface = false`, these fields are evidence markers only; they
+do not turn the support bundle into a remote upload channel, team support
+surface, remote management surface, or production support workflow.
 
 ## Local Log Excerpts
 
@@ -106,6 +110,10 @@ The log summary must be bounded and conservative:
   arguments, cookies, browser session material, local private paths, provider URL
   userinfo/query values, API keys, bearer values, tokens, passwords, and secrets
   must be redacted or omitted
+- raw provider payload labels and raw diagnostic labels, including
+  `provider_payload`, provider request/response body labels,
+  `provider_diagnostic`, `raw_diagnostics`, and `diagnostic_summary_json`, must
+  be omitted rather than excerpted
 
 If the explicit log path is missing, unreadable, too large, or otherwise
 unavailable, the Rust generator records `available = false` and a reason instead
@@ -189,6 +197,10 @@ section itself is secret-only.
   triggering directory scans or runtime bootstrap
 - recent operation summaries are bounded to 25 entries and omit request /
   response / diagnostic payload summaries
+- raw provider payload and raw diagnostic log labels are skipped even when their
+  values do not contain obvious secret markers
+- `manifest.json` marks the bundle as a local-only diagnostic artifact and
+  explicitly records no production support channel or remote support surface
 - missing SQLite databases are not created or bootstrapped; operation summaries
   are marked unavailable instead
 - `doctor.json` records `runtime_bootstrap_performed = false`
