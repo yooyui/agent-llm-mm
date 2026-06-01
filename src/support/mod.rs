@@ -4,6 +4,7 @@ pub mod doctor;
 pub mod local_alpha_evidence;
 pub mod product_readiness;
 pub mod product_wording;
+pub mod release_candidate;
 pub mod release_decision;
 pub mod remote_team;
 pub mod status_sync;

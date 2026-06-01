@@ -35,31 +35,59 @@ pub enum AutoReflectOutcome {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AutoReflectDiagnosticSummary {
     pub trigger_type: TriggerType,
+    pub namespace: String,
+    pub trigger_key: String,
+    pub outcome: AutoReflectOutcome,
+    pub suppression_reason: Option<String>,
+    pub rejection_reason: Option<String>,
+    pub cooldown_boundary: Option<DateTime<Utc>>,
+    pub cooldown_state: String,
+    pub evidence_window_size: usize,
+    pub selected_evidence_event_ids: Vec<String>,
+    pub durable_write_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoReflectDiagnosticInput {
+    pub trigger_type: TriggerType,
+    pub namespace: String,
+    pub trigger_key: String,
     pub outcome: AutoReflectOutcome,
     pub suppression_reason: Option<String>,
     pub rejection_reason: Option<String>,
     pub cooldown_boundary: Option<DateTime<Utc>>,
     pub evidence_window_size: usize,
     pub selected_evidence_event_ids: Vec<String>,
-    pub durable_write_path: String,
 }
 
 impl AutoReflectDiagnosticSummary {
-    pub fn new(
-        trigger_type: TriggerType,
-        outcome: AutoReflectOutcome,
-        suppression_reason: Option<String>,
-        rejection_reason: Option<String>,
-        cooldown_boundary: Option<DateTime<Utc>>,
-        evidence_window_size: usize,
-        selected_evidence_event_ids: Vec<String>,
-    ) -> Self {
-        Self {
+    pub fn new(input: AutoReflectDiagnosticInput) -> Self {
+        let AutoReflectDiagnosticInput {
             trigger_type,
+            namespace,
+            trigger_key,
             outcome,
             suppression_reason,
             rejection_reason,
             cooldown_boundary,
+            evidence_window_size,
+            selected_evidence_event_ids,
+        } = input;
+        let cooldown_state = match (outcome, cooldown_boundary) {
+            (AutoReflectOutcome::Suppressed, Some(_)) => "active",
+            (AutoReflectOutcome::Handled, Some(_)) => "set",
+            (_, Some(_)) => "present",
+            (_, None) => "none",
+        };
+        Self {
+            trigger_type,
+            namespace,
+            trigger_key,
+            outcome,
+            suppression_reason,
+            rejection_reason,
+            cooldown_boundary,
+            cooldown_state: cooldown_state.to_string(),
             evidence_window_size,
             selected_evidence_event_ids,
             durable_write_path: SELF_REVISION_DURABLE_WRITE_PATH.to_string(),

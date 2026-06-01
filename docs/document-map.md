@@ -7,7 +7,7 @@
 
 ## 1. 一句话说明
 
-`agent_llm_mm` 是一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载、`openai-compatible` 模型接入，以及 trigger-ledger-backed automatic self-revision MVP。
+`agent_llm_mm` 是一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载、`openai-compatible` / OpenRouter 模型接入，以及 trigger-ledger-backed automatic self-revision MVP。
 
 ## 2. 多语言项目说明
 
@@ -57,10 +57,12 @@
   - correlation ID contract，定义 MCP tool call 级 `mcp-tool-call-<uuid-v4>`、dashboard / operation-log 传播和不越过 `run_reflection` 的观测边界
 - [product/memory-layering-roadmap.md](product/memory-layering-roadmap.md)
   - 多层 memory 产品方向路线图，定义 working / episodic / semantic / procedural memory、slow variables 和 self-model layering 的未来阶段，不代表当前已实现
+- [superpowers/specs/2026-05-28-physics-informed-architecture-design.md](superpowers/specs/2026-05-28-physics-informed-architecture-design.md)
+  - physics-informed architecture 规划与落地边界；把 substrate / signal / memory / policy / control_loop / actuator / interface / release_boundary 分层映射到 `doctor.system_layer_report`，并通过 `evidence_relation_contract` 暴露 evidence semantics v2 的 read-only / no-widening / binary-weight contract；dependency rules 带机器可读 evidence 与 `grants_capability = false`，并明确 physics principle mapping 只是只读架构诊断，不是 physics runtime、solver、controller 或 scientific validation 能力
 - [security/threat-model-local-and-remote.md](security/threat-model-local-and-remote.md)
   - 本地与远程 surface 的威胁模型，覆盖 SQLite data、provider credentials、reflection audit、operation log、support bundles、trust boundaries 和 remote/team 前置 mitigations
 - [provider-contract.md](provider-contract.md)
-  - 新增 provider 前的就绪清单，覆盖当前 read-only provider matrix、planned-only missing implementation checklist、配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射；planned-only provider 不能当作可配置能力
+  - 新增 provider 前的就绪清单，覆盖当前 read-only provider matrix、OpenRouter 本地 adapter 切片、planned-only missing implementation checklist、配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射；planned-only provider 不能当作可配置能力
 - [roadmap.md](roadmap.md)
   - 近期 / 中期 / 后期规划，明确哪些是 MVP 延伸，哪些不在近期承诺内
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
@@ -137,7 +139,7 @@
 - [testing-guide-2026-03-24.md](testing-guide-2026-03-24.md)
   - 当前测试基线、推荐验证顺序、self-revision runtime coverage / diagnostics / evidence policy 定向回归和常见问题排查
 - [provider-contract.md](provider-contract.md)
-  - 新增 provider 的就绪清单、read-only provider matrix，以及 `tests/provider_config.rs`、`tests/openai_compatible_model.rs`、`tests/mcp_stdio.rs` 的覆盖映射
+  - 新增 provider 的就绪清单、read-only provider matrix、OpenRouter 本地 adapter 边界，以及 `tests/provider_config.rs`、`tests/openai_compatible_model.rs`、`tests/mcp_stdio.rs`、`tests/support_bundle.rs` 的覆盖映射
 - [release-gate.md](release-gate.md)
   - 发布 gate 的最小命令集、self-revision demo artifact 要求，以及 dashboard 边界检查
 - [product/release-engineering.md](product/release-engineering.md)
@@ -170,6 +172,8 @@
   - Codex 本机 MCP 配置样例
 - [examples/agent-llm-mm.demo.example.toml](../examples/agent-llm-mm.demo.example.toml)
   - self-revision demo runner 使用的本地 deterministic provider 配置样例
+- [examples/agent-llm-mm.openrouter.example.toml](../examples/agent-llm-mm.openrouter.example.toml)
+  - OpenRouter 本地配置样例；通过 OpenAI-compatible `/chat/completions` transport 使用，不代表真实 live-provider certification
 
 ## 7. 原始资料与历史快照
 
@@ -223,6 +227,8 @@
   - Workstream 10 的远程 / 团队模式边界文档
 - [product/memory-layering-roadmap.md](product/memory-layering-roadmap.md)
   - Workstream 12 的多层 memory 产品方向文档
+- [2026-05-28-physics-informed-architecture-design.md](superpowers/specs/2026-05-28-physics-informed-architecture-design.md)
+  - physics-informed architecture 规划文档；本轮已以只读 `doctor.system_layer_report`、带 runtime / declared-test-contract evidence 的 dependency rules、product wording guard 和 reality gate 形式落地可本地核验部分，仍把 Local Alpha、Windows parity、fresh-machine、remote/team、daemon writes、security/auth、memory layering 和 release packaging 的外部/后续证据保留为 blocker
 
 ## 8. 阅读建议
 

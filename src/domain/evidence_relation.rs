@@ -3,6 +3,13 @@ use std::collections::HashSet;
 use crate::error::AppError;
 
 pub const EVIDENCE_RELATION_PROTOCOL_VERSION: u32 = 2;
+pub const EVIDENCE_RELATION_NO_WIDENING_POLICY: &str = "selected_subset_of_trigger_window";
+pub const EVIDENCE_RELATION_WEIGHT_POLICY: &str = "bounded_selected_binary_weight";
+pub const EVIDENCE_RELATION_SELECTED_STATUS: &str = "selected";
+pub const EVIDENCE_RELATION_AVAILABLE_NOT_SELECTED_STATUS: &str = "available_not_selected";
+pub const EVIDENCE_RELATION_NOT_SELECTED_REASON: &str = "not_selected_by_current_policy";
+pub const SELECTED_EVIDENCE_WEIGHT: u8 = 100;
+pub const UNSELECTED_EVIDENCE_WEIGHT: u8 = 0;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvidenceRelationInput {
@@ -16,7 +23,9 @@ pub struct EvidenceRelationReport {
     pub protocol_version: u32,
     pub trigger_window_size: usize,
     pub selected_count: usize,
+    pub rejected_count: usize,
     pub no_widening_policy: &'static str,
+    pub weight_policy: &'static str,
     pub relations: Vec<EvidenceRelation>,
 }
 
@@ -25,7 +34,10 @@ pub struct EvidenceRelation {
     pub event_id: String,
     pub window_rank: usize,
     pub selected: bool,
+    pub relation_status: String,
+    pub selection_weight: u8,
     pub selection_basis: Option<String>,
+    pub rejection_reason: Option<String>,
 }
 
 pub fn build_evidence_relation_report(
@@ -53,7 +65,10 @@ pub fn build_evidence_relation_report(
                 event_id: event_id.clone(),
                 window_rank: index + 1,
                 selected,
+                relation_status: relation_status(selected).to_string(),
+                selection_weight: selection_weight(selected),
                 selection_basis: selected.then(|| input.selection_basis.clone()).flatten(),
+                rejection_reason: rejection_reason(selected).map(str::to_string),
             }
         })
         .collect::<Vec<_>>();
@@ -62,9 +77,31 @@ pub fn build_evidence_relation_report(
         protocol_version: EVIDENCE_RELATION_PROTOCOL_VERSION,
         trigger_window_size: trigger_window_ids.len(),
         selected_count: selected_ids.len(),
-        no_widening_policy: "selected_subset_of_trigger_window",
+        rejected_count: trigger_window_ids.len().saturating_sub(selected_ids.len()),
+        no_widening_policy: EVIDENCE_RELATION_NO_WIDENING_POLICY,
+        weight_policy: EVIDENCE_RELATION_WEIGHT_POLICY,
         relations,
     })
+}
+
+fn relation_status(selected: bool) -> &'static str {
+    if selected {
+        EVIDENCE_RELATION_SELECTED_STATUS
+    } else {
+        EVIDENCE_RELATION_AVAILABLE_NOT_SELECTED_STATUS
+    }
+}
+
+fn selection_weight(selected: bool) -> u8 {
+    if selected {
+        SELECTED_EVIDENCE_WEIGHT
+    } else {
+        UNSELECTED_EVIDENCE_WEIGHT
+    }
+}
+
+fn rejection_reason(selected: bool) -> Option<&'static str> {
+    (!selected).then_some(EVIDENCE_RELATION_NOT_SELECTED_REASON)
 }
 
 fn dedupe(values: Vec<String>) -> Vec<String> {

@@ -10,10 +10,11 @@ Writes a local source-only release decision artifact under:
   target/reports/releases/<release-candidate>/release-decision.json
   target/reports/releases/<release-candidate>/release-decision.md
 
-The default decision is "blocked". "approved" is rejected unless the current
-Local Alpha evidence summary is ready for human review and reviewer/rollback
-fields are present. This script does not tag, package, upload, run remote
-commands, or create missing evidence.
+The default decision is "blocked". "rejected" and "deferred" record explicit
+non-approval decisions. "approved" is rejected unless the current Local Alpha
+evidence summary is ready for human review and reviewer/rollback fields are
+present. This script does not tag, package, upload, run remote commands, or
+create missing evidence.
 USAGE
 }
 

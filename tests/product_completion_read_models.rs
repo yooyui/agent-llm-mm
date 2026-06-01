@@ -53,6 +53,153 @@ fn evidence_relation_report_keeps_selection_inside_trigger_window_with_ranking_m
 }
 
 #[test]
+fn evidence_relation_report_exposes_bounded_selection_weight_and_rejection_metadata() {
+    let report = build_evidence_relation_report(EvidenceRelationInput {
+        trigger_window_event_ids: vec![
+            "evt-new".to_string(),
+            "evt-mid".to_string(),
+            "evt-old".to_string(),
+        ],
+        selected_evidence_event_ids: vec!["evt-mid".to_string()],
+        selection_basis: Some("recency_and_kind_filter".to_string()),
+    })
+    .expect("selected evidence is inside the trigger window");
+
+    assert_eq!(report.selected_count, 1);
+    assert_eq!(report.rejected_count, 2);
+    assert_eq!(report.weight_policy, "bounded_selected_binary_weight");
+
+    let selected = report
+        .relations
+        .iter()
+        .find(|relation| relation.event_id == "evt-mid")
+        .expect("selected relation should be present");
+    assert_eq!(selected.relation_status, "selected");
+    assert_eq!(selected.selection_weight, 100);
+    assert_eq!(
+        selected.selection_basis.as_deref(),
+        Some("recency_and_kind_filter")
+    );
+
+    let rejected = report
+        .relations
+        .iter()
+        .filter(|relation| relation.relation_status == "available_not_selected")
+        .collect::<Vec<_>>();
+    assert_eq!(rejected.len(), 2);
+    assert!(
+        rejected
+            .iter()
+            .all(|relation| relation.selection_weight == 0)
+    );
+    assert!(rejected.iter().all(|relation| {
+        relation.rejection_reason.as_deref() == Some("not_selected_by_current_policy")
+    }));
+    assert_eq!(selected.rejection_reason, None);
+    assert!(
+        report
+            .relations
+            .iter()
+            .all(|relation| relation.selection_weight <= 100),
+        "selection weights must stay bounded metadata, not an unbounded ranking engine"
+    );
+}
+
+#[test]
+fn evidence_relation_report_marks_empty_selection_as_available_not_selected_without_basis() {
+    let report = build_evidence_relation_report(EvidenceRelationInput {
+        trigger_window_event_ids: vec!["evt-new".to_string(), "evt-old".to_string()],
+        selected_evidence_event_ids: Vec::new(),
+        selection_basis: Some("query_intersection".to_string()),
+    })
+    .expect("empty selections are valid relation reports");
+
+    assert_eq!(report.trigger_window_size, 2);
+    assert_eq!(report.selected_count, 0);
+    assert_eq!(report.rejected_count, 2);
+    assert_eq!(report.relations.len(), 2);
+    assert!(report.relations.iter().all(|relation| !relation.selected
+        && relation.relation_status == "available_not_selected"
+        && relation.selection_weight == 0
+        && relation.selection_basis.is_none()));
+}
+
+#[test]
+fn evidence_relation_report_dedupes_inputs_and_keeps_counts_statuses_and_json_consistent() {
+    let report = build_evidence_relation_report(EvidenceRelationInput {
+        trigger_window_event_ids: vec![
+            "evt-new".to_string(),
+            "evt-mid".to_string(),
+            "evt-new".to_string(),
+            "evt-old".to_string(),
+        ],
+        selected_evidence_event_ids: vec![
+            "evt-mid".to_string(),
+            "evt-mid".to_string(),
+            "evt-old".to_string(),
+        ],
+        selection_basis: Some("explicit_model_ids".to_string()),
+    })
+    .expect("deduped selected evidence remains inside the trigger window");
+
+    assert_eq!(report.trigger_window_size, 3);
+    assert_eq!(report.selected_count, 2);
+    assert_eq!(report.rejected_count, 1);
+    assert_eq!(report.relations.len(), 3);
+    assert_eq!(
+        report.selected_count + report.rejected_count,
+        report.trigger_window_size
+    );
+
+    for relation in &report.relations {
+        match relation.selected {
+            true => {
+                assert_eq!(relation.relation_status, "selected");
+                assert_eq!(relation.selection_weight, 100);
+                assert_eq!(
+                    relation.selection_basis.as_deref(),
+                    Some("explicit_model_ids")
+                );
+            }
+            false => {
+                assert_eq!(relation.relation_status, "available_not_selected");
+                assert_eq!(relation.selection_weight, 0);
+                assert_eq!(relation.selection_basis, None);
+            }
+        }
+    }
+
+    let serialized = serde_json::to_value(&report).expect("relation report serializes");
+    assert_eq!(serialized["rejected_count"], 1);
+    assert_eq!(
+        serialized["weight_policy"],
+        "bounded_selected_binary_weight"
+    );
+    assert_eq!(serialized["relations"][1]["relation_status"], "selected");
+    assert_eq!(serialized["relations"][1]["selection_weight"], 100);
+    assert_eq!(
+        serialized["relations"][0]["relation_status"],
+        "available_not_selected"
+    );
+    assert_eq!(
+        serialized["relations"][0]["rejection_reason"],
+        "not_selected_by_current_policy"
+    );
+    assert_eq!(
+        serialized["relations"][1]["rejection_reason"],
+        serde_json::Value::Null
+    );
+    assert!(
+        serialized.to_string().contains("explicit_model_ids"),
+        "stable selection basis labels may be serialized"
+    );
+    assert!(
+        !serialized.to_string().contains("provider_payload"),
+        "relation reports must not carry raw provider payloads"
+    );
+}
+
+#[test]
 fn evidence_relation_report_rejects_selected_evidence_outside_trigger_window() {
     let error = build_evidence_relation_report(EvidenceRelationInput {
         trigger_window_event_ids: vec!["evt-2".to_string(), "evt-1".to_string()],
@@ -283,6 +430,88 @@ async fn doctor_exposes_read_only_system_layer_report_with_architecture_blockers
         );
     }
 
+    let substrate_layer = system_layer_report
+        .layers
+        .iter()
+        .find(|layer| layer.name == "substrate")
+        .expect("substrate layer should be present");
+    let substrate_details = serde_json::to_string(&substrate_layer.diagnostics)
+        .expect("substrate diagnostics should serialize");
+    for expected_detail in [
+        "config_shape",
+        "database_path_shape",
+        "platform_entrypoint",
+        "data_lifecycle_gate_status",
+    ] {
+        assert!(
+            substrate_details.contains(expected_detail),
+            "missing substrate diagnostic detail: {expected_detail}; got {substrate_details}"
+        );
+    }
+
+    let signal_layer = system_layer_report
+        .layers
+        .iter()
+        .find(|layer| layer.name == "signal")
+        .expect("signal layer should be present");
+    let signal_diagnostics = serde_json::to_string(&signal_layer.diagnostics)
+        .expect("signal diagnostics should serialize");
+    for expected_detail in [
+        "evidence_relation_report",
+        "selected_subset_of_trigger_window",
+        "bounded_selected_binary_weight",
+    ] {
+        assert!(
+            signal_diagnostics.contains(expected_detail),
+            "missing signal diagnostic detail: {expected_detail}; got {signal_diagnostics}"
+        );
+    }
+
+    let evidence_contract = &system_layer_report.evidence_relation_contract;
+    assert_eq!(evidence_contract.protocol_version, 2);
+    assert!(evidence_contract.read_only);
+    assert!(!evidence_contract.writes_performed);
+    assert!(!evidence_contract.grants_capability);
+    assert_eq!(
+        evidence_contract.no_widening_policy,
+        "selected_subset_of_trigger_window"
+    );
+    assert_eq!(
+        evidence_contract.weight_policy,
+        "bounded_selected_binary_weight"
+    );
+    assert_eq!(
+        evidence_contract.relation_statuses,
+        ["selected", "available_not_selected"]
+    );
+    assert_eq!(evidence_contract.selected_weight, 100);
+    assert_eq!(evidence_contract.available_not_selected_weight, 0);
+    assert!(
+        evidence_contract
+            .additive_v2_fields
+            .contains(&"rejected_count".to_string())
+    );
+    assert!(
+        evidence_contract
+            .additive_v2_fields
+            .contains(&"relation_status".to_string())
+    );
+    assert!(
+        evidence_contract
+            .additive_v2_fields
+            .contains(&"selection_weight".to_string())
+    );
+    assert!(
+        evidence_contract
+            .additive_v2_fields
+            .contains(&"rejection_reason".to_string())
+    );
+    let serialized_report = serde_json::to_value(system_layer_report).expect("report JSON");
+    assert_eq!(
+        serialized_report["evidence_relation_contract"]["weight_policy"],
+        "bounded_selected_binary_weight"
+    );
+
     let physics_principles: Vec<&str> = system_layer_report
         .physics_principles
         .iter()
@@ -329,6 +558,68 @@ async fn doctor_exposes_read_only_system_layer_report_with_architecture_blockers
             .iter()
             .all(|rule| rule.enforced_as == "read-only-boundary")
     );
+    assert!(system_layer_report.dependency_rules.iter().all(|rule| {
+        ["enforced", "declared-test-contract"].contains(&rule.status.as_str())
+            && !rule.grants_capability
+    }));
+    assert!(
+        system_layer_report
+            .dependency_rules
+            .iter()
+            .all(|rule| !rule.evidence.is_empty()
+                && rule.evidence.iter().all(|evidence| evidence.satisfied
+                    && ["runtime", "declared_test_contract"].contains(&evidence.source.as_str())))
+    );
+
+    let daemon_rule = system_layer_report
+        .dependency_rules
+        .iter()
+        .find(|rule| rule.name == "observe_only_daemon_must_not_call_actuator")
+        .expect("daemon dependency rule");
+    assert_eq!(daemon_rule.status, "enforced");
+    assert!(daemon_rule.evidence.iter().any(|evidence| evidence.key
+        == "run_reflection_allowed_from_daemon"
+        && evidence.source == "runtime"
+        && evidence.observed == "false"
+        && evidence.expected == "false"));
+
+    let release_rule = system_layer_report
+        .dependency_rules
+        .iter()
+        .find(|rule| rule.name == "release_boundary_cannot_generate_external_evidence")
+        .expect("release dependency rule");
+    assert_eq!(release_rule.status, "declared-test-contract");
+    for expected_key in [
+        "local_refresh_does_not_generate_windows_parity",
+        "local_refresh_does_not_generate_real_fresh_machine",
+        "release_soak_keeps_human_decision_external",
+    ] {
+        assert!(
+            release_rule
+                .evidence
+                .iter()
+                .any(|evidence| evidence.key == expected_key
+                    && evidence.source == "declared_test_contract"
+                    && evidence.verification_command.is_some()
+                    && evidence.observed == "verification_declared"
+                    && evidence.expected == "verification_declared"),
+            "missing release-boundary evidence key: {expected_key}"
+        );
+    }
+
+    let memory_rule = system_layer_report
+        .dependency_rules
+        .iter()
+        .find(|rule| rule.name == "memory_writes_require_migration_and_lifecycle_gates")
+        .expect("memory dependency rule");
+    assert_eq!(memory_rule.status, "declared-test-contract");
+    assert!(memory_rule.evidence.iter().any(|evidence| evidence.key
+        == "durable_new_memory_layer_writes_allowed"
+        && evidence.source == "declared_test_contract"
+        && evidence.verification_command.as_deref()
+            == Some("cargo test --test product_completion_read_models -v")
+        && evidence.observed == "verification_declared"
+        && evidence.expected == "verification_declared"));
 
     let phase_numbers: Vec<u8> = system_layer_report
         .phase_coverage
@@ -342,7 +633,8 @@ async fn doctor_exposes_read_only_system_layer_report_with_architecture_blockers
         "real fresh-machine evidence",
         "Windows runtime parity",
         "human release decision",
-        "provider adapter expansion",
+        "OpenRouter live-provider certification",
+        "provider gateway behavior",
         "daemon-triggered writes",
         "remote write admin",
         "tenant isolation",

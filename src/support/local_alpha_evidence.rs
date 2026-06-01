@@ -72,6 +72,7 @@ pub struct ReleaseBlocker {
 #[derive(Debug, Deserialize)]
 struct FirstRunSummary {
     doctor_status: Option<String>,
+    fresh_machine_simulation: Option<bool>,
     real_fresh_machine_evidence: Option<bool>,
     local_only: Option<bool>,
     self_revision_write_path: Option<String>,
@@ -97,6 +98,7 @@ pub fn summarize_local_alpha_evidence(
     let gates = vec![
         product_smoke_gate(&evidence_root),
         first_run_bootstrap_gate(&evidence_root),
+        first_run_simulation_gate(&evidence_root),
         windows_parity_gate(&evidence_root),
         support_bundle_gate(&evidence_root),
         boundary_guard_gate(&evidence_root),
@@ -222,6 +224,81 @@ fn first_run_bootstrap_gate(root: &Path) -> LocalAlphaGateSummary {
     } else {
         gate(
             "first_run_bootstrap",
+            "open",
+            Some(relative),
+            reasons.join("; "),
+        )
+    }
+}
+
+fn first_run_simulation_gate(root: &Path) -> LocalAlphaGateSummary {
+    let Some((relative, path)) = first_existing_file(
+        root,
+        &[
+            "target/first-run-bootstrap-smoke/local-alpha-gate/summary.json",
+            "first-run-bootstrap/summary.json",
+        ],
+    ) else {
+        return gate(
+            "first_run_simulation",
+            "open",
+            Some("first-run-bootstrap/summary.json"),
+            "missing first-run bootstrap simulation summary",
+        );
+    };
+    let Ok(value) = read_json(&path) else {
+        return gate(
+            "first_run_simulation",
+            "open",
+            Some(relative),
+            "missing first-run bootstrap simulation summary",
+        );
+    };
+    let Ok(summary) = serde_json::from_value::<FirstRunSummary>(value) else {
+        return gate(
+            "first_run_simulation",
+            "open",
+            Some(relative),
+            "first-run bootstrap simulation summary is not readable",
+        );
+    };
+
+    let mut reasons = Vec::new();
+    if summary.fresh_machine_simulation != Some(true) {
+        reasons.push("fresh_machine_simulation is not true");
+    }
+    if summary.doctor_status.as_deref() != Some("ok") {
+        reasons.push("doctor_status is not ok");
+    }
+    if summary.local_only != Some(true) {
+        reasons.push("local_only is not true");
+    }
+    if summary.self_revision_write_path.as_deref() != Some("run_reflection") {
+        reasons.push("self_revision_write_path is not run_reflection");
+    }
+    if summary.daemon_enabled != Some(false) || summary.daemon_writes_allowed != Some(false) {
+        reasons.push("daemon write path is not explicitly disabled");
+    }
+    if summary.started_serve != Some(false) {
+        reasons.push("first-run smoke runtime-server boundary is not explicitly closed");
+    }
+    if summary.ran_product_smoke != Some(false) {
+        reasons.push("first-run smoke product-smoke boundary is not explicitly closed");
+    }
+    if summary.sqlite_database_exists != Some(true) {
+        reasons.push("sqlite_database_exists is not true");
+    }
+
+    if reasons.is_empty() {
+        gate(
+            "first_run_simulation",
+            "satisfied",
+            Some(relative),
+            "local first-run bootstrap simulation evidence is present",
+        )
+    } else {
+        gate(
+            "first_run_simulation",
             "open",
             Some(relative),
             reasons.join("; "),

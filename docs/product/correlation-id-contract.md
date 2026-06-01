@@ -41,6 +41,19 @@ This first slice does not expose a public tool parameter for caller-provided
 correlation IDs. If a future client-supplied value is needed, it must be added as
 an explicit contract with validation and tests.
 
+## Coverage Matrix
+
+| Surface | Status | Current propagation | Verification |
+| --- | --- | --- | --- |
+| MCP call | `implemented` | Project-level `tools/call` handlers generate one `mcp-tool-call-<uuid-v4>` correlation ID per handler invocation. | `tests/mcp_stdio.rs` covers successful calls, handler-reached failures, and distinct generated IDs. |
+| Dashboard event | `implemented` | Successful and failed tool events include the generated MCP correlation ID; best-effort auto-reflection dashboard events reuse the triggering tool call correlation ID. | `tests/mcp_stdio.rs` and `tests/dashboard_http.rs` cover dashboard events and read-only operation-log history projection. |
+| Operation-log entry | `implemented` | Handler-level success and handler-reached failure entries persist the generated correlation ID as safe observability metadata. | `tests/mcp_stdio.rs` covers success and failure persistence; `tests/operation_log.rs` covers correlation filtering. |
+| Support bundle operation summary | `implemented` | Explicit `--correlation-id mcp-tool-call-<uuid-v4>` filters operation-log metadata rows and keeps payload summaries omitted. | `tests/support_bundle.rs` covers canonical filter validation, redaction, bounds, and script forwarding. |
+| Framework-level MCP parse / route failure | `documented gap` | Non-object arguments and other framework-level failures can fail before the project handler generates durable operation-log metadata. | `tests/mcp_stdio.rs` documents the boundary with a no-entry assertion. |
+| Model call | `future` | Provider calls do not yet carry a cross-surface correlation ID contract. Provider errors are summarized safely at the MCP operation boundary only. | Raw provider payload redaction is covered, but model-call correlation is not implemented. |
+| Trigger ledger entry | `future` | Trigger ledger rows do not yet persist a correlation ID field. Auto-reflection diagnostics may be emitted to dashboard with the tool correlation ID. | Runtime hook diagnostics are tested separately; ledger correlation is not claimed. |
+| Reflection audit entry | `future` | Reflection audit rows are still governed by `run_reflection` and do not yet persist MCP correlation ID metadata. | Reflection write governance is tested; reflection correlation is not claimed. |
+
 ## Operation Log Boundary
 
 The runtime operation log stores tool-level observability metadata:

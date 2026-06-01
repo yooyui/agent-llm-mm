@@ -64,7 +64,7 @@ fn main() -> Result<()> {
 
 fn print_usage() {
     eprintln!(
-        "usage: release_decision_local --release-candidate <name> [--decision blocked|approved] [--human-reviewer <name>] [--rollback-note <text>] [--evidence-root <path>] [--output-json <path>] [--output-md <path>]"
+        "usage: release_decision_local --release-candidate <name> [--decision blocked|rejected|deferred|approved] [--human-reviewer <name>] [--rollback-note <text>] [--evidence-root <path>] [--output-json <path>] [--output-md <path>]"
     );
 }
 

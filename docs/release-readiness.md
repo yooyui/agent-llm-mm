@@ -56,9 +56,9 @@
 
 ### 3. 自动化验证已经存在
 
-截至 `2026-05-09` 的 fresh 验证结果：
+截至 `2026-05-31` 的本地验证结果：
 
-- `cargo test` 全量通过，共 170 个测试
+- `cargo test` 全量通过，共 334 个测试
 - `doctor` 返回 `status = ok`
 
 ### 4. 当前边界已经能被文档清楚说明
@@ -77,7 +77,7 @@
 ### 1. `decide_with_snapshot`
 
 - gate 是真的
-- 已可走 `openai-compatible` provider
+- 已可走 `openai-compatible` 或 OpenRouter provider；OpenRouter 当前只表示本地 stub 验证的 OpenAI-compatible `/chat/completions` transport，不是 live-provider certification
 - 返回契约仍是最小动作字符串
 
 因此不应把它写成“完整 AI 决策引擎”。

@@ -250,6 +250,71 @@ async fn support_bundle_manifest_marks_bundle_as_local_artifact_not_support_chan
 }
 
 #[tokio::test]
+async fn support_bundle_reports_openrouter_config_shape_without_provider_secrets() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_path = temp_dir.path().join("openrouter-support-bundle.sqlite");
+    let database_url = sqlite_url(database_path);
+    SqliteStore::bootstrap(&database_url)
+        .await
+        .expect("store should bootstrap");
+    let output_dir = temp_dir.path().join("bundle");
+    let api_key = "openrouter-support-secret";
+    let url_user = "openrouter-user";
+    let url_password = "openrouter-password";
+    let query_secret = "openrouter-query-secret";
+
+    generate_support_bundle(SupportBundleOptions {
+        config: AppConfig {
+            transport: TransportKind::Stdio,
+            database_url,
+            model_provider: ModelProviderKind::OpenRouter,
+            model_config: ModelConfig::OpenRouter(OpenAiCompatibleConfig {
+                base_url: format!(
+                    "https://{url_user}:{url_password}@openrouter.example.test/api/v1?token={query_secret}"
+                ),
+                api_key: api_key.to_string(),
+                model: "openrouter/test-model".to_string(),
+                timeout_ms: 45_000,
+            }),
+            dashboard: Default::default(),
+            ..Default::default()
+        },
+        output_dir: output_dir.clone(),
+        config_path: None,
+        project_root: temp_dir.path().to_path_buf(),
+        local_log_path: None,
+        operation_correlation_id: None,
+    })
+    .await
+    .expect("support bundle should generate");
+
+    let config_shape = read_json(output_dir.join("config-shape.json"));
+    assert_eq!(config_shape["model"]["provider"], "openrouter");
+    assert_eq!(
+        config_shape["model"]["base_url"],
+        "https://openrouter.example.test/api/v1"
+    );
+    assert_eq!(config_shape["model"]["model"], "openrouter/test-model");
+    assert_eq!(config_shape["model"]["timeout_ms"], 45_000);
+    assert_eq!(config_shape["model"]["credential_configured"], true);
+
+    let all_bundle_text = fs::read_dir(&output_dir)
+        .expect("bundle dir")
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().is_file())
+        .map(|entry| fs::read_to_string(entry.path()).expect("bundle file text"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for forbidden in [api_key, url_user, url_password, query_secret] {
+        assert!(
+            !all_bundle_text.contains(forbidden),
+            "support bundle leaked OpenRouter provider secret: {forbidden}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn support_bundle_does_not_create_or_bootstrap_missing_database() {
     let temp_dir = tempdir().expect("temp dir");
     let database_path = temp_dir.path().join("missing.sqlite");

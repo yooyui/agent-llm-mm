@@ -1,0 +1,32 @@
+# OpenRouter local profile.
+#
+# This uses the OpenRouter adapter through the OpenAI-compatible chat
+# completions transport. It is a local configuration template only; it is not
+# live-provider certification and must not contain a real API key in git.
+
+transport = "stdio"
+database_url = "sqlite:///absolute/path/to/openrouter/agent-llm-mm.sqlite"
+
+[model]
+provider = "openrouter"
+
+[model.openrouter]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "REPLACE_WITH_OPENROUTER_SECRET"
+model = "openrouter/auto"
+timeout_ms = 30000
+
+[dashboard]
+enabled = false
+host = "127.0.0.1"
+port = 8787
+base_path = "/"
+event_capacity = 2000
+sse_enabled = true
+open_browser = false
+required = false
+
+[daemon]
+enabled = false
+poll_interval_ms = 60000
+max_concurrent_tasks = 1

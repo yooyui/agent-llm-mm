@@ -9,7 +9,7 @@
 - Local MCP `stdio` server
 - SQLite persistence
 - Config-file driven provider loading
-- `openai-compatible` provider
+- `openai-compatible` / OpenRouter provider
 - `ingest_interaction`
 - `build_self_snapshot`
 - `decide_with_snapshot`
@@ -18,10 +18,10 @@
 
 ## Current Boundaries
 
-- `decide_with_snapshot` can now use an `openai-compatible` provider, but its output contract is still a minimal action string
+- `decide_with_snapshot` can now use an `openai-compatible` or OpenRouter provider, but its output contract is still a minimal action string
 - There is no remote HTTP transport
 - There is no richer evidence lookup / weight / relation yet
-- There are no additional provider integrations yet
+- Azure and local-model providers are not implemented yet; OpenRouter is limited to local OpenAI-compatible transport verification, not live-provider certification
 - The broader multi-layer memory model is still incomplete
 
 ## Best Fit
@@ -37,9 +37,9 @@
 
 ## Verification Status
 
-As of `2026-03-31`:
+As of `2026-05-31`:
 
-- `cargo test` passes in full with 58 tests
+- `cargo test` passes in full with 334 tests
 - `doctor` returns `status = ok`
 
 ## Acknowledgement

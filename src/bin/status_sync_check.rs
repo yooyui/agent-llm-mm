@@ -1,8 +1,8 @@
-use std::{fs, process::Command};
+use std::{collections::BTreeMap, fs, path::PathBuf, process::Command};
 
 use agent_llm_mm::support::status_sync::{
-    CargoTestList, PLAN_STATUS_DOCUMENT, REALITY_GATES_DOCUMENT, RealityGateReport,
-    TEST_TOTAL_DOCUMENTS, report_from_document_contents,
+    CargoTestList, DocumentTestTotal, PLAN_STATUS_DOCUMENT, REALITY_GATES_DOCUMENT,
+    RealityGateReport, StatusSyncReport, TEST_TOTAL_DOCUMENTS,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -17,7 +17,9 @@ fn main() -> anyhow::Result<()> {
         );
     }
 
-    let list = CargoTestList::parse(&String::from_utf8_lossy(&output.stdout));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let list = CargoTestList::parse(&stdout);
     let documents = TEST_TOTAL_DOCUMENTS
         .iter()
         .map(|path| {
@@ -26,10 +28,18 @@ fn main() -> anyhow::Result<()> {
                 .map_err(anyhow::Error::from)
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    let borrowed_documents = documents
+    let parsed_documents = documents
         .iter()
-        .map(|(path, contents)| (*path, contents.as_str()));
-    let report = report_from_document_contents(list.total, borrowed_documents)?;
+        .map(|(path, contents)| {
+            DocumentTestTotal::parse(*path, contents).ok_or_else(|| {
+                agent_llm_mm::support::status_sync::MissingDocumentTotal {
+                    path: (*path).to_string(),
+                }
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let actual_suite_counts = integration_suite_counts_from_test_binaries(&stderr)?;
+    let report = StatusSyncReport::from_counts(list.total, actual_suite_counts, parsed_documents);
 
     let plan_contents = fs::read_to_string(PLAN_STATUS_DOCUMENT)?;
     let reality_gate_contents = fs::read_to_string(REALITY_GATES_DOCUMENT)?;
@@ -37,7 +47,7 @@ fn main() -> anyhow::Result<()> {
 
     if report.is_in_sync() && reality_report.is_in_sync() {
         println!(
-            "status sync ok: documented cargo test totals match {}; plan/status reality gates are in sync",
+            "status sync ok: documented cargo test totals and suite counts match {}; plan/status reality gates are in sync",
             report.actual_total
         );
         return Ok(());
@@ -58,4 +68,42 @@ fn main() -> anyhow::Result<()> {
     }
 
     anyhow::bail!("status sync drift detected:\n{}", sections.join("\n\n"));
+}
+
+fn integration_suite_counts_from_test_binaries(
+    cargo_test_stderr: &str,
+) -> anyhow::Result<BTreeMap<String, usize>> {
+    test_binaries_from_cargo_stderr(cargo_test_stderr)
+        .into_iter()
+        .map(|(suite, path)| {
+            let output = Command::new(&path)
+                .args(["--list", "--format", "terse"])
+                .output()?;
+            if !output.status.success() {
+                anyhow::bail!(
+                    "test binary list failed for {suite} at {}:\n{}",
+                    path.display(),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Ok((
+                suite,
+                CargoTestList::parse(&String::from_utf8_lossy(&output.stdout)).total,
+            ))
+        })
+        .collect()
+}
+
+fn test_binaries_from_cargo_stderr(cargo_test_stderr: &str) -> BTreeMap<String, PathBuf> {
+    cargo_test_stderr
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let rest = trimmed.strip_prefix("Running tests/")?;
+            let (suite_path, rest) = rest.split_once(" (")?;
+            let suite = suite_path.strip_suffix(".rs")?.to_string();
+            let path = rest.strip_suffix(')')?;
+            Some((suite, PathBuf::from(path)))
+        })
+        .collect()
 }

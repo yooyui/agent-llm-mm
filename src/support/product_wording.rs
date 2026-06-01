@@ -1,11 +1,17 @@
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ClaimGateState {
+    pub local_alpha_complete: bool,
     pub beta: bool,
     pub ga: bool,
     pub production_ready: bool,
     pub remote_write_admin: bool,
     pub remote_team_service: bool,
+    pub multi_tenancy: bool,
     pub complete_self_governance: bool,
+    pub all_entry_auto_reflection: bool,
+    pub run_reflection_replacement: bool,
+    pub provider_gateway: bool,
+    pub daemon_writes: bool,
     pub physics_informed_runtime: bool,
 }
 
@@ -33,6 +39,23 @@ pub fn check_product_claims(input: ProductClaimGuardInput) -> ProductClaimGuardR
     let text = input.text.to_ascii_lowercase();
     let gate_state = input.gate_state;
 
+    push_if_claimed(
+        &mut violations,
+        &text,
+        &[
+            "local alpha complete",
+            "local-alpha-complete",
+            "local product alpha complete",
+            "full local product alpha",
+            "full local alpha release complete",
+            "full-local-alpha-release-complete",
+            "local alpha certified",
+            "local-alpha-certified",
+        ],
+        gate_state.local_alpha_complete,
+        "local_alpha_complete",
+        "local_alpha_gate",
+    );
     push_if_claimed(
         &mut violations,
         &text,
@@ -84,6 +107,19 @@ pub fn check_product_claims(input: ProductClaimGuardInput) -> ProductClaimGuardR
         &mut violations,
         &text,
         &[
+            "multi-tenant",
+            "multi tenant",
+            "multi-tenancy",
+            "multitenancy",
+        ],
+        gate_state.multi_tenancy,
+        "multi_tenancy",
+        "tenant_isolation_gate",
+    );
+    push_if_claimed(
+        &mut violations,
+        &text,
+        &[
             "complete self-governance",
             "complete self governance",
             "complete self-governing",
@@ -92,6 +128,72 @@ pub fn check_product_claims(input: ProductClaimGuardInput) -> ProductClaimGuardR
         gate_state.complete_self_governance,
         "complete_self_governance",
         "self_governance_gate",
+    );
+    push_if_claimed(
+        &mut violations,
+        &text,
+        &[
+            "all-entry automatic self-revision",
+            "all entry automatic self revision",
+            "all-entry auto-reflection",
+            "all entry auto reflection",
+            "all-entry automatic self-reflection",
+            "all entry automatic self reflection",
+        ],
+        gate_state.all_entry_auto_reflection,
+        "all_entry_auto_reflection",
+        "all_entry_auto_reflection_gate",
+    );
+    push_if_claimed(
+        &mut violations,
+        &text,
+        &[
+            "replace run_reflection",
+            "replaces run_reflection",
+            "replacing run_reflection",
+            "run_reflection replacement",
+            "alternate durable write path",
+            "alternative durable write path",
+        ],
+        gate_state.run_reflection_replacement,
+        "run_reflection_replacement",
+        "write_path_adr_gate",
+    );
+    push_if_claimed(
+        &mut violations,
+        &text,
+        &[
+            "provider gateway",
+            "provider-gateway",
+            "model gateway",
+            "model-gateway",
+            "universal provider gateway",
+            "universal-provider-gateway",
+            "multi-provider gateway",
+            "multi-provider-gateway",
+            "openrouter live-provider certification",
+            "openrouter-live-provider-certification",
+            "openrouter live certification",
+            "openrouter-live-certification",
+        ],
+        gate_state.provider_gateway,
+        "provider_gateway",
+        "provider_adapter_gate",
+    );
+    push_if_claimed(
+        &mut violations,
+        &text,
+        &[
+            "write-capable daemon",
+            "write capable daemon",
+            "write-capable-daemon",
+            "daemon writes",
+            "daemon write capability",
+            "daemon-write-capability",
+        ],
+        gate_state.daemon_writes,
+        "daemon_writes",
+        "daemon_write_gate",
     );
     push_if_claimed(
         &mut violations,

@@ -10,6 +10,7 @@ use serde::Serialize;
 use crate::support::local_alpha_evidence::{
     LocalAlphaEvidenceOptions, LocalAlphaGateSummary, summarize_local_alpha_evidence,
 };
+use crate::support::release_candidate::validate_release_candidate;
 
 #[derive(Debug, Clone)]
 pub struct ReleaseDecisionOptions {
@@ -63,6 +64,7 @@ pub struct ReleaseDecisionBlocker {
 }
 
 pub fn write_release_decision(options: ReleaseDecisionOptions) -> Result<ReleaseDecisionArtifact> {
+    validate_release_candidate(&options.release_candidate)?;
     let evidence = summarize_local_alpha_evidence(LocalAlphaEvidenceOptions {
         evidence_root: options.evidence_root.clone(),
         output_json_path: None,
@@ -148,9 +150,11 @@ pub fn write_release_decision(options: ReleaseDecisionOptions) -> Result<Release
 fn normalize_decision(decision: &str) -> Result<&'static str> {
     match decision.trim() {
         "blocked" => Ok("blocked"),
+        "rejected" => Ok("rejected"),
+        "deferred" => Ok("deferred"),
         "approved" => Ok("approved"),
         other => Err(anyhow!(
-            "unsupported release decision `{other}`; expected blocked or approved"
+            "unsupported release decision `{other}`; expected blocked, rejected, deferred, or approved"
         )),
     }
 }
@@ -193,7 +197,7 @@ fn external_blockers(open_gates: &[ReleaseDecisionGate]) -> Vec<ReleaseDecisionB
 }
 
 fn human_blockers(
-    decision: &str,
+    decision: &'static str,
     human_reviewer: Option<&str>,
     rollback_note: Option<&str>,
 ) -> Vec<ReleaseDecisionBlocker> {
@@ -201,7 +205,7 @@ fn human_blockers(
     if decision != "approved" {
         blockers.push(release_blocker(
             "release_approval",
-            "blocked",
+            decision,
             None,
             format!("decision is {decision}; human release approval has not been recorded"),
         ));

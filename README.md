@@ -2,7 +2,7 @@
 
 ## 一句话说明
 
-一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载、`openai-compatible` 模型接入，以及 trigger-ledger-backed automatic self-revision MVP。
+一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载、`openai-compatible` / OpenRouter 模型接入，以及 trigger-ledger-backed automatic self-revision MVP。
 
 ## 主多语言文档
 
@@ -16,14 +16,14 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
-- 最新 fresh 验证：`2026-05-29`
-  - `cargo test` 全量通过，共 303 个测试
+- 最近本地验证与产品化 gate 入口：`2026-05-31`
+  - `cargo test` 全量通过，共 334 个测试
   - `doctor` 预检返回 `status = ok`
   - `status-sync-check` 已加入本地只读文档漂移检查，用于对齐当前测试总数声明，并阻断已勾选计划项与 reality gate 状态不一致的完成声明
-  - Local Alpha product smoke 通过 staging / promote 流程刷新本地证据链
-  - Local Alpha support bundle 生成本地脱敏诊断 JSON，未包含 `.sqlite` 或 `.toml` 文件
+  - Local Alpha product smoke 已有 staging / promote 证据刷新入口；具体候选是否 fresh 仍以当前 evidence root 的 summary 为准
+  - Local Alpha support bundle 已有本地脱敏诊断 JSON 生成入口，设计上不包含 `.sqlite` 或 `.toml` 文件；具体候选是否 fresh 仍以当前 evidence root 的 summary 为准
   - Local first-run bootstrap smoke 已加入脚本入口，用于模拟 `bootstrap-local -> doctor` 的本地首启证据
-  - Local Alpha evidence summary 已加入本地只读 gate 状态汇总入口；它不运行 product smoke、不启动服务、不上传文件、不认证 Local Alpha 完成
+  - Local Alpha evidence summary 已加入本地只读 gate 状态汇总入口；它会把本地 first-run simulation 与真实 fresh-machine evidence 分成独立 gate，不运行 product smoke、不启动服务、不上传文件、不认证 Local Alpha 完成；当前缺真实 fresh-machine、Windows runtime parity 和人工 release decision 时仍保持 `in_progress`
   - Product readiness checker 已加入候选级本地门禁汇总，会把真实 fresh-machine、Windows parity、release decision、release engineering、remote/team、安全/auth、daemon writes 和产品措辞 gate 缺口保持为 blocked
   - Local release soak runner 已加入本地 release evidence 入口；它生成 candidate-specific evidence directory、`compatibility-matrix.json` 和 `release-boundaries.json`，并对发布证据日志做路径形状化和敏感标记扫描；它不生成 Windows runner、真实 fresh-machine、remote/team、daemon writes 或发布认证证据
   - SQLite backup / restore 本地脚本门禁已覆盖备份恢复 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份和拒绝 `..` restore target
@@ -114,8 +114,8 @@
   - 该能力只是 Local Alpha 诊断辅助，不代表生产支持通道、远程上传能力或 Local Alpha 已完成
 - local alpha evidence summary
   - 提供本地只读 gate 汇总入口：`./scripts/local-alpha-evidence-summary.sh`
-  - 读取已有 product smoke latest、first-run bootstrap summary、Windows parity summary 和 support bundle 目录，输出 JSON 与可选 Markdown
-  - 每个 gate 输出 `name`、`status`、`evidence_path` 或 `reason`；fresh-machine 或 Windows 证据缺失时会保持 `in_progress` / `not_verified` 等保守状态
+  - 读取已有 product smoke latest、first-run bootstrap summary、Windows parity summary 和 support bundle 目录，输出 JSON 与可选 Markdown；其中 `first_run_simulation` 只表示本地首启模拟证据，`first_run_bootstrap` 仍要求真实 fresh-machine evidence
+  - 每个 gate 输出 `name`、`status`、`evidence_path` 或 `reason`；fresh-machine 证据缺失时对应 gate 保持 `open`，Windows 证据缺失或无法验证时保持 `open` / `not_verified`，整体 summary 才汇总为 `in_progress`
   - 不启动 `serve`，不运行 product smoke，不上传文件，不触发 daemon 写，不新增 durable write path；`run_reflection` 仍是唯一 durable identity / commitment / reflection 写路径
   - 该能力只是可审查的状态汇总，不是自动认证，也不代表 Local Alpha 已完成
 - product readiness checker
@@ -125,7 +125,7 @@
   - 不运行 smoke、不启动服务、不上传文件、不认证 Local Alpha、Beta、remote/team 或 GA
 - local release decision artifact
   - 提供 source-only release decision 模板/生成器：`./scripts/release-decision-local.sh <candidate-name> <evidence-root>`
-  - 记录 candidate、evidence directory、open gates、human decision、reviewer、rollback note 和 non-claims
+  - 记录 candidate、evidence directory、open gates、human decision、reviewer、rollback note 和 non-claims；支持 `blocked`、`rejected`、`deferred`、`approved` 四种 decision，其中 `rejected` / `deferred` 是显式非批准决策，`approved` 仍需要完整证据、reviewer 和 rollback note
   - evidence summary 仍为 `in_progress` 时不能生成 approved 决策
 - local alpha release-gate refresh
   - 提供本地可重复 gate 刷新入口：`./scripts/local-alpha-release-gate-refresh.sh [config_path]`
@@ -158,12 +158,13 @@
 - decision / evidence / episode read-model slices
   - `decide_with_snapshot` response envelope 已升级到 `protocol_version = 2`，新增 `decision_id`、`requested_action`、`selected_action`、`confidence`、`policy_checks` 和 `non_claims`
   - 旧的 `blocked` / `decision` 字段保持兼容；`decision` 内仍是最小 `action` 字符串
-  - 新增只读 evidence relation read model，显式暴露 trigger window 内的 selected subset、window rank 和 no-widening policy
+  - 新增只读 evidence relation read model，显式暴露 trigger window 内的 selected subset、available-not-selected rows、window rank、relation status、rejection reason、bounded binary selection weight 和 no-widening policy
+  - `doctor.system_layer_report.evidence_relation_contract` 同步公开该 relation read model 的 v2 contract，包括 read-only / no-widening / binary weight policy、allowed relation status、selected / available-not-selected weight、rejection reason 和 additive v2 字段；它只是机器可读契约，不新增 provider payload、ranking engine 或写能力
   - 新增只读 episode summary projection，把 objective / outcome / linked evidence ids 表示为本地 metadata，不写 identity 或 commitments
 - remote/team and memory gates
   - `doctor` 现在输出 `remote_team_capability_inventory` 和 `remote_team_security_gates` 机器可读字段，所有 remote/team 能力默认 blocked，support bundle upload 为 false
   - security/auth gates 覆盖 auth、authorization、audit、rate limit、tenant isolation 和 rollback，全部通过前 remote writes 保持 blocked
-  - `doctor.system_layer_report` 现在输出只读 architecture layer summary，覆盖 substrate / signal / memory / policy / control_loop / actuator / interface / release_boundary，并把 physics principle mapping、dependency rules、Phase 0-8 coverage、non-claims 以及 Local Alpha、Windows parity、fresh-machine、remote/team、daemon writes、security/auth 和 memory layering blocker 保持为可机器读取；该报告不授予新运行时能力
+  - `doctor.system_layer_report` 现在输出只读 architecture layer summary，覆盖 substrate / signal / memory / policy / control_loop / actuator / interface / release_boundary，并把 evidence relation contract、physics principle mapping、dependency rules、Phase 0-8 coverage、non-claims 以及 Local Alpha、Windows parity、fresh-machine、remote/team、daemon writes、security/auth 和 memory layering blocker 保持为可机器读取；dependency rules 还带 `status`、`grants_capability = false` 和逐项 `evidence`，其中 `runtime` 来源来自当前 doctor/read-model 状态，`declared_test_contract` 只声明对应边界回归测试命令而不声称 doctor 已运行测试；这些字段不授予新运行时能力
   - 新增只读 layered memory projection，标记 working / episodic / semantic / procedural / self_model 层为 `partial` 或 `not_implemented`，不新增 durable self-model 写路径
 - `namespace` 最小闭环
   - `self`
@@ -174,6 +175,10 @@
 - `openai-compatible` provider
   - 通过配置文件选择 provider
   - 支持本地 `chat/completions` 风格兼容接口
+- OpenRouter provider
+  - 通过 `[model] provider = "openrouter"` 与 `[model.openrouter]` 配置选择
+  - 复用 OpenAI-compatible `/chat/completions` transport，并覆盖 config parser、doctor、support bundle、MCP `stdio` decision path 和 self-revision path 的本地 stub 回归
+  - 当前不声称真实 OpenRouter live provider 已认证，也不是 provider gateway
 - 本机接入链路
   - 平台入口见对应平台文档
   - first-run 配置可先用 `bootstrap-local` 生成本机 dev 模板，再运行 `doctor` 和 `serve`
@@ -187,7 +192,7 @@
 
 - `decide_with_snapshot`
   - commitment gate 已真实生效
-  - 已可切到 `openai-compatible` provider
+  - 已可切到 `openai-compatible` 或 OpenRouter provider
   - 返回 envelope 已有 `protocol_version = 2`、`decision_id`、`requested_action`、`selected_action`、`confidence`、`policy_checks`、`non_claims` 和 commitment-gate metadata，同时保留旧的 `blocked` / `decision` 字段
   - 当前仍是围绕动作字符串的兼容协议，不是完整决策引擎
 - self-revision 触发面与治理深度
@@ -199,8 +204,9 @@
   - 当前 evidence 选择、trigger 判定和 deep-update 校验仍是保守的 MVP 规则，不是完整自治治理系统
 - provider 扩展性
   - 已保留 provider 枚举与 provider-specific config 结构
-  - 但目前只内建 `mock` 与 `openai-compatible`
-  - `doctor.provider_matrix` 会把 `azure-openai`、`openrouter`、`local` 标为 `planned-only` 且不可配置，并输出缺失的 config parser、doctor diagnostics、model adapter、error handling、redaction 和 MCP stdio tests；这不是可运行 adapter
+  - 当前内建 `mock`、`openai-compatible` 与 `openrouter`
+  - `doctor.provider_matrix` 会把 `mock`、`openai-compatible`、`openrouter` 标为 `supported` / configurable；`azure-openai` 与 `local` 仍为 `planned-only` 且不可配置，并输出缺失的 config parser、doctor diagnostics、model adapter、error handling、redaction 和 MCP stdio tests
+  - OpenRouter 的当前支持范围是 OpenAI-compatible `/chat/completions` transport 的本地 stub 验证，不是 live-provider certification
 - `self_snapshot`
   - 当前只有统一 `SnapshotBudget`
   - 主要对 evidence 数量做截断
@@ -224,7 +230,7 @@
 - richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / inclusive recency window / limit 的窄化查询；只读 relation projection 已有首片，但独立 evidence kind、weighting 和完整 ranking engine 仍未实现）
 - richer evidence weighting / full ranking engine
 - `identity_core` / `commitments` 的 richer schema、版本化修订与更细策略
-- 更多 provider 类型（如 Azure/OpenRouter/本地模型）
+- 更多 provider 类型（如 Azure / 本地模型；OpenRouter live-provider certification 仍未做）
 - 更完整的多层 memory 体系
 - 持续后台自治运行、独立 daemon 调度或完整 self-governing agent 行为
 
@@ -296,6 +302,7 @@
 - [Release Engineering](docs/product/release-engineering.md)
 - [远程 / 团队模式边界](docs/product/remote-team-mode-boundary.md)
 - [多层 Memory 路线图](docs/product/memory-layering-roadmap.md)
+- [Physics-Informed Architecture Design](docs/superpowers/specs/2026-05-28-physics-informed-architecture-design.md)
 - [正式产品化 12 项后续工作规划](docs/superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
 - [协作说明](CONTRIBUTING.md)
 - [macOS 开发与接入指南](docs/development-macos.md)
@@ -314,6 +321,7 @@
 - [Self-Revision Demo Report](docs/reports/self-revision-demo-2026-04-24.md)
 - [Codex MCP 配置样例](examples/codex-mcp-config.toml)
 - [Provider 配置样例](examples/agent-llm-mm.example.toml)
+- [OpenRouter 配置样例](examples/agent-llm-mm.openrouter.example.toml)
 - [Self-revision demo 配置样例](examples/agent-llm-mm.demo.example.toml)
 
 ### 原始资料与历史快照

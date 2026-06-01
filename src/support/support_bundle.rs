@@ -1088,7 +1088,7 @@ fn model_shape(config: &AppConfig) -> ModelShape {
             timeout_ms: None,
             credential_configured: false,
         },
-        ModelConfig::OpenAiCompatible(provider) => ModelShape {
+        ModelConfig::OpenAiCompatible(provider) | ModelConfig::OpenRouter(provider) => ModelShape {
             provider: serde_name(&config.model_provider),
             base_url: Some(base_url_shape(&provider.base_url)),
             model: Some(provider.model.clone()),

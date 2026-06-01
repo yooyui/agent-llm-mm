@@ -29,7 +29,10 @@ The current store methods are:
 
 Current ordering is deterministic: `recorded_at DESC, rowid DESC`.
 
-Current query results are plain event ids. Richer evidence semantics, relation strength, weighting, and ranking do not exist today.
+Current query results are plain event ids. A separate read-only evidence
+relation projection now describes how selected ids relate to the governed
+trigger window, but richer evidence semantics, relation traversal, model-based
+weighting, and ranking do not exist today.
 
 ## V2 Scope
 
@@ -119,6 +122,31 @@ For automatic self-revision proposal queries:
 
 This preserves the safety property: a model proposal can narrow evidence but cannot widen evidence beyond the trigger window or silently bypass its own query.
 
+## Evidence Relation Read Model Slice
+
+The implemented evidence-v2 slice is a read-only relation report over an
+already governed trigger window. It accepts:
+
+- `trigger_window_event_ids`
+- `selected_evidence_event_ids`
+- optional `selection_basis`
+
+It returns protocol-v2 metadata:
+
+- `no_widening_policy = "selected_subset_of_trigger_window"`
+- `weight_policy = "bounded_selected_binary_weight"`
+- `relation_status = "selected"` or `"available_not_selected"`
+- `selection_weight = 100` for selected evidence and `0` for
+  available-not-selected evidence
+- `window_rank`
+- `rejection_reason = "not_selected_by_current_policy"` for unselected window
+  rows
+
+This report rejects selected evidence outside the current trigger window. It
+does not query the store, expand the window, rank evidence, score confidence,
+traverse relations, or authorize writes. It is a diagnostic/read-model slice
+used by product-readiness reporting and `doctor.system_layer_report`.
+
 ## Self-Revision Proposal Interaction
 
 `SelfRevisionProposal.proposed_evidence_query` is a governance hint, not an autonomous search command.
@@ -186,8 +214,9 @@ The namespace-aware v2 implementation slice covers:
 
 Still pending from the broader v2 contract:
 
-- bounded recency window fields
 - independent evidence-kind taxonomy beyond current event kind
+- richer evidence relation semantics beyond the bounded read-only selected /
+  available-not-selected projection
 
 Recommended command set for that slice:
 
@@ -195,6 +224,7 @@ Recommended command set for that slice:
 cargo test --test sqlite_store -v
 cargo test --test failure_modes -v
 cargo test --test mcp_stdio -v
+cargo test --test product_completion_read_models -v
 cargo test
 ```
 

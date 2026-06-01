@@ -153,6 +153,7 @@ async fn auto_reflection_returns_structured_diagnostics_for_recursion_guard_skip
 
     assert!(!result.triggered);
     assert_eq!(result.trigger_type, Some(TriggerType::Periodic));
+    assert_eq!(result.namespace.as_deref(), Some("project/agent-llm-mm"));
     assert_eq!(result.reflection_id, None);
     assert_eq!(result.ledger_status, None);
     assert_eq!(result.reason.as_deref(), Some("recursion guard enabled"));
@@ -164,10 +165,16 @@ async fn auto_reflection_returns_structured_diagnostics_for_recursion_guard_skip
     assert_eq!(result.cooldown_until, None);
     assert_eq!(result.suppression_reason, None);
     assert_eq!(result.diagnostics.trigger_type, TriggerType::Periodic);
+    assert_eq!(result.diagnostics.namespace, "project/agent-llm-mm");
+    assert_eq!(
+        result.diagnostics.trigger_key,
+        "project/agent-llm-mm:periodic"
+    );
     assert_eq!(
         result.diagnostics.outcome,
         agent_llm_mm::domain::self_revision::AutoReflectOutcome::Skipped
     );
+    assert_eq!(result.diagnostics.cooldown_state, "none");
     assert_eq!(result.diagnostics.rejection_reason, None);
     assert_eq!(result.diagnostics.suppression_reason, None);
     assert_eq!(result.diagnostics.cooldown_boundary, None);
@@ -176,7 +183,13 @@ async fn auto_reflection_returns_structured_diagnostics_for_recursion_guard_skip
     assert_eq!(result.diagnostics.durable_write_path, "run_reflection");
     let diagnostics_json = serde_json::to_value(&result.diagnostics).unwrap();
     assert_eq!(diagnostics_json["trigger_type"], "periodic");
+    assert_eq!(diagnostics_json["namespace"], "project/agent-llm-mm");
+    assert_eq!(
+        diagnostics_json["trigger_key"],
+        "project/agent-llm-mm:periodic"
+    );
     assert_eq!(diagnostics_json["outcome"], "skipped");
+    assert_eq!(diagnostics_json["cooldown_state"], "none");
 }
 
 #[tokio::test]
@@ -195,6 +208,7 @@ async fn auto_reflection_returns_structured_diagnostics_for_not_triggered_case()
 
     assert!(!result.triggered);
     assert_eq!(result.trigger_type, Some(TriggerType::Failure));
+    assert_eq!(result.namespace.as_deref(), Some("project/agent-llm-mm"));
     assert_eq!(result.reflection_id, None);
     assert_eq!(result.ledger_status, None);
     assert_eq!(result.reason, None);
@@ -206,10 +220,16 @@ async fn auto_reflection_returns_structured_diagnostics_for_not_triggered_case()
     assert_eq!(result.cooldown_until, None);
     assert_eq!(result.suppression_reason, None);
     assert_eq!(result.diagnostics.trigger_type, TriggerType::Failure);
+    assert_eq!(result.diagnostics.namespace, "project/agent-llm-mm");
+    assert_eq!(
+        result.diagnostics.trigger_key,
+        "project/agent-llm-mm:failure"
+    );
     assert_eq!(
         result.diagnostics.outcome,
         agent_llm_mm::domain::self_revision::AutoReflectOutcome::NotTriggered
     );
+    assert_eq!(result.diagnostics.cooldown_state, "none");
     assert_eq!(result.diagnostics.rejection_reason, None);
     assert_eq!(result.diagnostics.suppression_reason, None);
     assert_eq!(result.diagnostics.cooldown_boundary, None);
@@ -218,7 +238,13 @@ async fn auto_reflection_returns_structured_diagnostics_for_not_triggered_case()
     assert_eq!(result.diagnostics.durable_write_path, "run_reflection");
     let diagnostics_json = serde_json::to_value(&result.diagnostics).unwrap();
     assert_eq!(diagnostics_json["trigger_type"], "failure");
+    assert_eq!(diagnostics_json["namespace"], "project/agent-llm-mm");
+    assert_eq!(
+        diagnostics_json["trigger_key"],
+        "project/agent-llm-mm:failure"
+    );
     assert_eq!(diagnostics_json["outcome"], "not_triggered");
+    assert_eq!(diagnostics_json["cooldown_state"], "none");
 }
 
 #[tokio::test]
@@ -238,6 +264,7 @@ async fn auto_reflection_returns_structured_diagnostics_for_rejected_proposal() 
 
     assert!(!result.triggered);
     assert_eq!(result.trigger_type, Some(TriggerType::Periodic));
+    assert_eq!(result.namespace.as_deref(), Some("project/agent-llm-mm"));
     assert_eq!(result.reflection_id, None);
     assert_eq!(result.ledger_status, Some(TriggerLedgerStatus::Rejected));
     assert_eq!(
@@ -245,10 +272,16 @@ async fn auto_reflection_returns_structured_diagnostics_for_rejected_proposal() 
         Some("mock model did not detect a valid Periodic revision")
     );
     assert_eq!(result.diagnostics.trigger_type, TriggerType::Periodic);
+    assert_eq!(result.diagnostics.namespace, "project/agent-llm-mm");
+    assert_eq!(
+        result.diagnostics.trigger_key,
+        "project/agent-llm-mm:periodic"
+    );
     assert_eq!(
         result.diagnostics.outcome,
         agent_llm_mm::domain::self_revision::AutoReflectOutcome::Rejected
     );
+    assert_eq!(result.diagnostics.cooldown_state, "none");
     assert_eq!(
         result.diagnostics.rejection_reason.as_deref(),
         Some("mock model did not detect a valid Periodic revision")
@@ -260,7 +293,13 @@ async fn auto_reflection_returns_structured_diagnostics_for_rejected_proposal() 
     assert_eq!(result.diagnostics.durable_write_path, "run_reflection");
     let diagnostics_json = serde_json::to_value(&result.diagnostics).unwrap();
     assert_eq!(diagnostics_json["trigger_type"], "periodic");
+    assert_eq!(diagnostics_json["namespace"], "project/agent-llm-mm");
+    assert_eq!(
+        diagnostics_json["trigger_key"],
+        "project/agent-llm-mm:periodic"
+    );
     assert_eq!(diagnostics_json["outcome"], "rejected");
+    assert_eq!(diagnostics_json["cooldown_state"], "none");
     assert_eq!(
         result.trigger_key.as_deref(),
         Some("project/agent-llm-mm:periodic")
@@ -575,6 +614,7 @@ async fn auto_reflection_keeps_explicit_ids_authoritative_when_query_limit_only_
     .unwrap();
 
     assert!(result.triggered);
+    assert_eq!(result.namespace.as_deref(), Some("project/agent-llm-mm"));
     assert_eq!(result.evidence_event_ids, vec!["evt-failure-2".to_string()]);
 }
 
@@ -703,10 +743,16 @@ async fn auto_reflection_applies_model_proposed_evidence_subset_but_preserves_fu
     assert!(result.triggered);
     assert_eq!(result.evidence_event_ids, vec!["evt-failure-2".to_string()]);
     assert_eq!(result.diagnostics.trigger_type, TriggerType::Failure);
+    assert_eq!(result.diagnostics.namespace, "project/agent-llm-mm");
+    assert_eq!(
+        result.diagnostics.trigger_key,
+        "project/agent-llm-mm:failure"
+    );
     assert_eq!(
         result.diagnostics.outcome,
         agent_llm_mm::domain::self_revision::AutoReflectOutcome::Handled
     );
+    assert_eq!(result.diagnostics.cooldown_state, "set");
     assert_eq!(result.diagnostics.rejection_reason, None);
     assert_eq!(result.diagnostics.suppression_reason, None);
     assert_eq!(result.diagnostics.evidence_window_size, 2);
@@ -717,7 +763,13 @@ async fn auto_reflection_applies_model_proposed_evidence_subset_but_preserves_fu
     assert_eq!(result.diagnostics.durable_write_path, "run_reflection");
     let diagnostics_json = serde_json::to_value(&result.diagnostics).unwrap();
     assert_eq!(diagnostics_json["trigger_type"], "failure");
+    assert_eq!(diagnostics_json["namespace"], "project/agent-llm-mm");
+    assert_eq!(
+        diagnostics_json["trigger_key"],
+        "project/agent-llm-mm:failure"
+    );
     assert_eq!(diagnostics_json["outcome"], "handled");
+    assert_eq!(diagnostics_json["cooldown_state"], "set");
     let reflection = deps
         .latest_reflection()
         .expect("handled auto-reflection should persist a reflection");
@@ -1607,12 +1659,19 @@ async fn auto_reflection_returns_structured_diagnostics_for_suppressed_trigger()
     .unwrap();
 
     assert_eq!(result.ledger_status, Some(TriggerLedgerStatus::Suppressed));
+    assert_eq!(result.namespace.as_deref(), Some("project/agent-llm-mm"));
     assert_eq!(result.reflection_id.as_deref(), Some("seeded-reflection"));
     assert_eq!(result.diagnostics.trigger_type, TriggerType::Periodic);
+    assert_eq!(result.diagnostics.namespace, "project/agent-llm-mm");
+    assert_eq!(
+        result.diagnostics.trigger_key,
+        "project/agent-llm-mm:periodic"
+    );
     assert_eq!(
         result.diagnostics.outcome,
         agent_llm_mm::domain::self_revision::AutoReflectOutcome::Suppressed
     );
+    assert_eq!(result.diagnostics.cooldown_state, "active");
     assert_eq!(result.diagnostics.rejection_reason, None);
     assert_eq!(
         result.trigger_key.as_deref(),
@@ -1633,7 +1692,13 @@ async fn auto_reflection_returns_structured_diagnostics_for_suppressed_trigger()
     assert_eq!(result.diagnostics.durable_write_path, "run_reflection");
     let diagnostics_json = serde_json::to_value(&result.diagnostics).unwrap();
     assert_eq!(diagnostics_json["trigger_type"], "periodic");
+    assert_eq!(diagnostics_json["namespace"], "project/agent-llm-mm");
+    assert_eq!(
+        diagnostics_json["trigger_key"],
+        "project/agent-llm-mm:periodic"
+    );
     assert_eq!(diagnostics_json["outcome"], "suppressed");
+    assert_eq!(diagnostics_json["cooldown_state"], "active");
 }
 
 #[tokio::test]

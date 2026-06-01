@@ -58,7 +58,7 @@
   - Tests must prove episode projection does not modify identity or commitments.
 
 - [x] **P2.4 Provider readiness hardening**
-  - Keep `azure-openai`, `openrouter`, and `local` as not configurable until real adapters exist.
+  - Keep `azure-openai` and `local` as not configurable until real adapters exist; OpenRouter is now supported only through local OpenAI-compatible `/chat/completions` transport verification, not live-provider certification.
   - Add adapter-specific readiness rows and tests for missing implementation.
   - Only mark a provider supported in the same change that adds config, parser, doctor, adapter, error handling, and MCP stdio tests.
 

@@ -9,7 +9,7 @@
 - 本机 `stdio` MCP 服务
 - SQLite 持久化
 - 配置文件驱动的 provider 加载
-- `openai-compatible` provider
+- `openai-compatible` / OpenRouter provider
 - `ingest_interaction`
 - `build_self_snapshot`
 - `decide_with_snapshot`
@@ -18,10 +18,10 @@
 
 ## 当前边界
 
-- `decide_with_snapshot` 已可走 `openai-compatible` provider，但返回契约仍是最小动作字符串
+- `decide_with_snapshot` 已可走 `openai-compatible` 或 OpenRouter provider，但返回契约仍是最小动作字符串
 - 没有远程 HTTP transport
 - 没有 richer evidence lookup / weight / relation
-- 还没有更多 provider 类型
+- 还没有 Azure / 本地模型 provider；OpenRouter 仅完成 OpenAI-compatible transport 本地验证，不是 live-provider certification
 - 没有更完整的多层 memory 体系
 
 ## 适合的使用方式
@@ -37,9 +37,9 @@
 
 ## 当前验证状态
 
-截至 `2026-03-31`：
+截至 `2026-05-31`：
 
-- `cargo test` 全量通过，共 58 个测试
+- `cargo test` 全量通过，共 334 个测试
 - `doctor` 返回 `status = ok`
 
 ## 致谢

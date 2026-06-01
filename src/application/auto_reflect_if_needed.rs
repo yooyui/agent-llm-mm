@@ -9,8 +9,8 @@ use crate::{
         commitment::Commitment,
         reflection::Reflection,
         self_revision::{
-            AutoReflectDiagnosticSummary, AutoReflectOutcome, SelfRevisionProposal,
-            SelfRevisionRequest, TriggerType,
+            AutoReflectDiagnosticInput, AutoReflectDiagnosticSummary, AutoReflectOutcome,
+            SelfRevisionProposal, SelfRevisionRequest, TriggerType,
         },
         types::{Namespace, Owner},
     },
@@ -79,6 +79,7 @@ impl AutoReflectInput {
 pub struct AutoReflectResult {
     pub triggered: bool,
     pub trigger_type: Option<TriggerType>,
+    pub namespace: Option<String>,
     pub reflection_id: Option<String>,
     pub ledger_status: Option<TriggerLedgerStatus>,
     pub reason: Option<String>,
@@ -97,6 +98,7 @@ impl AutoReflectResult {
         Self {
             triggered: false,
             trigger_type: Some(input.trigger_type),
+            namespace: Some(input.namespace.as_str().to_string()),
             reflection_id: None,
             ledger_status: None,
             reason: Some(reason.clone()),
@@ -104,15 +106,17 @@ impl AutoReflectResult {
             evidence_event_ids: evidence_event_ids.clone(),
             cooldown_until: None,
             suppression_reason: None,
-            diagnostics: AutoReflectDiagnosticSummary::new(
-                input.trigger_type,
-                AutoReflectOutcome::Skipped,
-                None,
-                None,
-                None,
-                0,
-                evidence_event_ids,
-            ),
+            diagnostics: AutoReflectDiagnosticSummary::new(AutoReflectDiagnosticInput {
+                trigger_type: input.trigger_type,
+                namespace: input.namespace.as_str().to_string(),
+                trigger_key: input.trigger_key(),
+                outcome: AutoReflectOutcome::Skipped,
+                suppression_reason: None,
+                rejection_reason: None,
+                cooldown_boundary: None,
+                evidence_window_size: 0,
+                selected_evidence_event_ids: evidence_event_ids,
+            }),
         }
     }
 
@@ -121,6 +125,7 @@ impl AutoReflectResult {
         Self {
             triggered: false,
             trigger_type: Some(candidate.trigger_type),
+            namespace: Some(candidate.namespace.as_str().to_string()),
             reflection_id: None,
             ledger_status: None,
             reason: None,
@@ -128,15 +133,17 @@ impl AutoReflectResult {
             evidence_event_ids: evidence_event_ids.clone(),
             cooldown_until: None,
             suppression_reason: None,
-            diagnostics: AutoReflectDiagnosticSummary::new(
-                candidate.trigger_type,
-                AutoReflectOutcome::NotTriggered,
-                None,
-                None,
-                None,
-                evidence_event_ids.len(),
-                Vec::new(),
-            ),
+            diagnostics: AutoReflectDiagnosticSummary::new(AutoReflectDiagnosticInput {
+                trigger_type: candidate.trigger_type,
+                namespace: candidate.namespace.as_str().to_string(),
+                trigger_key: candidate.trigger_key.clone(),
+                outcome: AutoReflectOutcome::NotTriggered,
+                suppression_reason: None,
+                rejection_reason: None,
+                cooldown_boundary: None,
+                evidence_window_size: evidence_event_ids.len(),
+                selected_evidence_event_ids: Vec::new(),
+            }),
         }
     }
 
@@ -146,6 +153,7 @@ impl AutoReflectResult {
         Self {
             triggered: false,
             trigger_type: Some(candidate.trigger_type),
+            namespace: Some(candidate.namespace.as_str().to_string()),
             reflection_id: None,
             ledger_status: Some(TriggerLedgerStatus::Rejected),
             reason: Some(reason.clone()),
@@ -153,15 +161,17 @@ impl AutoReflectResult {
             evidence_event_ids: evidence_event_ids.clone(),
             cooldown_until: None,
             suppression_reason: None,
-            diagnostics: AutoReflectDiagnosticSummary::new(
-                candidate.trigger_type,
-                AutoReflectOutcome::Rejected,
-                None,
-                Some(reason),
-                None,
-                evidence_event_ids.len(),
-                Vec::new(),
-            ),
+            diagnostics: AutoReflectDiagnosticSummary::new(AutoReflectDiagnosticInput {
+                trigger_type: candidate.trigger_type,
+                namespace: candidate.namespace.as_str().to_string(),
+                trigger_key: candidate.trigger_key.clone(),
+                outcome: AutoReflectOutcome::Rejected,
+                suppression_reason: None,
+                rejection_reason: Some(reason),
+                cooldown_boundary: None,
+                evidence_window_size: evidence_event_ids.len(),
+                selected_evidence_event_ids: Vec::new(),
+            }),
         }
     }
 
@@ -175,6 +185,7 @@ impl AutoReflectResult {
         Self {
             triggered: false,
             trigger_type: Some(candidate.trigger_type),
+            namespace: Some(candidate.namespace.as_str().to_string()),
             reflection_id: entry.reflection_id.clone(),
             ledger_status: Some(entry.status),
             reason: None,
@@ -182,15 +193,17 @@ impl AutoReflectResult {
             evidence_event_ids: evidence_event_ids.clone(),
             cooldown_until: entry.cooldown_until,
             suppression_reason: Some(suppression_reason.clone()),
-            diagnostics: AutoReflectDiagnosticSummary::new(
-                candidate.trigger_type,
-                AutoReflectOutcome::Suppressed,
-                Some(suppression_reason),
-                None,
-                entry.cooldown_until,
-                evidence_event_ids.len(),
-                Vec::new(),
-            ),
+            diagnostics: AutoReflectDiagnosticSummary::new(AutoReflectDiagnosticInput {
+                trigger_type: candidate.trigger_type,
+                namespace: candidate.namespace.as_str().to_string(),
+                trigger_key: entry.trigger_key.clone(),
+                outcome: AutoReflectOutcome::Suppressed,
+                suppression_reason: Some(suppression_reason),
+                rejection_reason: None,
+                cooldown_boundary: entry.cooldown_until,
+                evidence_window_size: evidence_event_ids.len(),
+                selected_evidence_event_ids: Vec::new(),
+            }),
         }
     }
 
@@ -205,6 +218,7 @@ impl AutoReflectResult {
         Self {
             triggered: true,
             trigger_type: Some(candidate.trigger_type),
+            namespace: Some(candidate.namespace.as_str().to_string()),
             reflection_id: Some(reflection_id),
             ledger_status: Some(TriggerLedgerStatus::Handled),
             reason: None,
@@ -212,15 +226,17 @@ impl AutoReflectResult {
             evidence_event_ids,
             cooldown_until,
             suppression_reason: None,
-            diagnostics: AutoReflectDiagnosticSummary::new(
-                candidate.trigger_type,
-                AutoReflectOutcome::Handled,
-                None,
-                None,
-                cooldown_until,
+            diagnostics: AutoReflectDiagnosticSummary::new(AutoReflectDiagnosticInput {
+                trigger_type: candidate.trigger_type,
+                namespace: candidate.namespace.as_str().to_string(),
+                trigger_key: candidate.trigger_key.clone(),
+                outcome: AutoReflectOutcome::Handled,
+                suppression_reason: None,
+                rejection_reason: None,
+                cooldown_boundary: cooldown_until,
                 evidence_window_size,
                 selected_evidence_event_ids,
-            ),
+            }),
         }
     }
 }

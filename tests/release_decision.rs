@@ -31,6 +31,31 @@ fn release_decision_rejects_approval_when_local_alpha_evidence_is_in_progress() 
 }
 
 #[test]
+fn release_decision_rejects_unsafe_candidate_names_before_writing_outputs() {
+    let temp_dir = tempdir().expect("temp dir");
+    let output_json = temp_dir.path().join("release-decision.json");
+
+    let error = write_release_decision(ReleaseDecisionOptions {
+        evidence_root: temp_dir.path().to_path_buf(),
+        release_candidate: "../local-alpha-rc".to_string(),
+        request: ReleaseDecisionRequest {
+            decision: "blocked".to_string(),
+            human_reviewer: None,
+            rollback_note: None,
+        },
+        output_json_path: Some(output_json.clone()),
+        output_markdown_path: None,
+    })
+    .expect_err("unsafe release candidate names should be rejected");
+
+    assert!(error.to_string().contains("candidate name"));
+    assert!(
+        !output_json.exists(),
+        "release decision output should not be written for an unsafe candidate"
+    );
+}
+
+#[test]
 fn release_decision_writes_blocked_template_with_open_gates() {
     let temp_dir = tempdir().expect("temp dir");
     let output_json = temp_dir.path().join("release-decision.json");
@@ -119,6 +144,59 @@ fn release_decision_writes_blocked_template_with_open_gates() {
     );
 }
 
+#[test]
+fn release_decision_records_rejected_and_deferred_human_decisions_without_approval() {
+    for decision in ["rejected", "deferred"] {
+        let temp_dir = tempdir().expect("temp dir");
+        let output_json = temp_dir
+            .path()
+            .join(format!("release-decision-{decision}.json"));
+
+        let artifact = write_release_decision(ReleaseDecisionOptions {
+            evidence_root: temp_dir.path().to_path_buf(),
+            release_candidate: "local-alpha-20260531.1-rc.1".to_string(),
+            request: ReleaseDecisionRequest {
+                decision: decision.to_string(),
+                human_reviewer: Some("reviewer@example.test".to_string()),
+                rollback_note: Some("Keep candidate source-only and do not publish.".to_string()),
+            },
+            output_json_path: Some(output_json.clone()),
+            output_markdown_path: None,
+        })
+        .expect("non-approval decision should be recorded even when gates are open");
+
+        assert_eq!(artifact.decision, decision);
+        assert!(!artifact.approved);
+        assert_eq!(
+            artifact.human_reviewer.as_deref(),
+            Some("reviewer@example.test")
+        );
+        assert_eq!(
+            artifact.rollback_note.as_deref(),
+            Some("Keep candidate source-only and do not publish.")
+        );
+        assert!(
+            artifact
+                .human_blockers
+                .iter()
+                .any(|blocker| blocker.subject == "release_approval"
+                    && blocker.status == decision
+                    && blocker.reason.contains(decision)),
+            "non-approval decision should keep release approval blocked with decision-specific status: {:?}",
+            artifact.human_blockers
+        );
+        assert!(
+            artifact
+                .non_claims
+                .contains(&"not release approval".to_string())
+        );
+
+        let written = fs::read_to_string(output_json).expect("json output");
+        assert!(written.contains(&format!(r#""decision": "{decision}""#)));
+        assert!(written.contains(r#""approved": false"#));
+    }
+}
+
 fn assert_structured_blocker(
     artifact: &serde_json::Value,
     field: &str,
@@ -149,6 +227,7 @@ fn release_decision_script_is_local_source_only_and_writes_candidate_artifacts()
     assert!(script.contains("target/reports/releases"));
     assert!(script.contains("release-decision.json"));
     assert!(script.contains("release-decision.md"));
+    assert!(script.contains("\"rejected\" and \"deferred\" record explicit"));
     assert!(script.contains("cargo run --quiet --bin release_decision_local --"));
     assert!(
         !script.contains(" ssh "),

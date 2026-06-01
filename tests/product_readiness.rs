@@ -222,6 +222,164 @@ fn product_readiness_rejects_incomplete_release_boundary_blockers() {
 }
 
 #[test]
+fn product_readiness_keeps_rejected_or_deferred_release_decision_blocked() {
+    for decision in ["rejected", "deferred"] {
+        let temp_dir = tempdir().expect("temp dir");
+        let release_candidate = format!("local-alpha-20260531.1-{decision}");
+        write_release_decision_artifact(
+            temp_dir.path(),
+            &release_candidate,
+            decision,
+            Some("reviewer@example.test"),
+            Some("Keep candidate source-only and do not publish."),
+        );
+
+        let summary = summarize_product_readiness(ProductReadinessOptions {
+            evidence_root: temp_dir.path().to_path_buf(),
+            release_candidate,
+            output_json_path: None,
+            output_markdown_path: None,
+        })
+        .expect("product readiness should summarize non-approval decisions");
+
+        assert_gate(
+            &summary,
+            "release_decision",
+            "blocked",
+            "release decision is not approved",
+        );
+        assert!(
+            summary
+                .human_blockers
+                .iter()
+                .any(|blocker| blocker.subject == "release_decision"
+                    && blocker.status == "blocked"),
+            "product readiness should expose human release decision blocker"
+        );
+        assert!(!summary.ready);
+    }
+}
+
+#[test]
+fn product_readiness_rejects_contradictory_release_decision_artifacts() {
+    for (field, value) in [
+        ("approved", json!(false)),
+        ("evidence_status", json!("in_progress")),
+        ("kind", json!("not_release_decision")),
+    ] {
+        let temp_dir = tempdir().expect("temp dir");
+        let release_candidate = format!("local-alpha-20260531.1-contradictory-{field}");
+        write_release_decision_artifact(
+            temp_dir.path(),
+            &release_candidate,
+            "approved",
+            Some("reviewer@example.test"),
+            Some("Keep candidate source-only and do not publish."),
+        );
+        let decision_path = temp_dir
+            .path()
+            .join("target/reports/releases")
+            .join(&release_candidate)
+            .join("release-decision.json");
+        let mut artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(&decision_path).expect("read decision artifact"))
+                .expect("decision artifact json");
+        artifact[field] = value;
+        fs::write(
+            &decision_path,
+            serde_json::to_vec_pretty(&artifact).expect("json"),
+        )
+        .expect("write contradictory decision artifact");
+
+        let summary = summarize_product_readiness(ProductReadinessOptions {
+            evidence_root: temp_dir.path().to_path_buf(),
+            release_candidate,
+            output_json_path: None,
+            output_markdown_path: None,
+        })
+        .expect("product readiness should summarize contradictory artifacts");
+
+        assert_gate(&summary, "release_decision", "blocked", "release decision");
+        assert!(!summary.ready);
+    }
+}
+
+#[test]
+fn product_readiness_rejects_approved_release_decision_with_open_artifact_blockers() {
+    let temp_dir = tempdir().expect("temp dir");
+    let release_candidate = "local-alpha-20260531.1-contradictory-open-gates";
+    write_release_decision_artifact(
+        temp_dir.path(),
+        release_candidate,
+        "approved",
+        Some("reviewer@example.test"),
+        Some("Keep candidate source-only and do not publish."),
+    );
+    let decision_path = temp_dir
+        .path()
+        .join("target/reports/releases")
+        .join(release_candidate)
+        .join("release-decision.json");
+    let mut artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(&decision_path).expect("read decision artifact"))
+            .expect("decision artifact json");
+    artifact["open_gates"] = json!([
+        {
+            "name": "windows_parity",
+            "status": "not_verified",
+            "reason": "missing Windows runtime parity evidence"
+        }
+    ]);
+    artifact["external_blockers"] = json!([
+        {
+            "subject": "windows_parity",
+            "status": "not_verified",
+            "reason": "missing Windows runtime parity evidence"
+        }
+    ]);
+    artifact["human_blockers"] = json!([
+        {
+            "subject": "release_approval",
+            "status": "blocked",
+            "reason": "human approval is still blocked"
+        }
+    ]);
+    fs::write(
+        &decision_path,
+        serde_json::to_vec_pretty(&artifact).expect("json"),
+    )
+    .expect("write contradictory decision artifact");
+
+    let summary = summarize_product_readiness(ProductReadinessOptions {
+        evidence_root: temp_dir.path().to_path_buf(),
+        release_candidate: release_candidate.to_string(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("product readiness should summarize contradictory artifacts");
+
+    assert_gate(
+        &summary,
+        "release_decision",
+        "blocked",
+        "release decision artifact still lists open gates",
+    );
+    assert_gate(
+        &summary,
+        "release_decision",
+        "blocked",
+        "release decision artifact still lists external blockers",
+    );
+    assert_gate(
+        &summary,
+        "release_decision",
+        "blocked",
+        "release decision artifact still lists human blockers",
+    );
+    assert!(!summary.ready);
+}
+
+#[test]
 fn product_wording_blocks_physics_informed_capability_claims_without_gate() {
     for claimed_text in [
         "physics-informed runtime",
@@ -254,6 +412,50 @@ fn product_wording_blocks_physics_informed_capability_claims_without_gate() {
 }
 
 #[test]
+fn product_wording_blocks_local_alpha_and_future_product_claims_without_gates() {
+    let cases = [
+        ("Local Alpha complete", "local_alpha_complete"),
+        ("full Local Product Alpha release", "local_alpha_complete"),
+        ("full Local Alpha release complete", "local_alpha_complete"),
+        ("local-alpha-complete", "local_alpha_complete"),
+        ("multi-tenant service", "multi_tenancy"),
+        ("multi-tenancy", "multi_tenancy"),
+        ("write-capable daemon service", "daemon_writes"),
+        ("daemon writes", "daemon_writes"),
+        (
+            "all-entry automatic self-revision",
+            "all_entry_auto_reflection",
+        ),
+        ("replace run_reflection", "run_reflection_replacement"),
+        ("replaces run_reflection", "run_reflection_replacement"),
+        ("provider gateway", "provider_gateway"),
+        ("provider-gateway", "provider_gateway"),
+        ("model-gateway", "provider_gateway"),
+        ("openrouter-live-provider-certification", "provider_gateway"),
+    ];
+
+    for (claimed_text, expected_claim) in cases {
+        let report = check_product_claims(ProductClaimGuardInput {
+            text: format!("Agent LLM MM is a {claimed_text}."),
+            gate_state: ClaimGateState::default(),
+        });
+
+        assert!(
+            !report.allowed,
+            "{claimed_text:?} should be blocked as a future product claim"
+        );
+        assert!(
+            report
+                .violations
+                .iter()
+                .any(|violation| violation.claim == expected_claim),
+            "{claimed_text:?} should report {expected_claim} claim; got {:?}",
+            report.violations
+        );
+    }
+}
+
+#[test]
 fn product_readiness_blocks_physics_informed_release_candidate_wording() {
     let temp_dir = tempdir().expect("temp dir");
     write_satisfied_product_smoke(temp_dir.path());
@@ -275,6 +477,49 @@ fn product_readiness_blocks_physics_informed_release_candidate_wording() {
         "blocked",
         "physics_informed_runtime",
     );
+}
+
+#[test]
+fn product_readiness_blocks_multi_tenant_release_candidate_wording() {
+    let temp_dir = tempdir().expect("temp dir");
+    write_satisfied_product_smoke(temp_dir.path());
+    write_first_run_simulation(temp_dir.path());
+    write_support_bundle(temp_dir.path());
+
+    let summary = summarize_product_readiness(ProductReadinessOptions {
+        evidence_root: temp_dir.path().to_path_buf(),
+        release_candidate: "multi-tenant-service-rc.1".to_string(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("product readiness summary should be generated");
+
+    assert!(!summary.ready);
+    assert_gate(&summary, "product_wording", "blocked", "multi_tenancy");
+}
+
+#[test]
+fn product_readiness_blocks_local_alpha_and_daemon_write_release_candidate_wording() {
+    let temp_dir = tempdir().expect("temp dir");
+    write_satisfied_product_smoke(temp_dir.path());
+    write_first_run_simulation(temp_dir.path());
+    write_support_bundle(temp_dir.path());
+
+    for (release_candidate, expected_claim) in [
+        ("local-alpha-complete-rc.1", "local_alpha_complete"),
+        ("write-capable-daemon-service-rc.1", "daemon_writes"),
+    ] {
+        let summary = summarize_product_readiness(ProductReadinessOptions {
+            evidence_root: temp_dir.path().to_path_buf(),
+            release_candidate: release_candidate.to_string(),
+            output_json_path: None,
+            output_markdown_path: None,
+        })
+        .expect("product readiness summary should be generated");
+
+        assert!(!summary.ready);
+        assert_gate(&summary, "product_wording", "blocked", expected_claim);
+    }
 }
 
 #[test]
@@ -569,6 +814,31 @@ fn write_release_engineering_artifacts(root: &std::path::Path, candidate: &str) 
         .expect("json"),
     )
     .expect("write release boundaries");
+}
+
+fn write_release_decision_artifact(
+    root: &std::path::Path,
+    candidate: &str,
+    decision: &str,
+    human_reviewer: Option<&str>,
+    rollback_note: Option<&str>,
+) {
+    let output_dir = root.join("target/reports/releases").join(candidate);
+    fs::create_dir_all(&output_dir).expect("create release decision dir");
+    fs::write(
+        output_dir.join("release-decision.json"),
+        serde_json::to_vec_pretty(&json!({
+            "kind": "release_decision",
+            "release_candidate": candidate,
+            "decision": decision,
+            "approved": decision == "approved",
+            "human_reviewer": human_reviewer,
+            "rollback_note": rollback_note,
+            "evidence_status": "ready_for_human_review"
+        }))
+        .expect("json"),
+    )
+    .expect("write release decision");
 }
 
 fn write_incomplete_release_engineering_artifacts(root: &std::path::Path, candidate: &str) {

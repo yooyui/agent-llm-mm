@@ -320,6 +320,96 @@ timeout_ms = 30000
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ingest_interaction_auto_reflection_uses_openrouter_provider_from_config_file() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": r#"{"should_reflect":true,"rationale":"OpenRouter-backed rollback evidence should tighten commitments.","machine_patch":{"commitment_patch":{"commitments":["prefer:reflect_before_repeating_openrouter_rollback"]}}}"#
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openrouter"
+
+[model.openrouter]
+base_url = "{}"
+api_key = "example-openrouter-key"
+model = "openrouter/test-model"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "Self_",
+                    "kind": "Action",
+                    "summary": "first OpenRouter rollback after violating a hard commitment"
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:openrouter-auto-reflect-0"
+            }),
+        )
+        .await
+        .unwrap();
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "Self_",
+                    "kind": "Action",
+                    "summary": "OpenRouter rollback after violating a hard commitment"
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:openrouter-auto-reflect-1",
+                "trigger_hints": ["failure", "rollback"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let commitment_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM commitments WHERE description = 'prefer:reflect_before_repeating_openrouter_rollback'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(reflection_count, 1);
+    assert_eq!(commitment_count, 1);
+    assert_eq!(stub.request_count().await, 1);
+    assert_eq!(
+        stub.last_request_path().await.as_deref(),
+        Some("/chat/completions")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ingest_interaction_can_trigger_conflict_auto_reflection_when_explicit_conflict_hints_present()
  {
     let stub = test_support::StubServer::spawn(
@@ -535,6 +625,80 @@ timeout_ms = 30000
     assert!(
         response.get("error").is_none(),
         "ingest must still succeed without explicit conflict hints: {response:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_ledger_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflection_trigger_ledger")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(reflection_count, 0);
+    assert_eq!(trigger_ledger_count, 0);
+    assert_eq!(stub.request_count().await, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ingest_interaction_does_not_auto_reflect_conflict_with_non_conflict_trigger_hints() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": r#"{"should_reflect":true,"rationale":"Conflict evidence suggests tighter commitment hygiene.","machine_patch":{"commitment_patch":{"commitments":["prefer:confirm_conflicting_commitment_updates_before_overwrite"]}}}"#
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "Self_",
+                    "kind": "Action",
+                    "summary": "self attempted a conflicting commitment overwrite"
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:ingest-conflict-with-non-conflict-hints",
+                "trigger_hints": ["commitment"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        response.get("error").is_none(),
+        "ingest must still succeed with non-conflict hints: {response:?}"
     );
 
     let pool = SqlitePool::connect(&database_url).await.unwrap();
@@ -1207,12 +1371,36 @@ async fn fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment() {
         .and_then(|value| value.get("blocked"))
         .and_then(Value::as_bool)
         .unwrap();
+    let protocol_version = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("protocol_version"))
+        .and_then(Value::as_u64);
+    let requested_action = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("requested_action"))
+        .and_then(Value::as_str);
+    let selected_action = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("selected_action"));
+    let gate_blocked = decision
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("gate"))
+        .and_then(|value| value.get("blocked"))
+        .and_then(Value::as_bool);
     let model_decision = decision
         .get("result")
         .and_then(|value| value.get("structuredContent"))
         .and_then(|value| value.get("decision"));
 
     assert!(blocked, "baseline commitment should block forbidden action");
+    assert_eq!(protocol_version, Some(2));
+    assert_eq!(requested_action, Some("write_identity_core_directly"));
+    assert!(selected_action.is_some_and(Value::is_null));
+    assert_eq!(gate_blocked, Some(true));
     assert!(
         model_decision.is_some_and(Value::is_null),
         "blocked decisions should not call the model: {decision:?}"
@@ -1741,10 +1929,102 @@ timeout_ms = 30000
         .and_then(|value| value.get("decision"))
         .and_then(|value| value.get("action"))
         .and_then(Value::as_str);
+    let structured = response
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .expect("structured decision response");
 
     assert_eq!(
         action,
         Some("provider_selected_action"),
+        "unexpected stdio response: {response:?}"
+    );
+    assert_eq!(structured["protocol_version"], 2);
+    assert_eq!(structured["requested_action"], "read_identity_core");
+    assert_eq!(structured["selected_action"], "provider_selected_action");
+    assert_eq!(structured["confidence"], "bounded-local-metadata");
+    assert_eq!(structured["gate"]["name"], "commitment_gate");
+    assert_eq!(structured["gate"]["blocked"], false);
+    assert!(
+        structured["non_claims"]
+            .as_array()
+            .expect("non_claims array")
+            .iter()
+            .any(|claim| claim == "not provider-native structured decision JSON")
+    );
+    assert!(
+        !response.to_string().contains("example-test-key"),
+        "decision response must not expose provider secrets: {response:?}"
+    );
+    assert_eq!(
+        stub.last_request_path().await.as_deref(),
+        Some("/chat/completions")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn decide_with_snapshot_over_stdio_uses_openrouter_provider_from_config_file() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "openrouter_selected_action"
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openrouter"
+
+[model.openrouter]
+base_url = "{}"
+api_key = "example-openrouter-key"
+model = "openrouter/test-model"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let mut client = test_support::spawn_stdio_client_with_config(config)
+        .await
+        .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "decide_with_snapshot",
+            json!({
+                "task": "summarize current memory",
+                "action": "read_identity_core",
+                "snapshot": {
+                    "identity": ["identity:self=architect"],
+                    "commitments": [],
+                    "claims": ["self.role is architect"],
+                    "evidence": ["event:evt-1"],
+                    "episodes": ["episode:task-6"]
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+    let action = response
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("decision"))
+        .and_then(|value| value.get("action"))
+        .and_then(Value::as_str);
+
+    assert_eq!(
+        action,
+        Some("openrouter_selected_action"),
         "unexpected stdio response: {response:?}"
     );
     assert_eq!(
@@ -2009,6 +2289,65 @@ required = true
             .is_some_and(|correlation_id| correlation_id.starts_with("mcp-tool-call-")),
         "dashboard tool event should expose generated MCP correlation id: {events:?}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn serve_starts_observe_only_daemon_when_enabled_without_semantic_writes() {
+    let config = r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[daemon]
+enabled = true
+poll_interval_ms = 10
+max_concurrent_tasks = 1
+"#
+    .to_string();
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let tools = client.list_all_tools().await.unwrap();
+    assert_eq!(tools.len(), 4);
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "Seed one event before observing daemon-enabled stdio serve."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:observe-only-daemon-stdio"
+            }),
+        )
+        .await
+        .expect("ingest response");
+
+    let response = client
+        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .await
+        .expect("snapshot response");
+    assert!(
+        response.get("result").is_some(),
+        "observe-only daemon must not corrupt MCP stdio: {response:?}"
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_ledger_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflection_trigger_ledger")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(reflection_count, 0);
+    assert_eq!(trigger_ledger_count, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

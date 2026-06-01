@@ -13,16 +13,28 @@ use crate::{
 pub struct OpenAiCompatibleModel {
     client: reqwest::Client,
     config: OpenAiCompatibleConfig,
+    provider_name: &'static str,
 }
 
 impl OpenAiCompatibleModel {
     pub fn new(config: OpenAiCompatibleConfig) -> Result<Self, AppError> {
+        Self::new_for_provider(config, "openai-compatible")
+    }
+
+    pub fn new_for_provider(
+        config: OpenAiCompatibleConfig,
+        provider_name: &'static str,
+    ) -> Result<Self, AppError> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_millis(config.timeout_ms))
             .build()
             .map_err(|error| AppError::Message(format!("failed to build http client: {error}")))?;
 
-        Ok(Self { client, config })
+        Ok(Self {
+            client,
+            config,
+            provider_name,
+        })
     }
 
     fn endpoint(&self) -> String {
@@ -39,7 +51,7 @@ impl ModelPort for OpenAiCompatibleModel {
         let body = self
             .send_chat_completion(build_decision_payload(&self.config.model, request))
             .await?;
-        let action = extract_action(body)?;
+        let action = extract_action(body, self.provider_name)?;
         Ok(ModelDecision::new(action))
     }
 
@@ -50,7 +62,7 @@ impl ModelPort for OpenAiCompatibleModel {
         let body = self
             .send_chat_completion(build_self_revision_payload(&self.config.model, request))
             .await?;
-        extract_self_revision_proposal(body)
+        extract_self_revision_proposal(body, self.provider_name)
     }
 }
 
@@ -67,14 +79,15 @@ impl OpenAiCompatibleModel {
             .send()
             .await
             .map_err(|error| {
-                AppError::Message(format!("openai-compatible network error: {error}"))
+                AppError::Message(format!("{} network error: {error}", self.provider_name))
             })?;
 
         let status = response.status();
         if status != StatusCode::OK {
             let body = response.text().await.unwrap_or_default();
             return Err(AppError::Message(format!(
-                "openai-compatible request failed with status {}: {}",
+                "{} request failed with status {}: {}",
+                self.provider_name,
                 status.as_u16(),
                 body
             )));
@@ -82,7 +95,8 @@ impl OpenAiCompatibleModel {
 
         response.json().await.map_err(|error| {
             AppError::Message(format!(
-                "openai-compatible response could not be parsed: {error}"
+                "{} response could not be parsed: {error}",
+                self.provider_name
             ))
         })
     }
@@ -133,28 +147,32 @@ fn build_self_revision_payload(model: &str, request: SelfRevisionRequest) -> Cha
     }
 }
 
-fn extract_action(response: ChatCompletionResponse) -> Result<String, AppError> {
+fn extract_action(
+    response: ChatCompletionResponse,
+    provider_name: &'static str,
+) -> Result<String, AppError> {
     extract_message_content(
         response,
-        "openai-compatible response contained an empty model action",
+        &format!("{provider_name} response contained an empty model action"),
     )
 }
 
 fn extract_self_revision_proposal(
     response: ChatCompletionResponse,
+    provider_name: &'static str,
 ) -> Result<SelfRevisionProposal, AppError> {
     let content = extract_message_content(
         response,
-        "openai-compatible response contained an empty self-revision proposal",
+        &format!("{provider_name} response contained an empty self-revision proposal"),
     )?;
     let proposal_json = extract_json_object(&content).ok_or_else(|| {
-        AppError::Message(
-            "openai-compatible self-revision proposal did not contain a JSON object".to_string(),
-        )
+        AppError::Message(format!(
+            "{provider_name} self-revision proposal did not contain a JSON object"
+        ))
     })?;
     serde_json::from_str(proposal_json).map_err(|error| {
         AppError::Message(format!(
-            "openai-compatible self-revision proposal could not be parsed: {error}"
+            "{provider_name} self-revision proposal could not be parsed: {error}"
         ))
     })
 }

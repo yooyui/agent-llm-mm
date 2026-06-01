@@ -65,6 +65,43 @@ timeout_ms = 45000
 }
 
 #[test]
+fn load_from_path_reads_openrouter_provider_from_toml_file() {
+    let temp_dir = tempdir().expect("temp dir");
+    let config_path = temp_dir.path().join("agent-llm-mm-openrouter.toml");
+    fs::write(
+        &config_path,
+        r#"
+transport = "stdio"
+database_url = "sqlite:///tmp/openrouter-provider.sqlite"
+
+[model]
+provider = "openrouter"
+
+[model.openrouter]
+base_url = "https://openrouter.example.test/api/v1"
+api_key = "example-openrouter-key"
+model = "openrouter/test-model"
+timeout_ms = 55000
+"#,
+    )
+    .expect("write config");
+
+    let config = AppConfig::load_from_path(&config_path).expect("config");
+
+    assert_eq!(config.model_provider, ModelProviderKind::OpenRouter);
+    assert_eq!(
+        config.model_config,
+        ModelConfig::OpenRouter(OpenAiCompatibleConfig {
+            base_url: "https://openrouter.example.test/api/v1".to_string(),
+            api_key: "example-openrouter-key".to_string(),
+            model: "openrouter/test-model".to_string(),
+            timeout_ms: 55_000,
+        })
+    );
+    config.validate().expect("openrouter config validates");
+}
+
+#[test]
 fn load_prefers_config_path_from_environment() {
     let temp_dir = tempdir().expect("temp dir");
     let config_path = temp_dir.path().join("custom-provider.toml");
@@ -154,6 +191,27 @@ fn prod_local_example_config_parses_with_local_dashboard_and_disabled_daemon() {
 }
 
 #[test]
+fn openrouter_example_config_parses_without_live_looking_secret() {
+    let config = load_example_config("agent-llm-mm.openrouter.example.toml");
+
+    assert_eq!(config.transport, TransportKind::Stdio);
+    assert_eq!(config.model_provider, ModelProviderKind::OpenRouter);
+    let ModelConfig::OpenRouter(provider_config) = &config.model_config else {
+        panic!("openrouter example should use openrouter provider settings");
+    };
+    assert_eq!(provider_config.api_key, "REPLACE_WITH_OPENROUTER_SECRET");
+    assert!(
+        !provider_config.api_key.starts_with("sk-"),
+        "OpenRouter example must not contain a live-looking API key"
+    );
+    assert_eq!(provider_config.model, "openrouter/auto");
+    assert!(!config.daemon.enabled);
+    config
+        .validate()
+        .expect("openrouter example config structure should validate");
+}
+
+#[test]
 fn generic_example_config_parses_and_keeps_daemon_disabled() {
     let config = load_example_config("agent-llm-mm.example.toml");
 
@@ -179,7 +237,16 @@ fn provider_matrix_lists_supported_and_future_providers_as_contract_only() {
     assert!(entries[1].configurable);
     assert_eq!(entries[1].adapter, "openai-compatible chat completions");
 
-    for entry in &entries[2..] {
+    assert_eq!(entries[2].provider, "openrouter");
+    assert_eq!(entries[2].state, "supported");
+    assert!(entries[2].configurable);
+    assert_eq!(
+        entries[2].adapter,
+        "openrouter chat completions via openai-compatible transport"
+    );
+    assert!(entries[2].missing_implementation.is_empty());
+
+    for entry in &entries[3..] {
         assert_eq!(entry.state, "planned-only");
         assert!(
             !entry.configurable,
@@ -198,15 +265,15 @@ fn provider_matrix_lists_supported_and_future_providers_as_contract_only() {
         );
     }
 
-    let future_names: Vec<_> = entries[2..].iter().map(|entry| entry.provider).collect();
-    assert_eq!(future_names, ["azure-openai", "openrouter", "local"]);
+    let future_names: Vec<_> = entries[3..].iter().map(|entry| entry.provider).collect();
+    assert_eq!(future_names, ["azure-openai", "local"]);
 }
 
 #[test]
 fn future_providers_are_rejected_by_config_parser_until_implemented() {
     let temp_dir = tempdir().expect("temp dir");
 
-    for provider in ["azure-openai", "openrouter", "local"] {
+    for provider in ["azure-openai", "local"] {
         let config_path = temp_dir
             .path()
             .join(format!("unsupported-provider-{provider}.toml"));
@@ -229,6 +296,82 @@ provider = "{provider}"
             "parse error should name the rejected provider {provider}: {error}"
         );
     }
+}
+
+#[tokio::test]
+async fn doctor_reports_openrouter_provider_without_exposing_api_key() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(temp_dir.path().join("doctor-openrouter.sqlite"));
+    let config = AppConfig {
+        transport: TransportKind::Stdio,
+        database_url,
+        model_provider: ModelProviderKind::OpenRouter,
+        model_config: ModelConfig::OpenRouter(OpenAiCompatibleConfig {
+            base_url: "https://doctor-user:doctor-password@openrouter.example.test/api/v1?token=doctor-query-secret".to_string(),
+            api_key: "openrouter-secret-key".to_string(),
+            model: "openrouter/test-model".to_string(),
+            timeout_ms: 30_000,
+        }),
+        dashboard: Default::default(),
+        ..Default::default()
+    };
+
+    let report = run_doctor(config).await.expect("doctor should pass");
+    let serialized = serde_json::to_string(&report).expect("doctor report serializes");
+
+    assert_eq!(report.provider, ModelProviderKind::OpenRouter);
+    assert_eq!(report.model.as_deref(), Some("openrouter/test-model"));
+    assert_eq!(
+        report.base_url.as_deref(),
+        Some("https://openrouter.example.test/api/v1")
+    );
+    assert!(
+        report
+            .provider_matrix
+            .iter()
+            .any(|entry| entry.provider == "openrouter"
+                && entry.support_state == ProviderSupportState::Supported
+                && entry.configurable
+                && entry.selected)
+    );
+    assert!(
+        !serialized.contains("openrouter-secret-key"),
+        "doctor output must not expose provider api keys"
+    );
+    for forbidden in ["doctor-user", "doctor-password", "doctor-query-secret"] {
+        assert!(
+            !serialized.contains(forbidden),
+            "doctor output must not expose provider URL secrets: {forbidden}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn doctor_fails_when_openrouter_provider_config_is_missing_model() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(
+        temp_dir
+            .path()
+            .join("doctor-openrouter-missing-model.sqlite"),
+    );
+    let config = AppConfig {
+        transport: TransportKind::Stdio,
+        database_url,
+        model_provider: ModelProviderKind::OpenRouter,
+        model_config: ModelConfig::OpenRouter(OpenAiCompatibleConfig {
+            base_url: "https://openrouter.example.test/api/v1".to_string(),
+            api_key: "example-openrouter-key".to_string(),
+            model: String::new(),
+            timeout_ms: 30_000,
+        }),
+        dashboard: Default::default(),
+        ..Default::default()
+    };
+
+    let error = run_doctor(config).await.expect_err("doctor should fail");
+
+    assert!(error.to_string().contains("openrouter"));
+    assert!(error.to_string().contains("model"));
 }
 
 #[tokio::test]
@@ -314,7 +457,16 @@ async fn doctor_reports_provider_matrix_without_marking_future_providers_support
     assert!(report.provider_matrix[1].configurable);
     assert!(!report.provider_matrix[1].selected);
 
-    for entry in &report.provider_matrix[2..] {
+    assert_eq!(report.provider_matrix[2].provider, "openrouter");
+    assert_eq!(
+        report.provider_matrix[2].support_state,
+        ProviderSupportState::Supported
+    );
+    assert!(report.provider_matrix[2].configurable);
+    assert!(!report.provider_matrix[2].selected);
+    assert!(report.provider_matrix[2].missing_implementation.is_empty());
+
+    for entry in &report.provider_matrix[3..] {
         assert_eq!(entry.support_state, ProviderSupportState::PlannedOnly);
         assert!(!entry.configurable);
         assert!(!entry.selected);

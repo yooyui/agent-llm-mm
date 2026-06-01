@@ -55,6 +55,12 @@ fn first_run_simulation_without_real_fresh_machine_evidence_cannot_complete_loca
         "open",
         "real fresh-machine evidence is false",
     );
+    assert_gate(
+        &summary_json,
+        "first_run_simulation",
+        "satisfied",
+        "local first-run bootstrap simulation evidence is present",
+    );
     assert!(
         summary.markdown.contains("Local Alpha is not complete"),
         "markdown must use conservative wording"
@@ -355,6 +361,42 @@ fn summary_reads_documented_target_evidence_paths_by_default() {
 }
 
 #[test]
+fn first_run_simulation_prefers_documented_simulation_path_when_real_evidence_exists() {
+    let temp_dir = tempdir().expect("temp dir");
+    write_real_first_run_summary_at(&temp_dir.path().join("first-run-bootstrap"));
+    write_first_run_summary_at(
+        &temp_dir
+            .path()
+            .join("target/first-run-bootstrap-smoke/local-alpha-gate"),
+        false,
+    );
+    write_product_smoke_latest(temp_dir.path());
+    write_windows_parity(temp_dir.path(), "verified");
+    write_support_bundle(temp_dir.path(), &allowed_support_bundle_files());
+
+    let summary = summarize_local_alpha_evidence(LocalAlphaEvidenceOptions {
+        evidence_root: temp_dir.path().to_path_buf(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("summary should be generated");
+    let summary_json = summary_json(&summary);
+
+    assert_gate(
+        &summary_json,
+        "first_run_bootstrap",
+        "satisfied",
+        "real fresh-machine first-run evidence is present and local-only",
+    );
+    assert_gate(
+        &summary_json,
+        "first_run_simulation",
+        "satisfied",
+        "local first-run bootstrap simulation evidence is present",
+    );
+}
+
+#[test]
 fn summary_capability_is_read_only_and_does_not_call_runtime_write_or_remote_paths() {
     let script = fs::read_to_string("scripts/local-alpha-evidence-summary.sh")
         .expect("summary wrapper should be readable");
@@ -646,6 +688,27 @@ fn write_first_run_summary_at(output_dir: &std::path::Path, real_fresh_machine_e
         .expect("json"),
     )
     .expect("write first-run summary");
+}
+
+fn write_real_first_run_summary_at(output_dir: &std::path::Path) {
+    fs::create_dir_all(output_dir).expect("create real first-run dir");
+    fs::write(
+        output_dir.join("summary.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "kind": "real_first_run_bootstrap_evidence",
+            "local_only": true,
+            "real_fresh_machine_evidence": true,
+            "doctor_status": "ok",
+            "self_revision_write_path": "run_reflection",
+            "daemon_enabled": false,
+            "daemon_writes_allowed": false,
+            "sqlite_database_exists": true,
+            "started_serve": false,
+            "ran_product_smoke": false
+        }))
+        .expect("json"),
+    )
+    .expect("write real first-run summary");
 }
 
 fn write_product_smoke_latest(root: &std::path::Path) {

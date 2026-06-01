@@ -270,7 +270,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 
 **Implementation steps:**
 
-- [ ] **Step 1: Preserve the current four-hook contract**
+- [x] **Step 1: Preserve the current four-hook contract**
 
   Keep the hook list exactly visible in `doctor` unless a separate spec changes it:
 
@@ -279,7 +279,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - `decide_with_snapshot:conflict`
   - `build_self_snapshot:periodic`
 
-- [ ] **Step 2: Add focused regression tests for opt-in boundaries**
+- [x] **Step 2: Add focused regression tests for opt-in boundaries**
 
   Extend `tests/mcp_stdio.rs` to prove:
 
@@ -295,7 +295,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   cargo test --test failure_modes -v
   ```
 
-- [ ] **Step 3: Improve diagnostics without widening behavior**
+- [x] **Step 3: Improve diagnostics without widening behavior**
 
   If current diagnostics are insufficient, add bounded fields that explain:
 
@@ -307,7 +307,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 
   Do not add a new MCP tool and do not add a new durable write path.
 
-- [ ] **Step 4: Update integration docs**
+- [x] **Step 4: Update integration docs**
 
   Update `docs/local-mcp-integration-2026-03-26.md` and `docs/testing-guide-2026-03-24.md` with:
 
@@ -315,6 +315,16 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - expected best-effort failure behavior
   - commands for targeted regression tests
   - examples of when auto-reflection should not run
+
+  Local implementation note: the current four-hook coverage now exposes
+  bounded structured diagnostics for trigger type, namespace, trigger key,
+  handled / rejected / suppressed / not-triggered / skipped outcome, cooldown
+  state, cooldown boundary, evidence window size, selected evidence ids, and
+  durable write path. The regression set also covers conflict-looking ingest
+  text with non-compatible hints and serialized `doctor` JSON visibility for
+  the exact four-hook list. This closes Workstream 3 for the existing
+  MCP-wired hook contract only; it does not add all-entry auto-reflection, a
+  new MCP tool, a daemon write path, or any replacement for `run_reflection`.
 
 ## Workstream 4: Observe-Only Daemon Lifecycle Readiness
 
@@ -332,7 +342,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 
 **Implementation steps:**
 
-- [ ] **Step 1: Keep daemon disabled by default**
+- [x] **Step 1: Keep daemon disabled by default**
 
   Preserve these default expectations:
 
@@ -342,7 +352,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - `writes_allowed = false`
   - `write_gate_approved = false`
 
-- [ ] **Step 2: Add lifecycle design before code changes**
+- [x] **Step 2: Add lifecycle design before code changes**
 
   Extend `docs/product/daemon-observe-only-gate.md` with:
 
@@ -353,7 +363,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - observed-only candidate scan interval
   - proof that candidate scans do not call `run_reflection`
 
-- [ ] **Step 3: Test observe-only diagnostics**
+- [x] **Step 3: Test observe-only diagnostics**
 
   Run:
 
@@ -369,7 +379,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - semantic memory tables are not written by diagnostics after normal doctor bootstrap
   - failed / suppressed candidate counts remain bounded
 
-- [ ] **Step 4: Add lifecycle code only after the design review**
+- [x] **Step 4: Add lifecycle code only after the design review**
 
   If lifecycle implementation is approved, implement observe-only start/stop behind `[daemon].enabled = true`. The implementation must:
 
@@ -377,6 +387,19 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - record only allowed operation metadata if operation-log wiring is in scope
   - shut down cleanly on cancellation
   - expose enough status for `doctor` or local diagnostics
+
+  Local implementation note: observe-only daemon readiness is now closed for
+  the current local boundary. Defaults keep `[daemon].enabled = false`; `doctor`
+  reports read-only `daemon_observe_only` diagnostics without starting the
+  handle; candidate reads are bounded local `operation_log` summaries; `serve`
+  starts the observe-only handle only when `[daemon].enabled = true` and stops
+  it after stdio service exit; disabled and enabled observe-only handles have
+  start / stop / drop-abort lifecycle tests; and the gate document records
+  start, stop, shutdown, orphaned-work recovery, scan interval, and
+  no-`run_reflection` proof. This still does not add daemon-triggered writes,
+  does not start a remote listener, does not create write-capable background
+  autonomy, and does not create any durable write path beyond governed
+  `run_reflection`.
 
 ## Workstream 5: Product-Grade Observability and Support Bundle Diagnostics
 
@@ -399,7 +422,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 
 **Implementation steps:**
 
-- [ ] **Step 1: Map observability coverage**
+- [x] **Step 1: Map observability coverage**
 
   Update `docs/product/correlation-id-contract.md` with a table covering:
 
@@ -412,7 +435,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 
   Mark each as implemented, partial, or future. Do not mark model / ledger / reflection correlation as implemented unless tests prove it.
 
-- [ ] **Step 2: Add missing metadata tests before implementation**
+- [x] **Step 2: Add missing metadata tests before implementation**
 
   Add tests that prove:
 
@@ -427,7 +450,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   cargo test --test operation_log --test dashboard_http --test mcp_stdio --test support_bundle -v
   ```
 
-- [ ] **Step 3: Extend support bundle only after redaction rules exist**
+- [x] **Step 3: Extend support bundle only after redaction rules exist**
 
   Log excerpts may be added only if:
 
@@ -436,7 +459,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - output is bounded
   - raw request / response payloads remain excluded by default
 
-- [ ] **Step 4: Re-run secret scan**
+- [x] **Step 4: Re-run secret scan**
 
   Run:
 
@@ -446,6 +469,19 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   rg -n 'api_key|Authorization|Bearer|sk-|provider_token|openai_api_key|password|secret|sqlite:///' target/support-bundles/observability-check || true
   find target/support-bundles/observability-check \( -name '*.sqlite' -o -name '*.toml' \) -print
   ```
+
+  Local implementation note: product-grade local observability is closed for the
+  current Local Alpha boundary. The correlation contract now maps MCP call,
+  dashboard event, operation-log entry, support-bundle summary, framework-level
+  parse/route failures, model call, trigger ledger, and reflection audit status
+  separately. Handler-level success and failure paths persist bounded safe
+  operation-log metadata with generated correlation IDs; framework-level
+  non-object argument failures remain a documented gap; dashboard and support
+  bundle paths stay read-only and bounded; explicit log excerpts require
+  `--log-file`; and support-bundle correlation filtering accepts only generated
+  `mcp-tool-call-<uuid-v4>` IDs. This does not implement provider/model-call
+  correlation, trigger-ledger correlation, reflection-audit correlation, remote
+  upload, production support workflow, or raw provider payload export.
 
 ## Workstream 6: Structured Decision Protocol
 
@@ -465,7 +501,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 
 **Implementation steps:**
 
-- [ ] **Step 1: Write a decision protocol spec**
+- [x] **Step 1: Write a decision protocol spec**
 
   Create or update a spec section that defines:
 
@@ -477,7 +513,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - provider diagnostics class
   - backward-compatible minimal action field
 
-- [ ] **Step 2: Add compatibility tests**
+- [x] **Step 2: Add compatibility tests**
 
   Tests must prove:
 
@@ -492,9 +528,21 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   cargo test --test decision_flow --test mcp_stdio --test openai_compatible_model -v
   ```
 
-- [ ] **Step 3: Implement the smallest protocol extension**
+- [x] **Step 3: Implement the smallest protocol extension**
 
   Add fields only after tests define their behavior. Do not make the decision engine claim planning, tool execution, or autonomous control.
+
+  Local implementation note: `decide_with_snapshot` now has a versioned
+  protocol-v2 envelope with `decision_id`, requested / selected action,
+  bounded local confidence metadata, commitment-gate metadata, policy checks,
+  status, reason, and machine-readable non-claims while preserving the legacy
+  `decision.action` field for existing callers. Stdio tests cover blocked and
+  non-blocked compatibility, provider-selected actions, gate metadata, and
+  provider secret non-exposure; provider tests keep malformed HTTP JSON and
+  timeout behavior as safe provider errors. Provider diagnostics inside the
+  decision envelope remain partial; this does not create a planner, tool
+  executor, policy arbitration engine, provider-native structured decision JSON
+  contract, or new durable write path.
 
 ## Workstream 7: Evidence and Reflection Semantics V2
 
@@ -515,7 +563,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
 
 **Implementation steps:**
 
-- [ ] **Step 1: Lock current no-widening behavior**
+- [x] **Step 1: Lock current no-widening behavior**
 
   Add tests proving:
 
@@ -524,11 +572,11 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - explicit evidence ids must pass server-side validation
   - namespace filters do not gather sibling namespace evidence
 
-- [ ] **Step 2: Add one evidence-v2 slice**
+- [x] **Step 2: Add one evidence-v2 slice**
 
   Pick one bounded extension, such as independent evidence kind semantics. Do not add weighting, ranking, relation graph, and cross-window search in the same slice.
 
-- [ ] **Step 3: Update reflection contract**
+- [x] **Step 3: Update reflection contract**
 
   Document:
 
@@ -537,13 +585,28 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - audit payload shape
   - fallback behavior when no evidence matches
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
   Run:
 
   ```bash
   cargo test --test evidence_query_dto --test sqlite_store --test failure_modes --test application_use_cases -v
   ```
+
+  Local implementation note: evidence and reflection semantics v2 are closed for
+  the current bounded slice. Automatic self-revision proposal queries narrow
+  within the governed trigger window, reject empty intersections instead of
+  widening, require explicit ids to stay inside the trigger window and query
+  policy, preserve namespace scoping, and support inclusive recency filters.
+  The added evidence-v2 slice is a read-only relation report over a trigger
+  window with selected / available-not-selected rows, window rank, bounded
+  binary selection weight, rejection reason metadata, and a no-widening policy;
+  `doctor.system_layer_report` exposes the contract as diagnostics. Reflection
+  deeper-update docs preserve accepted evidence fields, rejected widening
+  behavior, audit payload shape, and `run_reflection` as the only durable
+  identity / commitment / reflection write path. This does not add cross-window
+  search, model-based ranking, relation traversal, independent evidence-kind
+  taxonomy, daemon behavior, or any new write tool.
 
 ## Workstream 8: Data Lifecycle, Backup, Restore, and Migration
 
@@ -624,7 +687,7 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   - `mock`
   - `openai-compatible`
   - Azure OpenAI candidate
-  - OpenRouter candidate
+  - OpenRouter live-provider certification candidate
   - local model gateway candidate
 
   Columns:

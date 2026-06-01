@@ -4,6 +4,7 @@
 # - examples/agent-llm-mm.dev.example.toml: local development and tests
 # - examples/agent-llm-mm.prod-local.example.toml: formal local data
 # - examples/agent-llm-mm.demo.example.toml: deterministic self-revision demo
+# - examples/agent-llm-mm.openrouter.example.toml: OpenRouter via OpenAI-compatible transport
 #
 # `bootstrap-local` copies the dev example as the safest first-run template.
 # Relative bootstrap-local targets are resolved from the repository root.
@@ -16,6 +17,17 @@ database_url = "sqlite:///absolute/path/to/agent-llm-mm.local.sqlite"
 
 [model]
 provider = "mock"
+
+# OpenRouter is an optional supported provider profile. Prefer copying
+# examples/agent-llm-mm.openrouter.example.toml instead of mixing provider
+# profiles in one config. Keep secrets in AGENT_LLM_MM_OPENROUTER_API_KEY.
+#
+# [model]
+# provider = "openrouter"
+#
+# [model.openrouter]
+# model = "openai/gpt-oss-120b"
+# api_key_env = "AGENT_LLM_MM_OPENROUTER_API_KEY"
 
 [dashboard]
 enabled = false

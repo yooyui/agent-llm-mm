@@ -10,7 +10,7 @@
 
 2026-04-27 已补齐可配置的本机只读 dashboard：它随 `serve` 在 `[dashboard].enabled = true` 时启动，展示 `Memory-chan Live Desk` 运行面板、runtime operation 事件和静态生成图物料。它仍是本机观测面板，不是远程管理后台、写入界面或 durable operation-log database。
 
-2026-05-09 已确认当前 MVP release gate 可作为产品化起点：`cargo test` 全量通过 170 个测试，`doctor` 返回 `status = ok`，self-revision demo package 可生成 release gate 要求的证据链。正式产品化进入下一阶段规划，详见 [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md)。这不改变当前事实：仓库还不是 GA / 生产级完整自治产品。
+2026-05-09 的 historical MVP release gate snapshot 曾确认当时可作为产品化起点：`cargo test` 全量通过 170 个测试，`doctor` 返回 `status = ok`，self-revision demo package 可生成 release gate 要求的证据链。当前验证总数以 `status-sync-check` 监控文档为准。正式产品化进入下一阶段规划，详见 [Productization Roadmap After MVP](superpowers/plans/2026-05-09-productization-roadmap.md)。这不改变当前事实：仓库还不是 GA / 生产级完整自治产品。
 
 2026-05-16 前序 formal product readiness slice 已刷新 Local Alpha minimum gate、product smoke gate 和 support bundle gate 证据：当时 `cargo test` 全量通过 194 个测试，`doctor` 返回 `status = ok`，`product-smoke-local.sh` 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`，`generate-support-bundle.sh` 生成本地脱敏诊断 JSON 且不包含 `.sqlite` 或 `.toml` 文件。后续 support bundle 增加了显式 `--log-file <path>` 本地日志摘要/安全摘录边界，以及显式 `--correlation-id mcp-tool-call-<uuid-v4>` operation summary 过滤；它仍不自动扫描日志位置、不复制原始 `.log` 文件，也不导出 raw operation payload。这仍不代表 fresh-machine install、remote/team、multi-tenancy、Beta 或 GA 已完成。
 
@@ -29,7 +29,7 @@
 - Local Product Alpha 的支持包已有首版本地生成器：只允许分享脱敏 `doctor` shape、配置 shape、受限 operation summaries、release metadata、product smoke summary、manifest、显式 `--correlation-id mcp-tool-call-<uuid-v4>` 过滤后的 operation-log metadata，以及显式 `--log-file <path>` 触发的 bounded / redacted `local-log-excerpts.json`；它仍不自动发现日志位置、不复制原始日志文件，也不导出 raw request / response / diagnostic payload
 - Local Product Alpha 的 first-run 配置引导已有 `bootstrap-local` 脚本入口和本地 `bootstrap-local -> doctor` smoke simulation；下一步应补真实 fresh-machine install / Windows runner evidence，而不是把 helper 表述为 installer 或 production bootstrapper
 - Local Product Alpha 的 data lifecycle 已有本地 backup / restore 脚本和回归门禁；restore 仍默认写到新路径，正式 `database_url` 切换必须由人工在 `doctor` 验证后决定
-- daemon 先经过 observe-only gate：Local Alpha 阶段不调用 `run_reflection`、不写 identity / commitments、不启动 remote listener；当前 `doctor.daemon_observe_only` 只提供本机只读 preflight 诊断和 operation-log failed / suppressed 候选计数
+- daemon 先经过 observe-only gate：Local Alpha 阶段不调用 `run_reflection`、不写 identity / commitments、不启动 remote listener；当前 `doctor.daemon_observe_only` 只提供本机只读 preflight 诊断和 operation-log failed / suppressed 候选计数，`serve` 也只会在 `[daemon].enabled = true` 时启动 observe-only lifecycle handle
 - correlation ID 先用于 observability：成功/失败 MCP tool call、dashboard event 和 operation-log metadata 可按 `mcp-tool-call-<uuid-v4>` 串联，但不新增语义写路径
 - 架构结构优化先以只读诊断落地：`doctor.system_layer_report` 展示 substrate / signal / memory / policy / control_loop / actuator / interface / release_boundary 的当前状态和 blocker，不代表大规模重构、daemon 写能力、remote/team、完整 memory layering 或 Local Alpha 完成
 
@@ -76,7 +76,7 @@
 
 重点边界：
 
-- `decide_with_snapshot` 已可走 `openai-compatible` provider，但仍不是完整决策引擎
+- `decide_with_snapshot` 已可走 `openai-compatible` 或 OpenRouter provider；OpenRouter 当前只表示本地 stub 验证的 OpenAI-compatible `/chat/completions` transport，不是 live-provider certification；该能力仍不是完整决策引擎
 - 当前 MCP-wired automatic path 只有上述 4 条，不代表所有 MCP entry point 都会自动反思
 - `decide_with_snapshot` 与 `build_self_snapshot` 当前仍要求显式 `auto_reflect_namespace`
 - `run_reflection` 仍是唯一 durable write path；没有新增旁路持久化接口
@@ -138,14 +138,14 @@
 
 目标：
 
-- 在现有 provider 枚举与 provider-specific config 结构上继续增加更多 provider
+- 在现有 provider 枚举与 provider-specific config 结构上继续增加更多 provider；当前已完成 OpenRouter 的本地 OpenAI-compatible transport 切片
 - 保持应用层与领域层不感知第三方协议细节
 - 新增 provider 前先通过 [Provider Readiness Checklist](provider-contract.md)，尤其是 config validation、`doctor` redaction、timeout、非成功状态、malformed JSON、decision/self-revision/evidence policy 解析和 `stdio` provider path
 
 候选方向：
 
 - Azure OpenAI
-- OpenRouter
+- OpenRouter live-provider certification
 - 本地模型网关
 
 ### 2. 把 reflection 从“显式输入 + 可选查询 + 最小 deep update”推进到 richer 语义

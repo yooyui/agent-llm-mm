@@ -8,7 +8,7 @@ use agent_llm_mm::{
 use chrono::Utc;
 use sqlx::sqlite::SqlitePool;
 use tempfile::tempdir;
-use tokio::time::{Duration, timeout};
+use tokio::time::{Duration, sleep, timeout};
 
 #[test]
 fn daemon_defaults_to_disabled() {
@@ -35,7 +35,11 @@ fn daemon_config_rejects_zero_polling_interval() {
 
 #[tokio::test]
 async fn doctor_reports_daemon_config_without_starting_daemon() {
-    let config = AppConfig::default();
+    let temp_dir = tempdir().expect("temp dir");
+    let config = AppConfig {
+        database_url: sqlite_url(temp_dir.path().join("daemon-config-doctor.sqlite")),
+        ..Default::default()
+    };
     let report = agent_llm_mm::run_doctor(config).await.unwrap();
     assert!(!report.daemon_enabled);
     assert_eq!(report.daemon_poll_interval_ms, 60_000);
@@ -202,13 +206,18 @@ async fn doctor_observe_only_daemon_diagnostics_explain_read_only_boundary() {
     );
     assert_eq!(
         diagnostics["clean_shutdown_status"],
-        "verified_by_handle_stop"
+        "not_started_by_doctor"
+    );
+    assert_eq!(
+        diagnostics["lifecycle_regression_status"],
+        "verified_by_handle_stop_test"
     );
     assert_eq!(diagnostics["semantic_writes_allowed"], false);
     assert_eq!(diagnostics["run_reflection_allowed_from_daemon"], false);
     assert_eq!(diagnostics["write_capable_daemon_gate_status"], "blocked");
     assert_eq!(diagnostics["background_autonomy_enabled"], false);
     assert_eq!(diagnostics["daemon_loop_connected"], false);
+    assert_eq!(diagnostics["daemon_started_by_doctor"], false);
 }
 
 #[tokio::test]
@@ -305,6 +314,34 @@ async fn observe_only_daemon_handle_starts_and_stops_without_write_capability() 
         .expect("observe-only daemon should stop promptly");
 }
 
+#[tokio::test]
+async fn dropping_observe_only_daemon_handle_aborts_lifecycle_loop() {
+    let handle = DaemonHandle::start(DaemonConfig {
+        enabled: true,
+        poll_interval_ms: 60_000,
+        max_concurrent_tasks: 1,
+    });
+    let probe = handle.lifecycle_probe();
+
+    timeout(Duration::from_secs(1), async {
+        while !probe.is_running() {
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("observe-only daemon should enter lifecycle loop");
+
+    drop(handle);
+
+    timeout(Duration::from_secs(1), async {
+        while probe.is_running() {
+            sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("dropping handle should abort the observe-only lifecycle loop");
+}
+
 #[test]
 fn daemon_lifecycle_remains_observe_only_and_has_no_durable_write_or_remote_paths() {
     let source = std::fs::read_to_string("src/application/daemon.rs")
@@ -314,12 +351,25 @@ fn daemon_lifecycle_remains_observe_only_and_has_no_durable_write_or_remote_path
     assert!(source.contains("observe_only"));
     assert!(source.contains("writes_allowed"));
     assert!(source.contains("remote_listener_enabled"));
+    assert!(source.contains("impl Drop for DaemonHandle"));
+    assert!(source.contains("task.abort()"));
     assert!(!source.contains("run_reflection"));
     assert!(!source.contains("append_event"));
     assert!(!source.contains("append_claim"));
     assert!(!source.contains("append_reflection"));
     assert!(!source.contains("TcpListener"));
     assert!(!source.contains("start_dashboard_service"));
+}
+
+#[test]
+fn stdio_server_wires_daemon_only_through_observe_only_handle() {
+    let source = std::fs::read_to_string("src/interfaces/mcp/server.rs")
+        .expect("stdio server source should be readable");
+
+    assert!(source.contains("start_configured_daemon(&config)"));
+    assert!(source.contains("DaemonHandle::start(config.daemon.clone())"));
+    assert!(source.contains("handle.stop().await"));
+    assert!(!source.contains("run_reflection_allowed_from_daemon: true"));
 }
 
 fn sqlite_url(path: impl AsRef<std::path::Path>) -> String {

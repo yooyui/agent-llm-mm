@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-28 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-31 fresh 验证更新）
 
 ## 1. 目标
 
@@ -28,12 +28,12 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-05-29`，`cargo test` 全量通过，摘要如下：
+截至 `2026-05-31`，`cargo test` 全量通过，摘要如下：
 
 - `lib unit tests`: 7 passed
 - `application_use_cases`: 22 passed
 - `bootstrap`: 24 passed
-- `daemon_config`: 10 passed
+- `daemon_config`: 12 passed
 - `dashboard_config`: 4 passed
 - `dashboard_http`: 7 passed
 - `dashboard_projection`: 2 passed
@@ -45,21 +45,21 @@
 - `evidence_query_dto`: 2 passed
 - `failure_modes`: 31 passed
 - `first_run_bootstrap_smoke`: 4 passed
-- `local_alpha_release_evidence`: 18 passed
-- `mcp_stdio`: 36 passed
-- `openai_compatible_model`: 9 passed
+- `local_alpha_release_evidence`: 19 passed
+- `mcp_stdio`: 40 passed
+- `openai_compatible_model`: 11 passed
 - `operation_log`: 9 passed
-- `product_completion_read_models`: 10 passed
-- `product_readiness`: 9 passed
-- `provider_config`: 12 passed
-- `release_decision`: 3 passed
+- `product_completion_read_models`: 13 passed
+- `product_readiness`: 15 passed
+- `provider_config`: 16 passed
+- `release_decision`: 5 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_backup_restore`: 6 passed
 - `sqlite_store`: 20 passed
-- `status_sync`: 7 passed
-- `support_bundle`: 34 passed
+- `status_sync`: 11 passed
+- `support_bundle`: 35 passed
 
-合计：303 个测试通过。
+合计：334 个测试通过。
 
 ---
 
@@ -103,8 +103,8 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 2. `git diff --check`
 3. `cargo clippy --all-targets --all-features -- -D warnings`
 4. `cargo test`
-5. `./scripts/agent-llm-mm.sh doctor`
-6. `cargo run --quiet --bin agent_llm_mm -- doctor`
+5. `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor`
+6. `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor-cargo.sqlite cargo run --quiet --bin agent_llm_mm -- doctor`
 7. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
 8. 如果改动涉及 demo package，先用 timestamped / scratch output 跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)`；如果要按 Local Alpha 发布口径复核 `latest` 证据链，使用下一条 product smoke
 9. 如果改动涉及 Local Alpha product smoke gate、启动包装脚本或本地产品化证据链，在 repo root 补跑 `./scripts/product-smoke-local.sh [config_path]`；如果当前目录不是 repo root，使用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh`，并在需要配置文件时传入绝对 config path
@@ -114,7 +114,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 13. 如果改动涉及 Local Alpha release-gate refresh 或本机 gate 证据刷新流程，补跑 `bash -n scripts/local-alpha-release-gate-refresh.sh`、`cargo test --test local_alpha_release_evidence -v`，并按需执行 `./scripts/local-alpha-release-gate-refresh.sh [config_path]`；该 refresh 只产生本机可复现证据，不生成真实 fresh-machine、Windows runner、remote/team 或发布决策证据
 14. 如果改动涉及 release engineering、release evidence directory、soak evidence 或候选发布说明，补跑 `bash -n scripts/release-soak-local.sh`、`cargo test --test local_alpha_release_evidence release_soak -v`，并按需执行 `./scripts/release-soak-local.sh <candidate-name> [config_path]`；该 soak 只生成本地 release evidence，不生成真实 fresh-machine、Windows runner、remote/team、上传、tag、安装包或发布认证证据
 15. 如果改动涉及 SQLite 备份、恢复、schema migration 前置检查或 data lifecycle gate，补跑 `bash -n scripts/backup-sqlite.sh scripts/restore-sqlite.sh` 和 `cargo test --test sqlite_backup_restore -v`
-16. 如果改动涉及 product readiness、release decision artifact、产品措辞 gate、remote/team inventory/security gates、evidence relation、episode projection、layered memory projection 或 `doctor.system_layer_report`，补跑 `cargo test --test product_readiness -v`、`cargo test --test release_decision -v`、`cargo test --test product_completion_read_models -v`、`cargo test --test provider_config -v` 和 `./scripts/product-readiness-check.sh <candidate-name>` 的本地预检；这些检查只能证明本地门禁、doctor 只读架构层报告、physics-informed non-claim / wording guard 和只读投影，不生成真实 fresh-machine、Windows runner、remote/team 产品模式、GA 或发布认证证据
+16. 如果改动涉及 product readiness、release decision artifact、产品措辞 gate、remote/team inventory/security gates、evidence relation、episode projection、layered memory projection 或 `doctor.system_layer_report`，补跑 `cargo test --test product_readiness -v`、`cargo test --test release_decision -v`、`cargo test --test product_completion_read_models -v`、`cargo test --test provider_config -v` 和 `./scripts/product-readiness-check.sh <candidate-name>` 的本地预检；这些检查只能核验本地门禁、doctor 只读架构层报告、runtime / declared-test-contract dependency-rule evidence、physics-informed non-claim / wording guard 和只读投影，不生成真实 fresh-machine、Windows runner、remote/team 产品模式、GA 或发布认证证据
 
 如果当前机器没有 `pwsh`，PowerShell runtime 行为测试会跳过；这种情况下只代表 Rust 测试覆盖了 PowerShell 脚本文本契约和 no-clobber 静态断言，Windows runner 或 Windows 实机验证仍需单独记录。
 
@@ -180,11 +180,11 @@ cargo test
 ### 5.5 本机预检
 
 ```zsh
-./scripts/agent-llm-mm.sh doctor
+AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor
 ```
 
 ```zsh
-cargo run --quiet --bin agent_llm_mm -- doctor
+AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor-cargo.sqlite cargo run --quiet --bin agent_llm_mm -- doctor
 ```
 
 预期输出为 JSON，至少包含：
@@ -301,6 +301,9 @@ cargo test --test mcp_stdio
 cargo test --test provider_config -v
 cargo test --test openai_compatible_model -v
 cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openai_compatible_provider_from_config_file -v
+cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openrouter_provider_from_config_file -v
+cargo test --test mcp_stdio ingest_interaction_auto_reflection_uses_openrouter_provider_from_config_file -v
+cargo test --test support_bundle support_bundle_reports_openrouter_config_shape_without_provider_secrets -v
 ```
 
 重点覆盖：
@@ -320,9 +323,13 @@ cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openai_compatib
 - `tests/provider_config.rs`
   - `default_config_uses_mock_provider_when_no_config_file_is_present`
   - `load_from_path_reads_openai_compatible_provider_from_toml_file`
+  - `load_from_path_reads_openrouter_provider_from_toml_file`
   - `load_prefers_config_path_from_environment`
   - `load_prefers_database_url_env_over_default_config_file`
+  - `openrouter_example_config_parses_without_live_looking_secret`
   - `doctor_fails_when_openai_provider_config_is_missing_api_key`
+  - `doctor_reports_openrouter_provider_without_exposing_api_key`
+  - `doctor_fails_when_openrouter_provider_config_is_missing_model`
   - `doctor_report_does_not_contain_api_key_in_serialized_output`
 - `tests/openai_compatible_model.rs`
   - `openai_compatible_model_parses_first_assistant_message_into_action`
@@ -342,8 +349,10 @@ cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openai_compatib
   - `operation_log_queries_by_correlation_id`
 - `tests/mcp_stdio.rs`
   - `decide_with_snapshot_over_stdio_uses_openai_compatible_provider_from_config_file`
+  - `decide_with_snapshot_over_stdio_uses_openrouter_provider_from_config_file`
+  - `ingest_interaction_auto_reflection_uses_openrouter_provider_from_config_file`
 
-新增 provider 前的阻断缺口：
+未来新增 provider 前的阻断缺口：
 
 - self-revision proposal 的 malformed JSON 仍只通过 proposal 解析路径间接覆盖；新增 provider 前需要按 provider contract 补齐更明确的 self-revision proposal 错误断言
 
@@ -394,6 +403,7 @@ cargo test --test application_use_cases --test failure_modes
 ```zsh
 cargo test --test mcp_stdio ingest_interaction_can_trigger_conflict_auto_reflection_when_explicit_conflict_hints_present -v
 cargo test --test mcp_stdio ingest_interaction_does_not_auto_reflect_conflict_without_explicit_conflict_hints -v
+cargo test --test mcp_stdio ingest_interaction_does_not_auto_reflect_conflict_with_non_conflict_trigger_hints -v
 cargo test --test mcp_stdio ingest_interaction_returns_success_even_when_conflict_auto_reflection_fails -v
 cargo test --test mcp_stdio decide_with_snapshot_can_trigger_conflict_auto_reflection_without_breaking_decision_flow -v
 cargo test --test mcp_stdio blocked_decide_with_snapshot_does_not_auto_reflect_conflict_hints -v
@@ -445,10 +455,13 @@ cargo test --test bootstrap doctor_reports_self_revision_runtime_coverage -v
 
 - structured diagnostics 是否返回可直接检查的 summary contract：
   - `trigger_type`: `failure` / `conflict` / `periodic`
+  - `namespace`
+  - `trigger_key`
   - `outcome`: `handled` / `rejected` / `suppressed` / `not_triggered` / `skipped`
   - `suppression_reason`
   - `rejection_reason`
   - `cooldown_boundary`
+  - `cooldown_state`: `none` / `set` / `active`
   - `evidence_window_size`
   - `selected_evidence_event_ids`
   - `durable_write_path = run_reflection`
@@ -707,6 +720,8 @@ cargo test --test mcp_stdio -- --nocapture
 ```powershell
 cargo test --test openai_compatible_model -- --nocapture
 cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openai_compatible_provider_from_config_file -- --nocapture
+cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openrouter_provider_from_config_file -- --nocapture
+cargo test --test mcp_stdio ingest_interaction_auto_reflection_uses_openrouter_provider_from_config_file -- --nocapture
 ```
 
 新增 provider 的验收应先按 [Provider Readiness Checklist](provider-contract.md) 补齐 `partial` / `gap` 对应的专用回归或记录明确例外，再执行上述手工验证。
@@ -1073,19 +1088,19 @@ cargo test --test daemon_config -v
 git diff --check
 ```
 
-这组命令验证 daemon 观察模式的边界文档、doctor diagnostics 和本地 handle start / stop 生命周期。Local Alpha 仍保持 daemon disabled by default；observe-only 阶段不能调用 `run_reflection`，也不能声明后台自治。
+这组命令验证 daemon 观察模式的边界文档、doctor diagnostics、`serve` 中 `[daemon].enabled = true` 时的 observe-only handle wiring、本地 handle start / stop / drop-abort 生命周期。Local Alpha 仍保持 daemon disabled by default；observe-only 阶段不能调用 `run_reflection`，也不能声明后台自治或 write-capable daemon。
 
 ### 改 daemon observe-only diagnostics / doctor 输出
 
 ```zsh
 cargo test --test daemon_config -v
 cargo test --test operation_log -v
-./scripts/agent-llm-mm.sh doctor
+AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor
 rg -n 'daemon_observe_only|observe-only|writes_allowed|remote_listener_enabled|operation_log' README.md docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/project-status.md docs/progress-tracker.md
 git diff --check
 ```
 
-这组命令验证 `doctor.daemon_observe_only` 的本机只读诊断字段、daemon 默认关闭、observe-only 写入 gate、operation-log status 查询，以及文档口径。`doctor` 的 runtime bootstrap 仍会执行既有 SQLite 初始化和 baseline guard 初始化；observe-only diagnostics 本身只能读取本地 `operation_log` 的 failed / suppressed `tool` 与 `trigger` 候选，不能调用 `run_reflection`、不能新增 identity / commitments / claims / events / reflections 语义写入，也不能声明 daemon 已具备后台自治。
+这组命令验证 `doctor.daemon_observe_only` 的本机只读诊断字段、daemon 默认关闭、observe-only 写入 gate、operation-log status 查询，以及文档口径。`doctor` 的 runtime bootstrap 仍会执行既有 SQLite 初始化和 baseline guard 初始化，但 `doctor` 本身不启动 daemon handle；observe-only diagnostics 本身只能读取本地 `operation_log` 的 failed / suppressed `tool` 与 `trigger` 候选，不能调用 `run_reflection`、不能新增 identity / commitments / claims / events / reflections 语义写入，也不能声明 daemon 已具备后台自治。
 
 ### 改 correlation id / operation log observability
 
@@ -1122,7 +1137,7 @@ cargo fmt --check
 git diff --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-./scripts/agent-llm-mm.sh doctor
+AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor
 ```
 
 demo / MVP 发布前核验不使用这段简表作为最终依据；请按 [Release Gate](release-gate.md) 执行完整 MVP gate。Local Alpha / product alpha 发布前核验使用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)。
@@ -1138,7 +1153,7 @@ cargo fmt --check
 git diff --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-./scripts/agent-llm-mm.sh doctor
+AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor
 ```
 
 如果这五条都通过，说明当前工作树至少满足：

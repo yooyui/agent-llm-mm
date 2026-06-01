@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
@@ -13,6 +13,7 @@ use crate::support::local_alpha_evidence::{
 use crate::support::product_wording::{
     ClaimGateState, ProductClaimGuardInput, check_product_claims,
 };
+use crate::support::release_candidate::validate_release_candidate;
 use crate::support::remote_team::{
     RemoteTeamCapabilityInventory, RemoteTeamCapabilityState, remote_team_capability_inventory,
     remote_team_security_gate_report,
@@ -59,10 +60,16 @@ pub struct ProductReadinessBlocker {
 
 #[derive(Debug, Deserialize)]
 struct ReleaseDecisionSummary {
+    kind: Option<String>,
     release_candidate: Option<String>,
     decision: Option<String>,
+    approved: Option<bool>,
+    evidence_status: Option<String>,
     human_reviewer: Option<String>,
     rollback_note: Option<String>,
+    open_gates: Option<Vec<serde_json::Value>>,
+    external_blockers: Option<Vec<serde_json::Value>>,
+    human_blockers: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,23 +168,6 @@ pub fn summarize_product_readiness(
     Ok(summary)
 }
 
-fn validate_release_candidate(candidate: &str) -> Result<()> {
-    let allowed = !candidate.is_empty()
-        && !candidate.starts_with('.')
-        && !candidate.contains("..")
-        && candidate
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'));
-
-    if allowed {
-        return Ok(());
-    }
-
-    Err(anyhow!(
-        "candidate name must contain only letters, numbers, dot, underscore, and dash, and must not contain path traversal"
-    ))
-}
-
 fn local_alpha_gates(summary: &LocalAlphaEvidenceSummary) -> Vec<ProductReadinessGate> {
     summary
         .gates
@@ -224,11 +214,20 @@ fn release_decision_gate(root: &Path, release_candidate: &str) -> ProductReadine
     };
 
     let mut reasons = Vec::new();
+    if summary.kind.as_deref() != Some("release_decision") {
+        reasons.push("release decision kind mismatch");
+    }
     if summary.release_candidate.as_deref() != Some(release_candidate) {
         reasons.push("release candidate mismatch");
     }
     if summary.decision.as_deref() != Some("approved") {
         reasons.push("release decision is not approved");
+    }
+    if summary.approved != Some(true) {
+        reasons.push("release decision approved flag is not true");
+    }
+    if summary.evidence_status.as_deref() != Some("ready_for_human_review") {
+        reasons.push("release decision evidence status is not ready for human review");
     }
     if summary
         .human_reviewer
@@ -248,6 +247,15 @@ fn release_decision_gate(root: &Path, release_candidate: &str) -> ProductReadine
     {
         reasons.push("missing rollback note");
     }
+    if has_release_decision_entries(&summary.open_gates) {
+        reasons.push("release decision artifact still lists open gates");
+    }
+    if has_release_decision_entries(&summary.external_blockers) {
+        reasons.push("release decision artifact still lists external blockers");
+    }
+    if has_release_decision_entries(&summary.human_blockers) {
+        reasons.push("release decision artifact still lists human blockers");
+    }
 
     if reasons.is_empty() {
         gate(
@@ -264,6 +272,10 @@ fn release_decision_gate(root: &Path, release_candidate: &str) -> ProductReadine
             reasons.join("; "),
         )
     }
+}
+
+fn has_release_decision_entries(entries: &Option<Vec<serde_json::Value>>) -> bool {
+    entries.as_ref().is_some_and(|entries| !entries.is_empty())
 }
 
 fn release_engineering_gate(root: &Path, release_candidate: &str) -> ProductReadinessGate {

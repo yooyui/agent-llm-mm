@@ -72,10 +72,10 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 - 存在后台 daemon / 定时自治进程
 - 所有 MCP 请求都会自动反思
 
-截至 `2026-05-29`，fresh 验证还包括：
+截至 `2026-05-31`，fresh 验证还包括：
 
-- `cargo test` 全量通过，303 个测试通过
-- 其中 `application_use_cases` 22、`failure_modes` 31、`mcp_stdio` 36、`sqlite_store` 20、`dashboard_http` 7、`daemon_config` 10、`support_bundle` 34、`status_sync` 7、`local_alpha_release_evidence` 18、`product_completion_read_models` 10、`product_readiness` 9、`release_decision` 3
+- `cargo test` 全量通过，334 个测试通过
+- 其中 `application_use_cases` 22、`failure_modes` 31、`mcp_stdio` 40、`sqlite_store` 20、`dashboard_http` 7、`daemon_config` 12、`support_bundle` 35、`provider_config` 16、`status_sync` 11、`local_alpha_release_evidence` 19、`product_completion_read_models` 13、`product_readiness` 15、`release_decision` 5
 - self-revision demo package wrapper 可生成本地 artifact report
 - `release-soak-local.sh` 已提供本地 release evidence runner，可记录 candidate-specific doctor / dashboard HTTP / product smoke / first-run simulation / support bundle / evidence summary、compatibility matrix 和 release boundary 证据；它不生成 Windows runner、真实 fresh-machine、remote/team、上传、tag、安装包或发布认证证据
 - `product-readiness-check.sh` 已提供本地候选 readiness gate，能够把 release decision、release engineering、真实 fresh-machine、Windows parity、remote/team、安全/auth 和产品措辞缺口保持为 blocked
@@ -151,6 +151,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - SQLite 持久化
 - `namespace` 最小闭环
 - `openai-compatible` provider
+- OpenRouter provider（通过 OpenAI-compatible `/chat/completions` transport 的本地 stub 验证，不代表 live-provider certification）
 - 配置文件驱动的 provider 选择
 - trigger-ledger-backed automatic self-revision MVP
   - 当前 MCP-wired automatic path 只有 4 条：
@@ -159,11 +160,11 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
     - `decide_with_snapshot -> conflict`
     - `build_self_snapshot -> periodic`
   - `ingest_interaction` 仍可通过 ingest DTO 提供 `trigger_hints`
-  - `ingest_interaction -> conflict` 仍要求显式 `trigger_hints` 包含 `conflict` 或 `identity`
+  - `ingest_interaction -> conflict` 仍要求显式 `trigger_hints` 包含 `conflict` 或 `identity`；无 hints 或非兼容 hints（例如只有 `commitment`）不会因为文本看起来冲突就启动该 hook
 - `decide_with_snapshot` / `build_self_snapshot` 当前仍要求显式传 `auto_reflect_namespace`
 - `decide_with_snapshot` 还要求显式传 conflict-compatible `trigger_hints`，否则不会因为“库里已有 evidence”而自动进入 conflict self-revision
   - proposal 首阶段已可携带 `proposed_evidence_event_ids`、`proposed_evidence_query`、`confidence`；其中 query 在 explicit ids 为空时可对当前 trigger window 做 bounded narrowing，并在有交集时只按当前窗口内候选应用 `limit`，若没有交集则拒绝处理而不是绕过 query；在 explicit ids 非空时也会约束这些 ids 必须满足当前窗口内的 query 过滤条件，但这仍不是 richer widening / ranking engine
-  - best-effort auto-reflection 现在会返回 structured trigger / rejection / suppression / cooldown diagnostics，供日志与测试复用
+  - best-effort auto-reflection 现在会返回 structured diagnostics，包含 `trigger_type`、`namespace`、`trigger_key`、outcome、rejection / suppression reason、`cooldown_state`、cooldown boundary、evidence window size 与 selected evidence ids，供日志与测试复用
   - proposal 会经过服务端治理，再转译到既有 `run_reflection`
   - 没有新增单独 MCP tool；identity / commitments 的 durable write path 仍是 `run_reflection`
   - direct `run_reflection` 不会递归进入 auto-reflection
@@ -176,7 +177,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 原因：
 
 - commitment gate 是真实能力
-- 下游模型已可走 `openai-compatible`
+- 下游模型已可走 `openai-compatible` 或 OpenRouter；OpenRouter 当前只表示本地 stub 验证的 OpenAI-compatible `/chat/completions` transport，不是 live-provider certification
 - 返回契约仍是最小动作字符串
 - 更适合作为流程验证能力，而不是最终生产决策能力
 - 当前领域层与协调器能表达 `failure / conflict / periodic` trigger type
@@ -188,7 +189,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - richer 自动 evidence lookup
 - richer evidence weighting / relation / ranking
 - richer reflection 语义（当前已有最小 `identity_core` / `commitments` 深层修订，但仍不是 richer schema / versioned policy）
-- 更多 provider 类型
+- 更多 provider 类型（Azure、本地模型；OpenRouter live-provider certification 仍未完成）
 - 持续后台自治运行、独立 daemon、完整自治代理行为
 
 ## 8. 正式接入时需要注意的点
@@ -258,7 +259,7 @@ SQLite 非常适合本机 MVP，但它仍然是单写者模型。若多个 AI �
 - 无远程 Web 管理后台、写入型 dashboard 或 MCP HTTP transport
 - 无更丰富的 evidence 自动检索
 - 已有最小 `identity_update` / `commitment_updates` 反思修订，但仍无 richer schema、版本化策略与更细粒度生命周期
-- 无更多 provider 类型
+- 无 Azure / 本地模型 provider；OpenRouter 仅完成本地 OpenAI-compatible transport 切片
 - automatic self-revision 当前 MCP-wired automatic path 仅限 `ingest_interaction -> failure`、`ingest_interaction -> conflict`、`decide_with_snapshot -> conflict`、`build_self_snapshot -> periodic`
 - `decide_with_snapshot` / `build_self_snapshot` 仍要求显式 `auto_reflect_namespace`；`decide_with_snapshot` 还要求显式 conflict-compatible `trigger_hints`，并且只在非 blocked 决策后 best-effort 运行
 - automatic self-revision 仍受 trigger ledger、证据门槛和慢更新约束保护，不是完整自治 daemon
@@ -278,8 +279,10 @@ cargo test
 ```zsh
 cargo test --test application_use_cases auto_reflection_runs_once_for_repeated_failure_and_records_handled_ledger -v
 cargo test --test mcp_stdio decide_with_snapshot_can_trigger_conflict_auto_reflection_without_breaking_decision_flow -v
+cargo test --test mcp_stdio ingest_interaction_does_not_auto_reflect_conflict_with_non_conflict_trigger_hints -v
 cargo test --test mcp_stdio build_self_snapshot_can_trigger_periodic_auto_reflection_once_for_explicit_namespace -v
 cargo test --test failure_modes auto_reflection_returns_structured_diagnostics_for_suppressed_trigger -v
+cargo test --test failure_modes auto_reflection_returns_structured_diagnostics -v
 cargo test --test failure_modes auto_reflection_rejects_model_proposed_evidence_outside_trigger_window -v
 cargo test --test bootstrap doctor_reports_self_revision_runtime_coverage -v
 ```

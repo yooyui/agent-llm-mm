@@ -24,6 +24,58 @@ An observe-only daemon may:
 It must be safe to run with formal local data because it does not write semantic
 memory, identity, commitments, or reflection records.
 
+## Observe-Only Lifecycle Contract
+
+Start condition:
+
+- `doctor` never starts the daemon handle; it only reads config and local
+  operation-log diagnostics.
+- The local handle may start only when `[daemon].enabled = true`; the `serve`
+  entrypoint wires this handle in observe-only mode and stops it when the stdio
+  service exits.
+- The default config keeps `[daemon].enabled = false`, so normal Local Alpha
+  first-run and default `serve` examples do not opt into daemon lifecycle
+  behavior.
+
+Stop condition and safe shutdown:
+
+- A caller must keep the `DaemonHandle` and call `stop()` to signal shutdown.
+- Disabled handles return promptly without entering a polling loop.
+- Observe-only handles wait for either the configured poll interval or the
+  shutdown signal, then exit without spawning write workers.
+- Dropping a handle without calling `stop()` aborts the local lifecycle task so
+  a forgotten handle cannot detach an orphan observe-only loop.
+- Tests bound shutdown time so cancellation cannot hang the process during local
+  validation.
+
+Orphaned-work recovery:
+
+- Observe-only mode has no durable work queue and no in-flight semantic writes.
+  Restart recovery is therefore diagnostic-only: the next preflight reads the
+  bounded local `operation_log` candidate counts again.
+- There are no orphaned reflection tasks to resume because observe-only mode
+  does not call `run_reflection`, does not create reflection audit rows, and
+  does not write identity or commitments.
+
+Candidate scan interval:
+
+- The configured `poll_interval_ms` is the observe-only tick interval for the
+  local handle.
+- `doctor.daemon_observe_only` candidate counts are not scheduled scans; they
+  are one-shot read-only summaries over local `operation_log`.
+- Candidate reads are bounded to 25 rows per operation kind/status pair and
+  currently cover `tool` / `trigger` entries with `failed` / `suppressed`
+  status.
+
+Proof of no daemon reflection writes:
+
+- `run_reflection_allowed_from_daemon = false`
+- `semantic_writes_allowed = false`
+- `write_capable_daemon_gate_status = "blocked"`
+- daemon lifecycle tests inspect the daemon source for absence of
+  `run_reflection`, semantic append calls, remote listeners, and dashboard
+  service startup
+
 ## Forbidden Behavior
 
 During observe-only Local Alpha work, the daemon must not:
@@ -94,31 +146,39 @@ Current Local Alpha implementation exposes these diagnostics through
 - `cooldown_status = "observe_only"`
 - `cooldown_diagnostics = "diagnostic_only_no_scheduling"`
 - `suppression_diagnostics = "read_only_status_count"`
-- `clean_shutdown_status = "verified_by_handle_stop"`
+- `clean_shutdown_status = "not_started_by_doctor"`
+- `lifecycle_regression_status = "verified_by_handle_stop_test"`
 - `semantic_writes_allowed = false`
 - `run_reflection_allowed_from_daemon = false`
 - `write_capable_daemon_gate_status = "blocked"`
 - `background_autonomy_enabled = false`
 - `daemon_loop_connected = false`
+- `daemon_started_by_doctor = false`
 - `in_flight_task_count = 0`
 - `read_errors` records operation-log read failures as diagnostics, not as
   semantic memory updates
 
 This `doctor` field is a preflight diagnostic surface. It does not start a
-daemon loop, does not call `run_reflection`, and does not authorize daemon
-writes. The explicit false/blocked fields are part of the Local Alpha wording
-guardrail: they are diagnostic boundaries, not latent feature flags.
+daemon loop, does not verify shutdown during the current doctor process, does
+not call `run_reflection`, and does not authorize daemon writes. The explicit
+false/blocked fields are part of the Local Alpha wording guardrail: they are
+diagnostic boundaries, not latent feature flags.
 
 The local daemon handle also has an observe-only lifecycle proof:
 
 - disabled handles exit promptly without running a polling loop
 - observe-only handles can start and stop cleanly under test
+- dropped observe-only handles abort their local lifecycle task instead of
+  detaching it
+- `serve` starts the handle only when `[daemon].enabled = true` and stops it
+  after the stdio service exits
 - `mode()` reports `disabled` or `observe_only`
 - `writes_allowed()` is always `false`
 - `remote_listener_enabled()` is always `false`
 
-This lifecycle proof does not connect the daemon to `serve`, MCP requests,
-remote listeners, or semantic memory writes. It only proves that the local
+This lifecycle proof connects only the observe-only handle to `serve` behind an
+explicit config flag. It does not connect MCP requests to daemon-triggered
+semantic writes, remote listeners, or remote controls. It proves that the local
 handle can be exercised and shut down while the write and remote gates remain
 closed.
 

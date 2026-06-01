@@ -9,7 +9,7 @@
 - ローカル MCP `stdio` サーバー
 - SQLite 永続化
 - 設定ファイル駆動の provider 読み込み
-- `openai-compatible` provider
+- `openai-compatible` / OpenRouter provider
 - `ingest_interaction`
 - `build_self_snapshot`
 - `decide_with_snapshot`
@@ -18,10 +18,10 @@
 
 ## 現在の境界
 
-- `decide_with_snapshot` は `openai-compatible` provider を利用できますが、返却契約はまだ最小の action string です
+- `decide_with_snapshot` は `openai-compatible` または OpenRouter provider を利用できますが、返却契約はまだ最小の action string です
 - リモート HTTP transport はありません
 - richer evidence lookup / weight / relation は未実装です
-- 追加の provider 連携はまだありません
+- Azure とローカルモデル provider はまだ未実装です。OpenRouter は OpenAI-compatible transport のローカル検証に限定され、live-provider certification ではありません
 - より完全な多層 memory モデルはまだ未完成です
 
 ## 適した用途
@@ -37,9 +37,9 @@
 
 ## 現在の検証状態
 
-`2026-03-31` 時点で：
+`2026-05-31` 時点で：
 
-- `cargo test` は 58 件すべて成功
+- `cargo test` は全量通過、334 tests
 - `doctor` は `status = ok` を返します
 
 ## 謝辞

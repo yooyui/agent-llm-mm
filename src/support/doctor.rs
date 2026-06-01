@@ -1,7 +1,14 @@
 use serde::Serialize;
 
 use crate::{
-    domain::operation_log::{OperationLogKind, OperationLogStatus},
+    domain::{
+        evidence_relation::{
+            EVIDENCE_RELATION_AVAILABLE_NOT_SELECTED_STATUS, EVIDENCE_RELATION_NO_WIDENING_POLICY,
+            EVIDENCE_RELATION_PROTOCOL_VERSION, EVIDENCE_RELATION_SELECTED_STATUS,
+            EVIDENCE_RELATION_WEIGHT_POLICY, SELECTED_EVIDENCE_WEIGHT, UNSELECTED_EVIDENCE_WEIGHT,
+        },
+        operation_log::{OperationLogKind, OperationLogStatus},
+    },
     interfaces,
     ports::{OperationLogQuery, OperationLogStore},
     support::config::{AppConfig, ModelProviderKind, ProviderMatrixEntry, TransportKind},
@@ -75,11 +82,13 @@ pub struct DaemonObserveOnlyDiagnostics {
     pub cooldown_diagnostics: &'static str,
     pub suppression_diagnostics: &'static str,
     pub clean_shutdown_status: &'static str,
+    pub lifecycle_regression_status: &'static str,
     pub semantic_writes_allowed: bool,
     pub run_reflection_allowed_from_daemon: bool,
     pub write_capable_daemon_gate_status: &'static str,
     pub background_autonomy_enabled: bool,
     pub daemon_loop_connected: bool,
+    pub daemon_started_by_doctor: bool,
     pub in_flight_task_count: usize,
     pub read_errors: Vec<String>,
 }
@@ -89,11 +98,26 @@ pub struct SystemLayerReport {
     pub read_only: bool,
     pub writes_performed: bool,
     pub layers: Vec<SystemLayerEntry>,
+    pub evidence_relation_contract: EvidenceRelationContract,
     pub physics_principles: Vec<PhysicsPrincipleMapping>,
     pub dependency_rules: Vec<SystemDependencyRule>,
     pub phase_coverage: Vec<SystemPhaseCoverage>,
     pub blockers: Vec<String>,
     pub non_claims: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct EvidenceRelationContract {
+    pub protocol_version: u32,
+    pub read_only: bool,
+    pub writes_performed: bool,
+    pub grants_capability: bool,
+    pub no_widening_policy: &'static str,
+    pub weight_policy: &'static str,
+    pub relation_statuses: Vec<String>,
+    pub selected_weight: u8,
+    pub available_not_selected_weight: u8,
+    pub additive_v2_fields: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -104,6 +128,14 @@ pub struct SystemLayerEntry {
     pub anchors: Vec<String>,
     pub writes_allowed: bool,
     pub blockers: Vec<String>,
+    pub diagnostics: Vec<SystemLayerDiagnostic>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct SystemLayerDiagnostic {
+    pub key: String,
+    pub status: String,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -121,7 +153,20 @@ pub struct SystemDependencyRule {
     pub name: String,
     pub rule: String,
     pub enforced_as: String,
+    pub status: String,
+    pub grants_capability: bool,
+    pub evidence: Vec<SystemDependencyEvidence>,
     pub verification: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct SystemDependencyEvidence {
+    pub key: String,
+    pub source: String,
+    pub verification_command: Option<String>,
+    pub observed: String,
+    pub expected: String,
+    pub satisfied: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -138,7 +183,9 @@ pub struct SystemPhaseCoverage {
 pub async fn run_doctor(config: AppConfig) -> anyhow::Result<DoctorReport> {
     config.validate().map_err(anyhow::Error::msg)?;
 
-    let base_url = config.doctor_base_url();
+    let base_url = config
+        .doctor_base_url()
+        .map(|base_url| provider_base_url_shape(&base_url));
     let model = config.doctor_model();
 
     let runtime = match config.transport {
@@ -206,17 +253,52 @@ fn build_system_layer_report(
                 "local process, config, SQLite storage, migrations, and platform entrypoints",
                 ["scripts/agent-llm-mm.sh", "scripts/agent-llm-mm.ps1"],
                 [
-                    "Local Alpha still needs fresh product smoke, support bundle, and release decision evidence",
-                    "fresh-machine evidence is not proven by local simulation",
+                    "Local Alpha candidate evidence must be refreshed per candidate before product claims",
+                    "real fresh-machine evidence is not proven by local simulation",
                     "Windows parity runtime evidence is still missing",
+                    "human release decision evidence is still missing",
+                ],
+                [
+                    system_layer_diagnostic(
+                        "config_shape",
+                        "implemented",
+                        "doctor reports provider, dashboard, daemon, and transport configuration shape without exposing secrets",
+                    ),
+                    system_layer_diagnostic(
+                        "database_path_shape",
+                        "implemented",
+                        "doctor reports the configured database_url shape; support bundles must not export raw SQLite files",
+                    ),
+                    system_layer_diagnostic(
+                        "platform_entrypoint",
+                        "implemented",
+                        "macOS uses scripts/agent-llm-mm.sh and Windows uses scripts/agent-llm-mm.ps1",
+                    ),
+                    system_layer_diagnostic(
+                        "data_lifecycle_gate_status",
+                        "partial",
+                        "local backup/restore gates exist, but real fresh-machine and Windows runtime evidence remain open",
+                    ),
                 ],
             ),
             system_layer_entry(
                 "signal",
                 "implemented",
                 "raw local observations, operation log metadata, trigger candidates, and bounded evidence handles",
-                ["ingest_interaction", "operation_log"],
+                ["ingest_interaction", "operation_log", "evidence_relation_report"],
                 ["richer signal ranking and widening remain outside this report"],
+                [
+                    system_layer_diagnostic(
+                        "evidence_relation_report",
+                        "implemented",
+                        "read-only evidence relation report exposes selected / available-not-selected rows inside selected_subset_of_trigger_window",
+                    ),
+                    system_layer_diagnostic(
+                        "evidence_relation_weight_policy",
+                        "implemented",
+                        "bounded_selected_binary_weight is binary selection metadata, not a full scoring or ranking engine",
+                    ),
+                ],
             ),
             system_layer_entry(
                 "memory",
@@ -227,6 +309,7 @@ fn build_system_layer_report(
                     "memory layering is partial; procedural memory and durable new layer writes are not implemented",
                     "future memory layers need migration, lifecycle, and evidence-link gates",
                 ],
+                [],
             ),
             system_layer_entry(
                 "policy",
@@ -234,6 +317,7 @@ fn build_system_layer_report(
                 "local governance rules, product wording guardrails, commitment gate, and remote/team security gates",
                 ["decide_with_snapshot", "product_wording_guard"],
                 [remote_writes_blocker.as_str()],
+                [],
             ),
             system_layer_entry(
                 "control_loop",
@@ -241,6 +325,7 @@ fn build_system_layer_report(
                 "local feedback hooks that observe, decide, suppress, cool down, and propose",
                 ["auto_reflect_if_needed", "trigger_ledger"],
                 [daemon_writes_blocker.as_str()],
+                [],
             ),
             system_layer_entry(
                 "actuator",
@@ -251,6 +336,7 @@ fn build_system_layer_report(
                     "this read-only report does not allow writes",
                     "future daemon writes require a separate architecture decision, migration, and rollback gate",
                 ],
+                [],
             ),
             system_layer_entry(
                 "interface",
@@ -261,6 +347,7 @@ fn build_system_layer_report(
                     "remote/team interfaces are blocked until product and security gates exist",
                     "write-capable interface behavior must pass through run_reflection or a later approved write-path decision",
                 ],
+                [],
             ),
             system_layer_entry(
                 "release_boundary",
@@ -275,10 +362,12 @@ fn build_system_layer_report(
                     "Local Alpha is not complete without fresh evidence and a human release decision",
                     "Windows parity and fresh-machine evidence remain open",
                 ],
+                [],
             ),
         ],
+        evidence_relation_contract: evidence_relation_contract(),
         physics_principles: physics_principle_mappings(),
-        dependency_rules: system_dependency_rules(),
+        dependency_rules: system_dependency_rules(daemon_observe_only, remote_team_security_gates),
         phase_coverage: system_phase_coverage(),
         blockers: vec![
             "Local Alpha full release gate still needs fresh evidence and human decision".to_string(),
@@ -301,12 +390,40 @@ fn build_system_layer_report(
     }
 }
 
+fn evidence_relation_contract() -> EvidenceRelationContract {
+    EvidenceRelationContract {
+        protocol_version: EVIDENCE_RELATION_PROTOCOL_VERSION,
+        read_only: true,
+        writes_performed: false,
+        grants_capability: false,
+        no_widening_policy: EVIDENCE_RELATION_NO_WIDENING_POLICY,
+        weight_policy: EVIDENCE_RELATION_WEIGHT_POLICY,
+        relation_statuses: vec![
+            EVIDENCE_RELATION_SELECTED_STATUS.to_string(),
+            EVIDENCE_RELATION_AVAILABLE_NOT_SELECTED_STATUS.to_string(),
+        ],
+        selected_weight: SELECTED_EVIDENCE_WEIGHT,
+        available_not_selected_weight: UNSELECTED_EVIDENCE_WEIGHT,
+        additive_v2_fields: [
+            "rejected_count",
+            "weight_policy",
+            "relation_status",
+            "selection_weight",
+            "rejection_reason",
+        ]
+        .iter()
+        .map(|field| field.to_string())
+        .collect(),
+    }
+}
+
 fn system_layer_entry<const A: usize, const B: usize>(
     name: &str,
     status: &str,
     responsibility: &str,
     anchors: [&str; A],
     blockers: [&str; B],
+    diagnostics: impl IntoIterator<Item = SystemLayerDiagnostic>,
 ) -> SystemLayerEntry {
     SystemLayerEntry {
         name: name.to_string(),
@@ -315,6 +432,15 @@ fn system_layer_entry<const A: usize, const B: usize>(
         anchors: anchors.iter().map(|anchor| anchor.to_string()).collect(),
         writes_allowed: false,
         blockers: blockers.iter().map(|blocker| blocker.to_string()).collect(),
+        diagnostics: diagnostics.into_iter().collect(),
+    }
+}
+
+fn system_layer_diagnostic(key: &str, status: &str, detail: &str) -> SystemLayerDiagnostic {
+    SystemLayerDiagnostic {
+        key: key.to_string(),
+        status: status.to_string(),
+        detail: detail.to_string(),
     }
 }
 
@@ -387,50 +513,186 @@ fn physics_principle_mapping(
     }
 }
 
-fn system_dependency_rules() -> Vec<SystemDependencyRule> {
+fn system_dependency_rules(
+    daemon_observe_only: &DaemonObserveOnlyDiagnostics,
+    remote_team_security_gates: &RemoteTeamSecurityGateReport,
+) -> Vec<SystemDependencyRule> {
     vec![
         system_dependency_rule(
             "actuator_has_no_dashboard_or_release_dependency",
             "Actuator must not depend on dashboard or release tooling.",
+            [
+                runtime_dependency_evidence(
+                    "actuator_write_path",
+                    interfaces::mcp::server::SELF_REVISION_WRITE_PATH,
+                    "run_reflection",
+                ),
+                declared_test_contract_dependency_evidence(
+                    "dashboard_or_release_grants_actuator",
+                    "cargo test --test product_completion_read_models -v",
+                ),
+            ],
             ["cargo test --test product_completion_read_models -v"],
         ),
         system_dependency_rule(
             "write_capable_interface_requires_run_reflection_or_adr",
             "Write-capable interfaces must pass through run_reflection or a later approved write-path ADR.",
+            [
+                runtime_dependency_evidence(
+                    "self_revision_write_path",
+                    interfaces::mcp::server::SELF_REVISION_WRITE_PATH,
+                    "run_reflection",
+                ),
+                runtime_dependency_evidence(
+                    "remote_writes_allowed",
+                    bool_text(remote_team_security_gates.remote_writes_allowed),
+                    "false",
+                ),
+            ],
             ["./scripts/agent-llm-mm.sh doctor"],
         ),
         system_dependency_rule(
             "observe_only_daemon_must_not_call_actuator",
             "Observe-only daemon diagnostics may read candidates but must not call the actuator.",
+            [
+                runtime_dependency_evidence(
+                    "run_reflection_allowed_from_daemon",
+                    bool_text(daemon_observe_only.run_reflection_allowed_from_daemon),
+                    "false",
+                ),
+                runtime_dependency_evidence(
+                    "daemon_writes_allowed",
+                    bool_text(daemon_observe_only.writes_allowed),
+                    "false",
+                ),
+                runtime_dependency_evidence(
+                    "candidate_reads_are_read_only",
+                    bool_text(daemon_observe_only.candidate_reads_are_read_only),
+                    "true",
+                ),
+            ],
             ["cargo test --test daemon_config -v"],
         ),
         system_dependency_rule(
             "release_boundary_cannot_generate_external_evidence",
             "Release tooling can summarize evidence but cannot fabricate Windows runtime parity, real fresh-machine evidence, remote/team readiness, or a human release decision.",
-            ["./scripts/status-sync-check.sh"],
+            [
+                declared_test_contract_dependency_evidence(
+                    "local_refresh_does_not_generate_windows_parity",
+                    "cargo test --test local_alpha_release_evidence release_gate_refresh -v",
+                ),
+                declared_test_contract_dependency_evidence(
+                    "local_refresh_does_not_generate_real_fresh_machine",
+                    "cargo test --test local_alpha_release_evidence release_gate_refresh -v",
+                ),
+                declared_test_contract_dependency_evidence(
+                    "release_soak_keeps_remote_team_external",
+                    "cargo test --test local_alpha_release_evidence release_soak -v",
+                ),
+                declared_test_contract_dependency_evidence(
+                    "release_soak_keeps_human_decision_external",
+                    "cargo test --test local_alpha_release_evidence release_soak -v",
+                ),
+            ],
+            [
+                "cargo test --test local_alpha_release_evidence release_gate_refresh -v",
+                "cargo test --test local_alpha_release_evidence release_soak -v",
+            ],
         ),
         system_dependency_rule(
             "memory_writes_require_migration_and_lifecycle_gates",
             "Future durable memory layers require migration, lifecycle, evidence-link, rollback, and write-path review gates.",
+            [
+                declared_test_contract_dependency_evidence(
+                    "durable_new_memory_layer_writes_allowed",
+                    "cargo test --test product_completion_read_models -v",
+                ),
+                runtime_dependency_evidence(
+                    "durable_self_model_write_path",
+                    interfaces::mcp::server::SELF_REVISION_WRITE_PATH,
+                    "run_reflection",
+                ),
+            ],
             ["cargo test --test sqlite_backup_restore -v"],
         ),
     ]
 }
 
-fn system_dependency_rule<const V: usize>(
+fn system_dependency_rule<const E: usize, const V: usize>(
     name: &str,
     rule: &str,
+    evidence: [SystemDependencyEvidence; E],
     verification: [&str; V],
 ) -> SystemDependencyRule {
+    let evidence = evidence.to_vec();
+    let status = if evidence.iter().any(|item| !item.satisfied) {
+        "open"
+    } else if evidence
+        .iter()
+        .any(|item| item.source == "declared_test_contract")
+    {
+        "declared-test-contract"
+    } else {
+        "enforced"
+    };
+
     SystemDependencyRule {
         name: name.to_string(),
         rule: rule.to_string(),
         enforced_as: "read-only-boundary".to_string(),
+        status: status.to_string(),
+        grants_capability: false,
+        evidence,
         verification: verification
             .iter()
             .map(|command| command.to_string())
             .collect(),
     }
+}
+
+fn runtime_dependency_evidence(
+    key: &str,
+    observed: impl Into<String>,
+    expected: impl Into<String>,
+) -> SystemDependencyEvidence {
+    system_dependency_evidence(key, "runtime", None, observed, expected)
+}
+
+fn declared_test_contract_dependency_evidence(
+    key: &str,
+    verification: &str,
+) -> SystemDependencyEvidence {
+    system_dependency_evidence(
+        key,
+        "declared_test_contract",
+        Some(verification.to_string()),
+        "verification_declared",
+        "verification_declared",
+    )
+}
+
+fn system_dependency_evidence(
+    key: &str,
+    source: &str,
+    verification_command: Option<String>,
+    observed: impl Into<String>,
+    expected: impl Into<String>,
+) -> SystemDependencyEvidence {
+    let observed = observed.into();
+    let expected = expected.into();
+    let satisfied = observed == expected;
+    SystemDependencyEvidence {
+        key: key.to_string(),
+        source: source.to_string(),
+        verification_command,
+        observed,
+        expected,
+        satisfied,
+    }
+}
+
+fn bool_text(value: bool) -> &'static str {
+    if value { "true" } else { "false" }
 }
 
 fn system_phase_coverage() -> Vec<SystemPhaseCoverage> {
@@ -513,27 +775,29 @@ fn system_phase_coverage() -> Vec<SystemPhaseCoverage> {
             5,
             "Observe-Only Daemon Stabilization",
             "partial",
-            "observe-only diagnostics with daemon writes and remote listener closed",
+            "observe-only diagnostics and config-gated local lifecycle with daemon writes and remote listener closed",
             ["daemon_observe_only"],
             [
                 "daemon-triggered writes are blocked",
-                "daemon loop as a connected product service is blocked",
+                "write-capable daemon loop is blocked",
                 "all-entry automatic self-reflection is blocked",
             ],
             [
                 "cargo test --test daemon_config -v",
+                "cargo test --test mcp_stdio serve_starts_observe_only_daemon_when_enabled_without_semantic_writes -v",
                 "./scripts/agent-llm-mm.sh doctor",
             ],
         ),
         system_phase(
             6,
             "Provider Expansion",
-            "planning-gate",
-            "planned-only provider rows remain rejected until one-provider-at-a-time implementation",
+            "partial",
+            "mock, openai-compatible, and openrouter are locally supported; future provider rows remain rejected",
             ["provider_matrix"],
             [
-                "provider adapter expansion is not implemented",
-                "Azure OpenAI, OpenRouter, and local providers remain planned-only",
+                "Azure OpenAI and local providers remain planned-only",
+                "OpenRouter live-provider certification is not implemented",
+                "provider gateway behavior is not implemented",
             ],
             [
                 "cargo test --test provider_config -v",
@@ -630,6 +894,23 @@ fn doctor_provider_matrix_entry(
     }
 }
 
+fn provider_base_url_shape(base_url: &str) -> String {
+    let Ok(parsed) = reqwest::Url::parse(base_url) else {
+        return "<redacted>".to_string();
+    };
+    let Some(host) = parsed.host_str() else {
+        return "<redacted>".to_string();
+    };
+
+    let mut shaped = format!("{}://{}", parsed.scheme(), host);
+    if let Some(port) = parsed.port() {
+        shaped.push(':');
+        shaped.push_str(&port.to_string());
+    }
+    shaped.push_str(parsed.path());
+    shaped
+}
+
 async fn build_daemon_observe_only_diagnostics(
     config: &AppConfig,
     operation_log: &impl OperationLogStore,
@@ -684,12 +965,14 @@ async fn build_daemon_observe_only_diagnostics(
         cooldown_status: "observe_only",
         cooldown_diagnostics: "diagnostic_only_no_scheduling",
         suppression_diagnostics: "read_only_status_count",
-        clean_shutdown_status: "verified_by_handle_stop",
+        clean_shutdown_status: "not_started_by_doctor",
+        lifecycle_regression_status: "verified_by_handle_stop_test",
         semantic_writes_allowed: false,
         run_reflection_allowed_from_daemon: false,
         write_capable_daemon_gate_status: "blocked",
         background_autonomy_enabled: false,
         daemon_loop_connected: false,
+        daemon_started_by_doctor: false,
         in_flight_task_count: 0,
         read_errors,
     }

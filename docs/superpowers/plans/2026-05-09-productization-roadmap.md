@@ -12,7 +12,7 @@
 
 ## Executive Decision
 
-The MVP phase is OK for the current scope: the local release gate has passed, `cargo test` is green at 170 tests, `doctor` reports `status = ok`, and the self-revision demo package can generate the required evidence artifacts.
+The 2026-05-09 historical MVP snapshot was OK for that scope: the local release gate had passed, `cargo test` was green at 170 tests, `doctor` reported `status = ok`, and the self-revision demo package could generate the required evidence artifacts. Current test totals are tracked by the status-sync monitored documents.
 
 That does not mean the repository is already a formal product. It means the validated MVP is now strong enough to become the base for a productization track.
 

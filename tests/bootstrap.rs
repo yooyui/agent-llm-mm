@@ -560,9 +560,21 @@ async fn doctor_bootstraps_configured_sqlite_database_and_returns_report() {
 
 #[tokio::test]
 async fn doctor_reports_self_revision_runtime_coverage() {
-    let report = run_doctor(AppConfig::default())
-        .await
-        .expect("doctor should pass");
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = format!(
+        "sqlite://{}",
+        temp_dir
+            .path()
+            .join("doctor-runtime-coverage.sqlite")
+            .to_string_lossy()
+            .replace('\\', "/")
+    );
+    let config = AppConfig {
+        database_url,
+        ..Default::default()
+    };
+
+    let report = run_doctor(config).await.expect("doctor should pass");
 
     assert_eq!(
         report.auto_reflection_runtime_hooks,
@@ -574,6 +586,18 @@ async fn doctor_reports_self_revision_runtime_coverage() {
         ]
     );
     assert_eq!(report.self_revision_write_path, "run_reflection");
+
+    let serialized = serde_json::to_value(&report).expect("doctor report JSON");
+    assert_eq!(
+        serialized["auto_reflection_runtime_hooks"],
+        serde_json::json!([
+            "ingest_interaction:failure",
+            "ingest_interaction:conflict",
+            "decide_with_snapshot:conflict",
+            "build_self_snapshot:periodic"
+        ])
+    );
+    assert_eq!(serialized["self_revision_write_path"], "run_reflection");
 }
 
 #[tokio::test]

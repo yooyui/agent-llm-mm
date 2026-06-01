@@ -84,6 +84,44 @@ async fn openai_compatible_model_rejects_empty_action() {
 }
 
 #[tokio::test]
+async fn openrouter_model_rejects_empty_action_with_openrouter_label() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "   "
+                }
+            }]
+        }),
+    )
+    .await;
+    let model = OpenAiCompatibleModel::new_for_provider(
+        OpenAiCompatibleConfig {
+            base_url: stub.base_url(),
+            api_key: "example-openrouter-key".to_string(),
+            model: "openrouter/test-model".to_string(),
+            timeout_ms: 30_000,
+        },
+        "openrouter",
+    )
+    .expect("model");
+
+    let error = model
+        .decide(test_support::sample_request())
+        .await
+        .expect_err("empty content should fail");
+    let message = error.to_string();
+
+    assert!(message.contains("openrouter response contained an empty model action"));
+    assert!(
+        !message.contains("openai-compatible"),
+        "OpenRouter semantic parse errors must not use the default provider label: {message}"
+    );
+}
+
+#[tokio::test]
 async fn openai_compatible_model_surfaces_non_success_status() {
     let stub = test_support::StubServer::spawn(
         503,
@@ -111,6 +149,44 @@ async fn openai_compatible_model_surfaces_non_success_status() {
         error
             .to_string()
             .contains("openai-compatible request failed")
+    );
+}
+
+#[tokio::test]
+async fn openrouter_model_labels_malformed_self_revision_proposal_as_openrouter() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "not json"
+                }
+            }]
+        }),
+    )
+    .await;
+    let model = OpenAiCompatibleModel::new_for_provider(
+        OpenAiCompatibleConfig {
+            base_url: stub.base_url(),
+            api_key: "example-openrouter-key".to_string(),
+            model: "openrouter/test-model".to_string(),
+            timeout_ms: 30_000,
+        },
+        "openrouter",
+    )
+    .expect("model");
+
+    let error = model
+        .propose_self_revision(test_support::sample_self_revision_request())
+        .await
+        .expect_err("malformed proposal should fail");
+    let message = error.to_string();
+
+    assert!(message.contains("openrouter self-revision proposal did not contain a JSON object"));
+    assert!(
+        !message.contains("openai-compatible"),
+        "OpenRouter semantic parse errors must not use the default provider label: {message}"
     );
 }
 

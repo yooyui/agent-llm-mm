@@ -350,6 +350,9 @@ Required boundary:
   `not_verified`
 - `real_fresh_machine_evidence = false` in the first-run summary must prevent a
   Local Alpha complete status
+- `fresh_machine_simulation = true` in the same summary may satisfy the
+  separate `first_run_simulation` gate, but must not satisfy the real
+  fresh-machine `first_run_bootstrap` gate by itself
 - first-run summary evidence must also preserve `doctor_status = ok`,
   `sqlite_database_exists = true`, `self_revision_write_path = run_reflection`,
   and the local-only / no-serve / no-product-smoke / daemon-write-closed boundary
@@ -563,6 +566,9 @@ Before any daemon write path exists, the daemon must first pass an observe-only 
   `writes_allowed = false`, and `remote_listener_enabled = false`
 - observe-only diagnostics can read local `operation_log` failure/suppression
   candidates without identity, claim, reflection, event, or commitment writes
+- `serve` starts observe-only lifecycle behavior only when
+  `[daemon].enabled = true`, stops it after stdio service exit, and keeps
+  semantic writes closed
 - observe-only mode does not call `run_reflection`
 - daemon-triggered durable writes are blocked until separately gated
 - any future daemon write path still uses governed `run_reflection`
@@ -574,6 +580,7 @@ Recommended verification when daemon observe-only diagnostics change:
 ```bash
 cargo test --test daemon_config -v
 cargo test --test operation_log -v
+cargo test --test mcp_stdio serve_starts_observe_only_daemon_when_enabled_without_semantic_writes -v
 ./scripts/agent-llm-mm.sh doctor
 ```
 

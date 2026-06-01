@@ -24,6 +24,8 @@ pub enum ModelProviderKind {
     Mock,
     #[serde(rename = "openai-compatible")]
     OpenAiCompatible,
+    #[serde(rename = "openrouter")]
+    OpenRouter,
 }
 
 impl ModelProviderKind {
@@ -31,6 +33,7 @@ impl ModelProviderKind {
         match self {
             ModelProviderKind::Mock => "mock",
             ModelProviderKind::OpenAiCompatible => "openai-compatible",
+            ModelProviderKind::OpenRouter => "openrouter",
         }
     }
 }
@@ -56,6 +59,7 @@ pub struct OpenAiCompatibleConfig {
 pub enum ModelConfig {
     Mock,
     OpenAiCompatible(OpenAiCompatibleConfig),
+    OpenRouter(OpenAiCompatibleConfig),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,14 +168,14 @@ impl AppConfig {
                 missing_implementation: "",
             },
             ProviderMatrixEntry {
-                provider: "azure-openai",
-                state: "planned-only",
-                configurable: false,
-                adapter: "not implemented",
-                missing_implementation: FUTURE_PROVIDER_MISSING_IMPLEMENTATION,
+                provider: "openrouter",
+                state: "supported",
+                configurable: true,
+                adapter: "openrouter chat completions via openai-compatible transport",
+                missing_implementation: "",
             },
             ProviderMatrixEntry {
-                provider: "openrouter",
+                provider: "azure-openai",
                 state: "planned-only",
                 configurable: false,
                 adapter: "not implemented",
@@ -255,12 +259,11 @@ impl AppConfig {
                 ModelProviderKind::Mock => ModelConfig::Mock,
                 ModelProviderKind::OpenAiCompatible => {
                     let openai = model.openai_compatible.unwrap_or_default();
-                    ModelConfig::OpenAiCompatible(OpenAiCompatibleConfig {
-                        base_url: openai.base_url.unwrap_or_default(),
-                        api_key: openai.api_key.unwrap_or_default(),
-                        model: openai.model.unwrap_or_default(),
-                        timeout_ms: openai.timeout_ms.unwrap_or(DEFAULT_OPENAI_TIMEOUT_MS),
-                    })
+                    ModelConfig::OpenAiCompatible(provider_config(openai))
+                }
+                ModelProviderKind::OpenRouter => {
+                    let openrouter = model.openrouter.unwrap_or_default();
+                    ModelConfig::OpenRouter(provider_config(openrouter))
                 }
             };
         }
@@ -293,37 +296,63 @@ impl AppConfig {
                 Err("model provider is mock but model config is not mock".to_string())
             }
             (ModelProviderKind::OpenAiCompatible, ModelConfig::OpenAiCompatible(config)) => {
-                if config.base_url.trim().is_empty() {
-                    return Err("missing required openai-compatible field: base_url".to_string());
-                }
-                if config.api_key.trim().is_empty() {
-                    return Err("missing required openai-compatible field: api_key".to_string());
-                }
-                if config.model.trim().is_empty() {
-                    return Err("missing required openai-compatible field: model".to_string());
-                }
-                Ok(())
+                validate_chat_completion_config("openai-compatible", config)
             }
             (ModelProviderKind::OpenAiCompatible, _) => Err(
                 "model provider is openai-compatible but model config is not openai-compatible"
                     .to_string(),
             ),
+            (ModelProviderKind::OpenRouter, ModelConfig::OpenRouter(config)) => {
+                validate_chat_completion_config("openrouter", config)
+            }
+            (ModelProviderKind::OpenRouter, _) => {
+                Err("model provider is openrouter but model config is not openrouter".to_string())
+            }
         }
     }
 
     pub fn doctor_model(&self) -> Option<String> {
         match &self.model_config {
             ModelConfig::Mock => None,
-            ModelConfig::OpenAiCompatible(config) => Some(config.model.clone()),
+            ModelConfig::OpenAiCompatible(config) | ModelConfig::OpenRouter(config) => {
+                Some(config.model.clone())
+            }
         }
     }
 
     pub fn doctor_base_url(&self) -> Option<String> {
         match &self.model_config {
             ModelConfig::Mock => None,
-            ModelConfig::OpenAiCompatible(config) => Some(config.base_url.clone()),
+            ModelConfig::OpenAiCompatible(config) | ModelConfig::OpenRouter(config) => {
+                Some(config.base_url.clone())
+            }
         }
     }
+}
+
+fn provider_config(config: FileOpenAiCompatibleConfig) -> OpenAiCompatibleConfig {
+    OpenAiCompatibleConfig {
+        base_url: config.base_url.unwrap_or_default(),
+        api_key: config.api_key.unwrap_or_default(),
+        model: config.model.unwrap_or_default(),
+        timeout_ms: config.timeout_ms.unwrap_or(DEFAULT_OPENAI_TIMEOUT_MS),
+    }
+}
+
+fn validate_chat_completion_config(
+    provider: &str,
+    config: &OpenAiCompatibleConfig,
+) -> Result<(), String> {
+    if config.base_url.trim().is_empty() {
+        return Err(format!("missing required {provider} field: base_url"));
+    }
+    if config.api_key.trim().is_empty() {
+        return Err(format!("missing required {provider} field: api_key"));
+    }
+    if config.model.trim().is_empty() {
+        return Err(format!("missing required {provider} field: model"));
+    }
+    Ok(())
 }
 
 fn default_database_url() -> String {
@@ -397,6 +426,8 @@ struct FileModelConfig {
     provider: Option<ModelProviderKind>,
     #[serde(default)]
     openai_compatible: Option<FileOpenAiCompatibleConfig>,
+    #[serde(default)]
+    openrouter: Option<FileOpenAiCompatibleConfig>,
 }
 
 #[derive(Debug, Deserialize, Default)]

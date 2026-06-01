@@ -20,7 +20,9 @@ use crate::{
     },
     application::{
         auto_reflect_if_needed::{self, AutoReflectInput, RecursionGuard},
-        build_self_snapshot, decide_with_snapshot, ingest_interaction,
+        build_self_snapshot,
+        daemon::DaemonHandle,
+        decide_with_snapshot, ingest_interaction,
         ingest_interaction::IngestInput,
         run_reflection,
         run_reflection::ReflectionInput,
@@ -67,10 +69,31 @@ pub async fn run_stdio_server_with_config(config: AppConfig) -> Result<()> {
     let store = SqliteStore::bootstrap(&config.database_url).await?;
     let (dashboard_observer, _dashboard_handle) =
         start_configured_dashboard(&config, Some(store.clone())).await?;
+    let daemon_handle = start_configured_daemon(&config);
     let server = Server::from_parts(config, store, dashboard_observer).await?;
     let service = server.serve(stdio()).await?;
-    service.waiting().await?;
+    let wait_result = service.waiting().await;
+    if let Some(handle) = daemon_handle {
+        handle.stop().await;
+    }
+    wait_result?;
     Ok(())
+}
+
+fn start_configured_daemon(config: &AppConfig) -> Option<DaemonHandle> {
+    if !config.daemon.enabled {
+        return None;
+    }
+
+    let handle = DaemonHandle::start(config.daemon.clone());
+    info!(
+        mode = handle.mode(),
+        poll_interval_ms = handle.poll_interval_ms(),
+        writes_allowed = handle.writes_allowed(),
+        remote_listener_enabled = handle.remote_listener_enabled(),
+        "observe-only daemon lifecycle started"
+    );
+    Some(handle)
 }
 
 pub async fn validate_stdio_runtime(config: &AppConfig) -> Result<SqliteStore, AppError> {
@@ -128,6 +151,7 @@ fn provider_label(provider: ModelProviderKind) -> &'static str {
     match provider {
         ModelProviderKind::Mock => "mock",
         ModelProviderKind::OpenAiCompatible => "openai-compatible",
+        ModelProviderKind::OpenRouter => "openrouter",
     }
 }
 
@@ -627,6 +651,9 @@ fn build_runtime_model(config: &AppConfig) -> Result<RuntimeModel, AppError> {
         ModelConfig::Mock => Ok(RuntimeModel::Mock(MockModel)),
         ModelConfig::OpenAiCompatible(model_config) => Ok(RuntimeModel::OpenAiCompatible(
             OpenAiCompatibleModel::new(model_config.clone())?,
+        )),
+        ModelConfig::OpenRouter(model_config) => Ok(RuntimeModel::OpenAiCompatible(
+            OpenAiCompatibleModel::new_for_provider(model_config.clone(), "openrouter")?,
         )),
     }
 }
