@@ -448,6 +448,7 @@ async fn doctor_reports_provider_matrix_without_marking_future_providers_support
     );
     assert!(report.provider_matrix[0].configurable);
     assert!(report.provider_matrix[0].selected);
+    assert!(report.provider_matrix[0].selectable_for_runtime);
 
     assert_eq!(report.provider_matrix[1].provider, "openai-compatible");
     assert_eq!(
@@ -470,6 +471,7 @@ async fn doctor_reports_provider_matrix_without_marking_future_providers_support
         assert_eq!(entry.support_state, ProviderSupportState::PlannedOnly);
         assert!(!entry.configurable);
         assert!(!entry.selected);
+        assert!(!entry.selectable_for_runtime);
         assert!(
             entry.missing_implementation.contains("model adapter"),
             "{} should expose missing implementation details",
@@ -483,6 +485,39 @@ async fn doctor_reports_provider_matrix_without_marking_future_providers_support
     assert!(json.contains(r#""provider":"openrouter""#));
     assert!(json.contains(r#""provider":"local""#));
     assert!(json.contains("MCP stdio tests"));
+}
+
+#[tokio::test]
+async fn provider_matrix_marks_only_supported_configurable_rows_selectable_for_runtime() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(temp_dir.path().join("doctor-selectable.sqlite"));
+    let config = AppConfig {
+        transport: TransportKind::Stdio,
+        database_url,
+        model_provider: ModelProviderKind::Mock,
+        model_config: ModelConfig::Mock,
+        dashboard: Default::default(),
+        ..Default::default()
+    };
+
+    let report = run_doctor(config).await.expect("doctor");
+
+    // 派生标记必须等价于 supported 且 configurable，planned-only 行恒为 false。
+    for entry in &report.provider_matrix {
+        let expected = entry.support_state == ProviderSupportState::Supported && entry.configurable;
+        assert_eq!(
+            entry.selectable_for_runtime, expected,
+            "{} selectable_for_runtime should track supported && configurable",
+            entry.provider
+        );
+        if entry.support_state == ProviderSupportState::PlannedOnly {
+            assert!(
+                !entry.selectable_for_runtime,
+                "{} is planned-only and must never be selectable for runtime",
+                entry.provider
+            );
+        }
+    }
 }
 
 fn sqlite_url(path: PathBuf) -> String {

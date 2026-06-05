@@ -37,6 +37,10 @@ async fn decision_returns_blocked_without_calling_model_when_gate_fails() {
     );
     assert_eq!(result.gate.name, "commitment_gate");
     assert!(result.gate.blocked);
+    assert_eq!(
+        result.provider_diagnostics_class,
+        "not-applicable-gate-blocked"
+    );
     assert_eq!(result.policy_checks[0].name, "commitment_gate");
     assert!(result.policy_checks[0].blocked);
     assert!(
@@ -62,6 +66,10 @@ async fn decision_returns_blocked_without_calling_model_when_gate_fails() {
     );
     assert_eq!(serialized["status"], "blocked");
     assert_eq!(serialized["reason"], "commitment_gate_blocked_action");
+    assert_eq!(
+        serialized["provider_diagnostics_class"],
+        "not-applicable-gate-blocked"
+    );
     assert_eq!(
         serialized["gate"],
         json!({
@@ -98,6 +106,7 @@ async fn mock_model_receives_snapshot_context_when_gate_passes() {
     );
     assert_eq!(result.status, "model_decision");
     assert!(result.reason.is_none());
+    assert_eq!(result.provider_diagnostics_class, "bounded-local-only");
     assert_eq!(result.gate.name, "commitment_gate");
     assert!(!result.gate.blocked);
 
@@ -112,6 +121,7 @@ async fn mock_model_receives_snapshot_context_when_gate_passes() {
     assert_eq!(serialized["selected_action"], "summarize_memory_state");
     assert_eq!(serialized["status"], "model_decision");
     assert_eq!(serialized["reason"], serde_json::Value::Null);
+    assert_eq!(serialized["provider_diagnostics_class"], "bounded-local-only");
     assert_eq!(
         serialized["gate"],
         json!({

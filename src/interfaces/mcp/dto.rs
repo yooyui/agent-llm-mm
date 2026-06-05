@@ -363,6 +363,8 @@ pub struct EvidenceQueryDto {
     pub recorded_after: Option<String>,
     #[serde(default)]
     pub recorded_before: Option<String>,
+    #[serde(default)]
+    pub event_id_prefix: Option<String>,
 }
 
 impl TryFrom<EvidenceQueryDto> for EvidenceQuery {
@@ -375,6 +377,14 @@ impl TryFrom<EvidenceQueryDto> for EvidenceQuery {
                     "replacement evidence query limit exceeds the supported maximum".to_string(),
                 )
             })?;
+        }
+
+        if let Some(prefix) = value.event_id_prefix.as_ref()
+            && prefix.trim().is_empty()
+        {
+            return Err(AppError::InvalidParams(
+                "evidence query event_id_prefix must not be empty".to_string(),
+            ));
         }
 
         Ok(Self {
@@ -394,6 +404,7 @@ impl TryFrom<EvidenceQueryDto> for EvidenceQuery {
                 "recorded_before",
                 value.recorded_before,
             )?,
+            event_id_prefix: value.event_id_prefix,
         })
     }
 }

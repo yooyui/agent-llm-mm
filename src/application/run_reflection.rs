@@ -159,6 +159,19 @@ where
         ));
     }
 
+    // 收紧服务端校验：identity 更新的任一 canonical claim 不得为纯空白串，
+    // 避免 " " 这类空白内容绕过非空检查后写入 durable identity。
+    if identity_update.as_ref().is_some_and(|update| {
+        update
+            .canonical_claims
+            .iter()
+            .any(|claim| claim.trim().is_empty())
+    }) {
+        return Err(AppError::InvalidParams(
+            "identity reflection updates must not contain blank canonical claims".to_string(),
+        ));
+    }
+
     for event_id in &supporting_evidence_event_ids {
         if !deps.has_event(event_id).await? {
             return Err(AppError::InvalidParams(format!(

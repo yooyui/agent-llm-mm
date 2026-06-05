@@ -42,3 +42,22 @@ fn evidence_query_dto_rejects_invalid_recency_timestamp() {
 
     assert!(error.to_string().contains("recorded_after"));
 }
+
+#[test]
+fn evidence_query_dto_parses_event_id_prefix() {
+    let query: EvidenceQuery = serde_json::from_value::<EvidenceQueryDto>(serde_json::json!({
+        "event_id_prefix": "alpha-"
+    }))
+    .expect("dto should parse")
+    .try_into()
+    .expect("query should convert");
+
+    assert_eq!(query.event_id_prefix, Some("alpha-".to_string()));
+
+    let empty = serde_json::from_value::<EvidenceQueryDto>(serde_json::json!({
+        "event_id_prefix": "   "
+    }))
+    .expect("dto deserialization keeps validation in conversion");
+    let error = EvidenceQuery::try_from(empty).expect_err("empty prefix should fail");
+    assert!(error.to_string().contains("event_id_prefix"));
+}

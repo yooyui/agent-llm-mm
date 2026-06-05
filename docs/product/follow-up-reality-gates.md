@@ -149,7 +149,7 @@ declarations in:
 - `docs/project-overview.ja.md`
 - `docs/release-readiness.md`
 
-Current branch `cargo test` total declaration: 334 tests.
+Current branch `cargo test` total declaration: 343 tests.
 
 It also reads
 `docs/superpowers/plans/2026-05-24-p1-p2-p3-product-completion-plan.md` and

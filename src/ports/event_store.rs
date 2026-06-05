@@ -24,6 +24,8 @@ pub struct EvidenceQuery {
     pub limit: Option<usize>,
     pub recorded_after: Option<DateTime<Utc>>,
     pub recorded_before: Option<DateTime<Utc>>,
+    /// 有界收窄过滤：按 event_id 前缀精确匹配，仍 intersect-only / no-widening，不引入排序或打分。
+    pub event_id_prefix: Option<String>,
 }
 
 impl StoredEvent {

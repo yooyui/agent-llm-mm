@@ -39,7 +39,7 @@
 
 As of `2026-05-31`:
 
-- `cargo test` passes in full with 334 tests
+- `cargo test` passes in full with 343 tests
 - `doctor` returns `status = ok`
 
 ## Acknowledgement

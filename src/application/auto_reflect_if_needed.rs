@@ -334,10 +334,7 @@ where
     .await
     {
         Ok(governed_evidence_event_ids) => governed_evidence_event_ids,
-        Err(error) => {
-            record_rejected_trigger(deps, &candidate, None).await?;
-            return Err(error);
-        }
+        Err(error) => return record_rejection_then_propagate(deps, &candidate, error).await,
     };
 
     let validated =
@@ -345,10 +342,7 @@ where
             .await
         {
             Ok(validated) => validated,
-            Err(error) => {
-                record_rejected_trigger(deps, &candidate, None).await?;
-                return Err(error);
-            }
+            Err(error) => return record_rejection_then_propagate(deps, &candidate, error).await,
         };
 
     match apply_validated_self_revision(
@@ -361,11 +355,23 @@ where
     .await
     {
         Ok(result) => Ok(result),
-        Err(error) => {
-            record_rejected_trigger(deps, &candidate, None).await?;
-            Err(error)
-        }
+        Err(error) => record_rejection_then_propagate(deps, &candidate, error).await,
     }
+}
+
+/// 统一收口治理校验失败的拒绝语义：先按既有规则落一条 Rejected ledger 记录
+/// （保持 reflection_id 为 None 的现有约定），再把携带原始可解释原因的 error 原样向上传播。
+/// 三条治理校验失败路径共用这一个出口，避免重复并保证失败语义一致。
+async fn record_rejection_then_propagate<D>(
+    deps: &D,
+    candidate: &TriggerCandidate,
+    error: AppError,
+) -> Result<AutoReflectResult, AppError>
+where
+    D: TriggerLedgerStore + Clock + IdGenerator + Sync,
+{
+    record_rejected_trigger(deps, candidate, None).await?;
+    Err(error)
 }
 
 async fn detect_trigger_candidate<D>(
@@ -384,6 +390,7 @@ where
                 limit: Some(5),
                 recorded_after: None,
                 recorded_before: None,
+                event_id_prefix: None,
             })
             .await?
         }
@@ -395,6 +402,7 @@ where
                 limit: Some(5),
                 recorded_after: None,
                 recorded_before: None,
+                event_id_prefix: None,
             })
             .await?
         }
@@ -986,6 +994,7 @@ where
                     limit: None,
                     recorded_after: proposed_evidence_query.recorded_after,
                     recorded_before: proposed_evidence_query.recorded_before,
+                    event_id_prefix: proposed_evidence_query.event_id_prefix,
                 })
                 .await?,
             );

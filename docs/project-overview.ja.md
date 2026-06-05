@@ -39,7 +39,7 @@
 
 `2026-05-31` 時点で：
 
-- `cargo test` は全量通過、334 tests
+- `cargo test` は全量通過、343 tests
 - `doctor` は `status = ok` を返します
 
 ## 謝辞

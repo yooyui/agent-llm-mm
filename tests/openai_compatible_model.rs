@@ -352,6 +352,7 @@ async fn openai_compatible_model_parses_self_revision_evidence_policy() {
             limit: Some(2),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
     );
     assert_eq!(proposal.confidence.as_deref(), Some("medium"));

@@ -94,6 +94,7 @@ async fn sqlite_query_evidence_event_ids_is_recent_first_and_filtered() {
             limit: Some(2),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
         .await
         .unwrap();
@@ -141,6 +142,7 @@ async fn sqlite_query_evidence_event_ids_filters_by_namespace_before_limit() {
             limit: Some(2),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
         .await
         .unwrap();
@@ -169,6 +171,7 @@ async fn sqlite_query_evidence_event_ids_rejects_limit_above_i64_max() {
             limit: Some(excessive_limit),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
         .await;
 
@@ -205,6 +208,7 @@ async fn sqlite_query_evidence_event_ids_unbounded_ignores_default_limit() {
             limit: None,
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
         .await
         .unwrap();
@@ -217,6 +221,7 @@ async fn sqlite_query_evidence_event_ids_unbounded_ignores_default_limit() {
             limit: None,
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
         .await
         .unwrap();
@@ -1306,6 +1311,7 @@ async fn sqlite_query_evidence_event_ids_filters_by_recency_window() {
             limit: None,
             recorded_after: Some(now + chrono::Duration::seconds(30)),
             recorded_before: None,
+            event_id_prefix: None,
         })
         .await
         .unwrap();
@@ -1320,6 +1326,7 @@ async fn sqlite_query_evidence_event_ids_filters_by_recency_window() {
             limit: None,
             recorded_after: None,
             recorded_before: Some(now + chrono::Duration::seconds(90)),
+            event_id_prefix: None,
         })
         .await
         .unwrap();
@@ -1334,6 +1341,7 @@ async fn sqlite_query_evidence_event_ids_filters_by_recency_window() {
             limit: None,
             recorded_after: Some(now + chrono::Duration::seconds(30)),
             recorded_before: Some(now + chrono::Duration::seconds(90)),
+            event_id_prefix: None,
         })
         .await
         .unwrap();
@@ -1348,8 +1356,49 @@ async fn sqlite_query_evidence_event_ids_filters_by_recency_window() {
             limit: None,
             recorded_after: Some(now + chrono::Duration::seconds(60)),
             recorded_before: Some(now + chrono::Duration::seconds(120)),
+            event_id_prefix: None,
         })
         .await
         .unwrap();
     assert_eq!(inclusive_window, vec!["evt-new", "evt-mid"]);
+}
+
+#[tokio::test]
+async fn query_evidence_filters_by_event_id_prefix() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "alpha-1".to_string(),
+            now,
+            Event::new(Owner::World, EventKind::Observation, "a"),
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "beta-1".to_string(),
+            now + chrono::Duration::seconds(60),
+            Event::new(Owner::World, EventKind::Observation, "b"),
+        ))
+        .await
+        .unwrap();
+
+    let matched = context
+        .store
+        .query_evidence_event_ids(EvidenceQuery {
+            namespace: None,
+            owner: None,
+            kind: None,
+            limit: None,
+            recorded_after: None,
+            recorded_before: None,
+            event_id_prefix: Some("alpha-".to_string()),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(matched, vec!["alpha-1"]);
 }

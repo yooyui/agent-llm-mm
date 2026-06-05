@@ -265,6 +265,7 @@ async fn reflection_rejects_identity_update_when_evidence_query_resolves_empty()
             limit: Some(2),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
         .with_identity_update(vec!["identity:self=principal_architect".to_string()]),
     )
@@ -418,6 +419,29 @@ async fn reflection_without_replacement_claim_disputes_old_claim_and_updates_ide
     assert_eq!(
         deps.identity().canonical_claims(),
         &["identity:self=staff_architect".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn run_reflection_rejects_blank_canonical_identity_claim() {
+    // 收紧校验：identity 更新含纯空白 canonical claim 时应被拒绝，
+    // 不得绕过非空检查写入 durable identity。
+    let deps = test_support::reflection_query_deps();
+
+    let result = execute_reflection(
+        &deps,
+        ReflectionInput::record_only(
+            Reflection::new("Blank canonical identity claims must be rejected."),
+            vec!["evt-reflection-1".to_string()],
+        )
+        .with_identity_update(vec![" ".to_string()]),
+    )
+    .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &["identity:self=architect".to_string()]
     );
 }
 
@@ -594,6 +618,7 @@ async fn reflection_rejects_replacement_claim_when_query_returns_no_events() {
             limit: Some(2),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         }),
     )
     .await;
@@ -958,6 +983,7 @@ mod test_support {
             limit: Some(2),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
     }
 
@@ -981,6 +1007,7 @@ mod test_support {
             limit: Some(2),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
     }
 
@@ -1004,6 +1031,7 @@ mod test_support {
             limit: Some(2),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
         .with_identity_update(vec![
             "identity:self=staff_architect".to_string(),
@@ -1037,6 +1065,7 @@ mod test_support {
             limit: Some(2),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
         .with_commitment_updates(vec![Commitment::new(
             Owner::Self_,
@@ -1058,6 +1087,7 @@ mod test_support {
             limit: Some(2),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         })
         .with_identity_update(vec!["identity:self=staff_architect".to_string()])
     }

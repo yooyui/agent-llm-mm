@@ -28,6 +28,9 @@ pub struct DecideWithSnapshotResult {
     pub reason: Option<String>,
     pub gate: DecisionGateMetadata,
     pub policy_checks: Vec<DecisionGateMetadata>,
+    /// envelope 自身的 provider 诊断承载等级（bounded 本地标量）：
+    /// 显式声明本协议不携带 provider 原生结构化诊断对象，仅给出本地可解释分类。
+    pub provider_diagnostics_class: String,
     pub non_claims: Vec<String>,
 }
 
@@ -46,6 +49,7 @@ impl DecideWithSnapshotResult {
             reason: Some(COMMITMENT_GATE_BLOCKED_REASON.to_string()),
             gate: gate.clone(),
             policy_checks: vec![gate],
+            provider_diagnostics_class: "not-applicable-gate-blocked".to_string(),
             non_claims: decision_non_claims(),
         }
     }
@@ -65,6 +69,7 @@ impl DecideWithSnapshotResult {
             reason: None,
             gate: gate.clone(),
             policy_checks: vec![gate],
+            provider_diagnostics_class: "bounded-local-only".to_string(),
             non_claims: decision_non_claims(),
         }
     }

@@ -24,6 +24,7 @@ Version 2 keeps the earlier metadata and adds local explainability fields:
 - `reason`: machine-readable reason when blocked; currently `commitment_gate_blocked_action`. It is `null` for normal model decisions.
 - `gate`: commitment-gate metadata with `name`, `blocked`, and `reason`.
 - `policy_checks`: current policy-check list. The first slice contains the commitment gate.
+- `provider_diagnostics_class`: bounded local label for the envelope's own diagnostics-carrying level. It is `not-applicable-gate-blocked` on blocked responses and `bounded-local-only` on model decisions. It explicitly declares that this envelope does not carry provider-native structured diagnostics; it is a local explainability label only.
 - `non_claims`: explicit boundaries for this local protocol.
 
 Blocked responses must not call the model and must keep `decision: null`. Non-blocked responses must keep the original `decision` payload shape, currently `{ "action": "..." }`.

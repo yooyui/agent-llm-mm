@@ -44,6 +44,11 @@ pub struct LocalAlphaEvidenceSummary {
     pub generated_at: String,
     pub kind: &'static str,
     pub overall_status: &'static str,
+    // 只读派生计数：按 gate 状态汇总，便于直观看到距离 human review 还差几个 gate。
+    // 不改变任何 gate 状态或 blocker，仅是 gates 字段的统计投影。
+    pub satisfied_gate_count: usize,
+    pub open_gate_count: usize,
+    pub not_verified_gate_count: usize,
     pub local_only: bool,
     pub summary_boundary: &'static str,
     pub gates: Vec<LocalAlphaGateSummary>,
@@ -104,6 +109,9 @@ pub fn summarize_local_alpha_evidence(
         boundary_guard_gate(&evidence_root),
     ];
     let overall_status = overall_status(&gates);
+    let satisfied_gate_count = gates.iter().filter(|g| g.status == "satisfied").count();
+    let open_gate_count = gates.iter().filter(|g| g.status == "open").count();
+    let not_verified_gate_count = gates.len() - satisfied_gate_count - open_gate_count;
     let external_blockers = external_blockers(&gates);
     let human_blockers = human_blockers();
     let unimplemented_capability_blockers = unimplemented_capability_blockers();
@@ -114,6 +122,9 @@ pub fn summarize_local_alpha_evidence(
         generated_at,
         kind: "local_alpha_evidence_summary",
         overall_status,
+        satisfied_gate_count,
+        open_gate_count,
+        not_verified_gate_count,
         local_only: true,
         summary_boundary: "read-only gate status summary; not automatic certification; run_reflection remains the only durable write path",
         gates,

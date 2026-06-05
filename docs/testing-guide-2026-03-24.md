@@ -31,7 +31,7 @@
 截至 `2026-05-31`，`cargo test` 全量通过，摘要如下：
 
 - `lib unit tests`: 7 passed
-- `application_use_cases`: 22 passed
+- `application_use_cases`: 23 passed
 - `bootstrap`: 24 passed
 - `daemon_config`: 12 passed
 - `dashboard_config`: 4 passed
@@ -42,24 +42,24 @@
 - `demo_openai_compatible_stub`: 1 passed
 - `domain_invariants`: 4 passed
 - `domain_snapshot`: 6 passed
-- `evidence_query_dto`: 2 passed
-- `failure_modes`: 31 passed
+- `evidence_query_dto`: 3 passed
+- `failure_modes`: 33 passed
 - `first_run_bootstrap_smoke`: 4 passed
-- `local_alpha_release_evidence`: 19 passed
+- `local_alpha_release_evidence`: 20 passed
 - `mcp_stdio`: 40 passed
 - `openai_compatible_model`: 11 passed
 - `operation_log`: 9 passed
-- `product_completion_read_models`: 13 passed
+- `product_completion_read_models`: 15 passed
 - `product_readiness`: 15 passed
-- `provider_config`: 16 passed
+- `provider_config`: 17 passed
 - `release_decision`: 5 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_backup_restore`: 6 passed
-- `sqlite_store`: 20 passed
+- `sqlite_store`: 21 passed
 - `status_sync`: 11 passed
 - `support_bundle`: 35 passed
 
-合计：334 个测试通过。
+合计：343 个测试通过。
 
 ---
 

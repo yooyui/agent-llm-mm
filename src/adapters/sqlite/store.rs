@@ -184,6 +184,10 @@ async fn query_evidence_event_ids_with_limit(
         predicates.push("recorded_at <= ?");
     }
 
+    if query.event_id_prefix.is_some() {
+        predicates.push("event_id LIKE ? || '%'");
+    }
+
     if !predicates.is_empty() {
         sql.push_str(" WHERE ");
         sql.push_str(&predicates.join(" AND "));
@@ -215,6 +219,10 @@ async fn query_evidence_event_ids_with_limit(
 
         if let Some(before) = query.recorded_before {
             query_builder = query_builder.bind(before.to_rfc3339());
+        }
+
+        if let Some(prefix) = query.event_id_prefix {
+            query_builder = query_builder.bind(prefix);
         }
 
         if let Some(limit) = query.limit.or(default_limit) {

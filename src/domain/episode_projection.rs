@@ -12,6 +12,14 @@ pub struct EpisodeProjectionInput {
     pub linked_evidence_ids: Vec<String>,
 }
 
+/// 有界生命周期分类，派生自 outcome 是否存在；只读、不写 identity/commitments。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EpisodeLifecycleStatus {
+    Open,
+    Concluded,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EpisodeSummaryProjection {
     pub episode_reference: String,
@@ -20,6 +28,7 @@ pub struct EpisodeSummaryProjection {
     pub lesson: Option<String>,
     pub linked_evidence_ids: Vec<String>,
     pub event_count: usize,
+    pub lifecycle_status: EpisodeLifecycleStatus,
     pub writes_performed: bool,
     pub durable_self_model_write_path: String,
     pub identity_or_commitment_updates: Vec<String>,
@@ -45,6 +54,12 @@ pub fn build_episode_summary_projection(
         )));
     }
 
+    let lifecycle_status = if input.outcome.is_some() {
+        EpisodeLifecycleStatus::Concluded
+    } else {
+        EpisodeLifecycleStatus::Open
+    };
+
     Ok(EpisodeSummaryProjection {
         episode_reference: input.episode_reference,
         objective: input.objective,
@@ -52,6 +67,7 @@ pub fn build_episode_summary_projection(
         lesson: input.lesson,
         linked_evidence_ids: dedupe(input.linked_evidence_ids),
         event_count: episode_event_ids.len(),
+        lifecycle_status,
         writes_performed: false,
         durable_self_model_write_path: SELF_REVISION_DURABLE_WRITE_PATH.to_string(),
         identity_or_commitment_updates: Vec::new(),

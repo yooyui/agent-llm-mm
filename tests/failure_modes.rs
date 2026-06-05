@@ -412,6 +412,53 @@ async fn auto_reflection_rejects_model_proposed_evidence_outside_trigger_window(
 }
 
 #[tokio::test]
+async fn auto_reflection_records_rejection_reason_when_governed_evidence_validation_fails() {
+    // 校验失败的统一拒绝语义：治理校验拒绝 model 越界证据时，
+    // 既要落 Rejected ledger，也要把可解释原因原样向上传播。
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_failure_window(vec![
+        (
+            "evt-failure-1",
+            "rollback after violating a hard commitment",
+        ),
+        (
+            "evt-failure-2",
+            "second rollback after violating the same hard commitment",
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            vec!["evt-outside-1".to_string()],
+            None,
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await;
+
+    match result {
+        Err(AppError::InvalidParams(reason)) => {
+            assert!(
+                reason.contains("outside the current trigger window"),
+                "拒绝原因应携带可解释文案，实际为：{reason}"
+            );
+        }
+        other => panic!("expected governed-validation rejection, got {other:?}"),
+    }
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
+    );
+    assert!(deps.latest_reflection().is_none());
+}
+
+#[tokio::test]
 async fn auto_reflection_rejects_mixed_valid_and_invalid_model_proposed_evidence_ids() {
     let deps = test_support::deps_for_failure_modes();
     deps.seed_failure_window(vec![
@@ -529,6 +576,7 @@ async fn auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_q
                 limit: Some(5),
                 recorded_after: None,
                 recorded_before: None,
+                event_id_prefix: None,
             }),
         ),
     );
@@ -599,6 +647,7 @@ async fn auto_reflection_keeps_explicit_ids_authoritative_when_query_limit_only_
                 limit: Some(1),
                 recorded_after: None,
                 recorded_before: None,
+                event_id_prefix: None,
             }),
         ),
     );
@@ -677,6 +726,7 @@ async fn auto_reflection_applies_query_limit_within_current_trigger_window_when_
                 limit: Some(1),
                 recorded_after: None,
                 recorded_before: None,
+                event_id_prefix: None,
             }),
         ),
     );
@@ -1019,6 +1069,7 @@ async fn auto_reflection_rejects_empty_proposed_evidence_query_instead_of_wideni
                 limit: Some(5),
                 recorded_after: None,
                 recorded_before: None,
+                event_id_prefix: None,
             }),
         ),
     );
@@ -1085,6 +1136,7 @@ async fn auto_reflection_rejects_namespace_filter_with_no_trigger_window_interse
                 limit: Some(5),
                 recorded_after: None,
                 recorded_before: None,
+                event_id_prefix: None,
             }),
         ),
     );
@@ -1134,6 +1186,7 @@ async fn auto_reflection_rejects_noop_proposal_when_query_has_no_trigger_window_
             limit: Some(5),
             recorded_after: None,
             recorded_before: None,
+            event_id_prefix: None,
         }),
     ));
 
@@ -1240,6 +1293,7 @@ async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger
                 limit: Some(5),
                 recorded_after: None,
                 recorded_before: None,
+                event_id_prefix: None,
             }),
         ),
     );
@@ -1424,6 +1478,7 @@ async fn auto_reflection_applies_recency_filters_from_proposed_evidence_query() 
                 limit: None,
                 recorded_after: Some(base_time + chrono::Duration::minutes(2)),
                 recorded_before: Some(base_time + chrono::Duration::minutes(3)),
+                event_id_prefix: None,
             }),
         ),
     );
@@ -1460,6 +1515,67 @@ async fn auto_reflection_applies_recency_filters_from_proposed_evidence_query() 
             "evt-conflict-new".to_string(),
             "evt-conflict-mid".to_string()
         ]
+    );
+}
+
+#[tokio::test]
+async fn auto_reflection_intersects_proposed_event_id_prefix_with_trigger_window() {
+    let deps = test_support::deps_for_failure_modes();
+    let base_time = chrono::DateTime::parse_from_rfc3339("2026-03-23T10:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    deps.seed_events(vec![
+        StoredEvent::new(
+            "alpha-conflict".to_string(),
+            base_time + chrono::Duration::minutes(1),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "alpha conflicting observation in the trigger window",
+            ),
+        ),
+        StoredEvent::new(
+            "beta-conflict".to_string(),
+            base_time + chrono::Duration::minutes(2),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "beta conflicting observation in the trigger window",
+            ),
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            Vec::new(),
+            Some(EvidenceQuery {
+                namespace: None,
+                owner: None,
+                kind: None,
+                limit: None,
+                recorded_after: None,
+                recorded_before: None,
+                event_id_prefix: Some("alpha-".to_string()),
+            }),
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::self_(),
+            vec!["conflict".to_string(), "commitment".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    // 前缀过滤仍是与 trigger window 的交集（no-widening）：只保留命中前缀且本就在窗口内的事件。
+    assert_eq!(result.evidence_event_ids, vec!["alpha-conflict".to_string()]);
+    assert_eq!(
+        deps.latest_reflection()
+            .expect("prefix-filtered auto-reflection should persist")
+            .supporting_evidence_event_ids,
+        vec!["alpha-conflict".to_string()]
     );
 }
 
@@ -2359,6 +2475,7 @@ impl EventStore for FailureModeDeps {
             query.kind,
             query.recorded_after,
             query.recorded_before,
+            query.event_id_prefix,
         );
 
         let limit = query.limit.unwrap_or(10);
@@ -2390,6 +2507,7 @@ impl EventStore for FailureModeDeps {
             query.kind,
             query.recorded_after,
             query.recorded_before,
+            query.event_id_prefix,
         );
 
         let events = if let Some(limit) = query.limit {
@@ -2420,6 +2538,7 @@ fn filter_and_order_events(
     kind: Option<EventKind>,
     recorded_after: Option<DateTime<Utc>>,
     recorded_before: Option<DateTime<Utc>>,
+    event_id_prefix: Option<String>,
 ) {
     if let Some(namespace) = namespace {
         events.retain(|event| event.event.namespace() == &namespace);
@@ -2439,6 +2558,10 @@ fn filter_and_order_events(
 
     if let Some(recorded_before) = recorded_before {
         events.retain(|event| event.recorded_at <= recorded_before);
+    }
+
+    if let Some(prefix) = event_id_prefix {
+        events.retain(|event| event.event_id.starts_with(&prefix));
     }
 
     events.sort_by(|lhs, rhs| {

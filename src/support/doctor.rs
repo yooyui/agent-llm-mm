@@ -59,6 +59,9 @@ pub struct DoctorProviderMatrixEntry {
     pub adapter: &'static str,
     pub missing_implementation: &'static str,
     pub selected: bool,
+    // 只读派生标记：该行是否可被运行时实际选用（必须受支持且可配置）。
+    // planned-only 行恒为 false，避免读者误以为未实现的行可投入配置。
+    pub selectable_for_runtime: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -309,7 +312,18 @@ fn build_system_layer_report(
                     "memory layering is partial; procedural memory and durable new layer writes are not implemented",
                     "future memory layers need migration, lifecycle, and evidence-link gates",
                 ],
-                [],
+                [
+                    system_layer_diagnostic(
+                        "layered_projection_classification",
+                        "partial",
+                        "working / episodic / semantic / self_model report partial when read-only evidence exists; procedural stays not_implemented",
+                    ),
+                    system_layer_diagnostic(
+                        "self_model_durable_writes",
+                        "blocked",
+                        "self_model layer stays read-only; run_reflection is the only durable identity / commitment write path",
+                    ),
+                ],
             ),
             system_layer_entry(
                 "policy",
@@ -881,16 +895,19 @@ fn doctor_provider_matrix_entry(
     config: &AppConfig,
     entry: ProviderMatrixEntry,
 ) -> DoctorProviderMatrixEntry {
+    let support_state = match entry.state {
+        "supported" => ProviderSupportState::Supported,
+        _ => ProviderSupportState::PlannedOnly,
+    };
     DoctorProviderMatrixEntry {
         provider: entry.provider,
-        support_state: match entry.state {
-            "supported" => ProviderSupportState::Supported,
-            _ => ProviderSupportState::PlannedOnly,
-        },
+        support_state,
         configurable: entry.configurable,
         adapter: entry.adapter,
         missing_implementation: entry.missing_implementation,
         selected: entry.provider == config.model_provider.as_str(),
+        selectable_for_runtime: support_state == ProviderSupportState::Supported
+            && entry.configurable,
     }
 }
 

@@ -1,6 +1,8 @@
 use agent_llm_mm::{
     domain::{
-        episode_projection::{EpisodeProjectionInput, build_episode_summary_projection},
+        episode_projection::{
+            EpisodeLifecycleStatus, EpisodeProjectionInput, build_episode_summary_projection,
+        },
         evidence_relation::{EvidenceRelationInput, build_evidence_relation_report},
         memory_layer_projection::{MemoryLayerProjectionInput, build_memory_layer_projection},
         snapshot::SelfSnapshot,
@@ -238,6 +240,7 @@ fn episode_summary_projection_is_read_only_local_metadata_over_episode_events() 
         ["evt-action", "evt-outcome"]
     );
     assert_eq!(projection.event_count, 3);
+    assert_eq!(projection.lifecycle_status, EpisodeLifecycleStatus::Concluded);
     assert!(!projection.writes_performed);
     assert_eq!(projection.durable_self_model_write_path, "run_reflection");
     assert_eq!(
@@ -287,6 +290,23 @@ fn episode_summary_projection_exposes_lesson_with_goal_outcome_and_evidence() {
         projection.identity_or_commitment_updates,
         Vec::<String>::new()
     );
+}
+
+#[test]
+fn episode_summary_projection_marks_open_lifecycle_without_outcome() {
+    let projection = build_episode_summary_projection(EpisodeProjectionInput {
+        episode_reference: "episode:task-open".to_string(),
+        episode_event_ids: vec!["evt-goal".to_string(), "evt-action".to_string()],
+        objective: Some("track an in-flight local slice".to_string()),
+        outcome: None,
+        lesson: None,
+        linked_evidence_ids: vec!["evt-action".to_string()],
+    })
+    .expect("open episode projection should build");
+
+    // outcome 缺失时派生为 Open，仍只读、不写 identity/commitments。
+    assert_eq!(projection.lifecycle_status, EpisodeLifecycleStatus::Open);
+    assert!(!projection.writes_performed);
 }
 
 #[test]
@@ -359,6 +379,50 @@ async fn doctor_exposes_remote_team_inventory_and_security_gates_as_machine_read
         serialized["remote_team_security_gates"]["remote_writes_allowed"],
         false
     );
+}
+
+#[tokio::test]
+async fn doctor_memory_layer_exposes_read_only_classification_diagnostics() {
+    let temp_dir = tempdir().expect("temp dir");
+    let report = run_doctor(agent_llm_mm::support::config::AppConfig {
+        database_url: format!(
+            "sqlite://{}",
+            temp_dir
+                .path()
+                .join("doctor-memory-layer.sqlite")
+                .to_string_lossy()
+        ),
+        ..Default::default()
+    })
+    .await
+    .expect("doctor should pass");
+
+    let memory_layer = report
+        .system_layer_report
+        .layers
+        .iter()
+        .find(|layer| layer.name == "memory")
+        .expect("memory layer should be present");
+
+    // memory 层保持只读且 partial，不得开放任何写入。
+    assert!(!memory_layer.writes_allowed);
+    assert_eq!(memory_layer.status, "partial");
+
+    let diagnostic_keys: Vec<&str> = memory_layer
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.key.as_str())
+        .collect();
+    assert!(diagnostic_keys.contains(&"layered_projection_classification"));
+    assert!(diagnostic_keys.contains(&"self_model_durable_writes"));
+
+    let self_model_diagnostic = memory_layer
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.key == "self_model_durable_writes")
+        .expect("self_model durable write diagnostic should be present");
+    assert_eq!(self_model_diagnostic.status, "blocked");
+    assert!(self_model_diagnostic.detail.contains("run_reflection"));
 }
 
 #[tokio::test]

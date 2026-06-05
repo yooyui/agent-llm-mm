@@ -32,6 +32,34 @@ fn missing_required_evidence_artifacts_keep_gate_open() {
 }
 
 #[test]
+fn gate_status_counts_match_gate_states_and_overall_status() {
+    let temp_dir = tempdir().expect("temp dir");
+    let summary = summarize_local_alpha_evidence(LocalAlphaEvidenceOptions {
+        evidence_root: temp_dir.path().to_path_buf(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("summary should be generated from missing evidence");
+
+    // 派生计数三者之和必须等于 gate 总数，且与逐个 gate 状态精确吻合。
+    let total = summary.satisfied_gate_count + summary.open_gate_count + summary.not_verified_gate_count;
+    assert_eq!(total, summary.gates.len());
+    assert_eq!(
+        summary.satisfied_gate_count,
+        summary.gates.iter().filter(|g| g.status == "satisfied").count()
+    );
+    assert_eq!(
+        summary.open_gate_count,
+        summary.gates.iter().filter(|g| g.status == "open").count()
+    );
+
+    // 缺失全部证据时没有 satisfied gate，存在 open gate，整体仍为 in_progress（非 ready_for_human_review）。
+    assert_eq!(summary.satisfied_gate_count, 0);
+    assert!(summary.open_gate_count > 0);
+    assert_eq!(summary.overall_status, "in_progress");
+}
+
+#[test]
 fn first_run_simulation_without_real_fresh_machine_evidence_cannot_complete_local_alpha() {
     let temp_dir = tempdir().expect("temp dir");
     write_first_run_summary(temp_dir.path(), false);
