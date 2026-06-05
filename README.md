@@ -88,6 +88,7 @@
   - 这些 automatic path 仍是 best-effort runtime hook，不代表“所有请求都会自动反思”
   - 通过治理后的 proposal 会被转译回现有 `run_reflection` 持久化路径；没有新增独立 MCP tool
   - 直接调用 `run_reflection` 不会递归触发 auto-reflection
+  - 这 4 条 runtime hook 的完整 contract matrix（Trigger Input / Runs When / Does Not Do）以 `docs/project-status.md` §8 的权威表为准
 - self-revision demo package
   - 提供零外网依赖的一键 demo：`./scripts/run-self-revision-demo.sh`
   - demo runner 会启动本地 deterministic `openai-compatible` stub provider，并通过真实 MCP `stdio` 服务跑 canonical scenario

@@ -425,14 +425,7 @@ cargo test --test mcp_stdio ingest_interaction_auto_reflects_once_and_does_not_r
 - best-effort auto-reflection 失败是否不会把主 MCP 成功路径改写成 MCP 错误
 - `run_reflection` 是否仍是唯一 durable write path / persistence funnel
 
-运行时 contract matrix 应保持为：
-
-| Hook | Trigger Input | Runs When | Does Not Do |
-| --- | --- | --- | --- |
-| `ingest_interaction:failure` | repeated or explicit failure signal | after successful ingest path | does not turn successful ingest into MCP error if best-effort reflection fails |
-| `ingest_interaction:conflict` | explicit `trigger_hints` containing `conflict` or `identity` | after successful ingest path | does not infer conflict from arbitrary text alone |
-| `decide_with_snapshot:conflict` | explicit `auto_reflect_namespace` and conflict-compatible `trigger_hints` | after non-blocked decision | does not run when commitment gate blocks the decision |
-| `build_self_snapshot:periodic` | explicit `auto_reflect_namespace` | during snapshot build with periodic policy | does not create a background scheduler |
+运行时 contract matrix 的权威定义见 `docs/project-status.md` §8 的「runtime hook contract matrix」表。本指南不再复制该表，只核对其语义不变。
 
 实现细节核对：
 

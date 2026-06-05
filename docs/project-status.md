@@ -99,7 +99,7 @@
 - 通过治理的 automatic self-revision 最终仍复用 `run_reflection` 作为 identity / commitments 的 durable write path
 - 直接 `run_reflection` MCP tool 不会递归触发 auto-reflection
 
-当前 runtime hook contract matrix 如下：
+当前 runtime hook contract matrix 如下（本表为这 4 条 runtime hook contract 的权威单一来源，README 与 testing-guide 引用本表而不另行复制，避免漂移）：
 
 | Hook | Trigger Input | Runs When | Does Not Do |
 | --- | --- | --- | --- |

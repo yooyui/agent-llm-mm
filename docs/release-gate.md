@@ -13,7 +13,11 @@ and deprecation policy live in
 do not replace this gate; they define what must be recorded before a release
 candidate is described publicly.
 
-## Minimum Gate
+本 gate 的验证命令显式分为两层：**最小验证集（Minimum Verification Set）** 必须在每次提交前与发布前全部通过；**建议验证集（Recommended Verification Set）** 是发布前应当补跑、并按需保留证据的更深检查。两层都不证明生产自治。
+
+## Minimum Verification Set（最小验证集）
+
+每次提交前与发布前都必须全部通过的最小门槛：
 
 - `cargo fmt --check`
 - `git diff --check`
@@ -21,7 +25,11 @@ candidate is described publicly.
 - `cargo test`
 - `./scripts/agent-llm-mm.sh doctor`
 
-## Release Engineering Gate
+## Recommended Verification Set（建议验证集）
+
+发布前应当补跑的更深检查。以下各 Gate 同属建议验证集：Release Engineering Gate、Self-Revision Evidence Gate、Dashboard Gate、Operation Log Gate、Daemon Config Gate。它们补足发布前的可读证据与边界证明，但不替代最小验证集。
+
+### Release Engineering Gate
 
 - Use a source-only tag or equivalent conservative source artifact for the first
   productization-stage release; do not claim binary packaging, installer,
@@ -40,7 +48,9 @@ candidate is described publicly.
   multi-tenancy, or `run_reflection` replacement claim may be made from this
   gate.
 
-## Self-Revision Evidence Gate
+### Self-Revision Evidence Gate
+
+本 gate 产出的 self-revision demo package 是「自动修订能力的发布前可读证据」：`report.md` 供人阅读核对修订前后的 identity / commitment / decision 变化，其余 JSON（doctor、snapshot before / after、decision before / after、timeline、SQLite summary）供机器复核同一条可重复链路。固定保留该 package 作为发布前证据，但它只证明当前 MVP 边界内的可重复链路，不新增 MCP tool、daemon 或新的 durable write path。
 
 - `cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner --test openai_compatible_model --test mcp_stdio -v`
 - `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest`
@@ -56,18 +66,18 @@ Required artifacts:
 - `target/reports/self-revision-demo/latest/sqlite-summary.json`
 - `target/reports/self-revision-demo/latest/report.md`
 
-## Dashboard Gate
+### Dashboard Gate
 
 - `cargo test --test dashboard_config --test dashboard_recorder --test dashboard_projection --test dashboard_http`
 - `cargo test --test mcp_stdio dashboard_enabled_does_not_corrupt_mcp_stdout_and_records_tool_event -v`
 
 The dashboard must remain local-only and read-only unless a separate productization plan explicitly changes that boundary.
 
-## Operation Log Gate
+### Operation Log Gate
 
 - `cargo test --test operation_log -v`
 
-## Daemon Config Gate
+### Daemon Config Gate
 
 - `cargo test --test daemon_config -v`
 
