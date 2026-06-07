@@ -37,9 +37,9 @@
 
 ## Verification Status
 
-As of `2026-05-31`:
+As of `2026-06-07`:
 
-- `cargo test` passes in full with 352 tests
+- `cargo test` passes in full with 355 tests
 - `doctor` returns `status = ok`
 
 ## Acknowledgement

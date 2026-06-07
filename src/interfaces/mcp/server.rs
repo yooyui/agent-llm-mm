@@ -252,6 +252,16 @@ impl Server {
                     error = %error,
                     "best-effort auto-reflection failed after successful ingest"
                 );
+                self.runtime
+                    .record_auto_reflection_failure_operation(
+                        "ingest_interaction",
+                        dashboard_namespace.clone(),
+                        Some(correlation_id.clone()),
+                        auto_reflect_trigger_type,
+                        &auto_reflect_trigger_key,
+                        &error,
+                    )
+                    .await;
             }
         }
         self.runtime.dashboard.record_tool_ok(
@@ -337,6 +347,16 @@ impl Server {
                         error = %error,
                         "best-effort periodic auto-reflection failed"
                     );
+                    self.runtime
+                        .record_auto_reflection_failure_operation(
+                            "build_self_snapshot",
+                            auto_reflect_namespace,
+                            Some(correlation_id.clone()),
+                            auto_reflect_trigger_type,
+                            &auto_reflect_trigger_key,
+                            &error,
+                        )
+                        .await;
                 }
             }
         }
@@ -446,6 +466,16 @@ impl Server {
                         error = %error,
                         "best-effort conflict auto-reflection failed after successful decide_with_snapshot"
                     );
+                    self.runtime
+                        .record_auto_reflection_failure_operation(
+                            "decide_with_snapshot",
+                            auto_reflect_namespace,
+                            Some(correlation_id.clone()),
+                            auto_reflect_trigger_type,
+                            &auto_reflect_trigger_key,
+                            &error,
+                        )
+                        .await;
                 }
             }
         }
@@ -630,7 +660,7 @@ impl Runtime {
         if status == OperationLogStatus::Ok {
             return;
         }
-        let diagnostic_summary_json = serde_json::to_string(&result.diagnostics).ok();
+        let diagnostic_summary_json = Some(auto_reflection_diagnostic_summary(result).to_string());
         let entry = OperationLogEntry {
             operation_id: Uuid::new_v4().to_string(),
             occurred_at: Utc::now(),
@@ -652,6 +682,43 @@ impl Runtime {
                 entrypoint,
                 error = %error,
                 "failed to append auto-reflection trigger operation log entry"
+            );
+        }
+    }
+
+    async fn record_auto_reflection_failure_operation(
+        &self,
+        entrypoint: &'static str,
+        namespace: Option<String>,
+        correlation_id: Option<String>,
+        trigger_type: TriggerType,
+        trigger_key: &str,
+        error: &AppError,
+    ) {
+        let entry = OperationLogEntry {
+            operation_id: Uuid::new_v4().to_string(),
+            occurred_at: Utc::now(),
+            namespace,
+            actor_kind: ActorKind::System,
+            actor_id: "mcp-stdio".to_string(),
+            entrypoint: entrypoint.to_string(),
+            operation_kind: OperationLogKind::Trigger,
+            status: OperationLogStatus::Failed,
+            correlation_id,
+            request_summary_json: None,
+            response_summary_json: None,
+            diagnostic_summary_json: Some(
+                auto_reflection_failure_diagnostic_summary(trigger_type, trigger_key, error)
+                    .to_string(),
+            ),
+            redaction_version: 1,
+        };
+
+        if let Err(error) = self.store.append_operation(entry).await {
+            warn!(
+                entrypoint,
+                error = %error,
+                "failed to append failed auto-reflection trigger operation log entry"
             );
         }
     }
@@ -993,6 +1060,45 @@ fn safe_diagnostic_detail(error: &AppError) -> &'static str {
         AppError::InvalidParams(_) => "invalid params",
         AppError::Message(_) => "internal error",
     }
+}
+
+fn auto_reflection_diagnostic_summary(
+    result: &auto_reflect_if_needed::AutoReflectResult,
+) -> serde_json::Value {
+    let diagnostics = &result.diagnostics;
+    serde_json::json!({
+        "trigger_type": diagnostics.trigger_type,
+        "namespace": diagnostics.namespace,
+        "trigger_key": diagnostics.trigger_key,
+        "outcome": diagnostics.outcome,
+        "suppression_reason": diagnostics.suppression_reason,
+        "suppression_category": diagnostics.suppression_category,
+        "rejection_reason": diagnostics
+            .rejection_reason
+            .as_ref()
+            .map(|_| "model_rationale_omitted"),
+        "cooldown_boundary": diagnostics.cooldown_boundary.map(|value| value.to_rfc3339()),
+        "cooldown_state": diagnostics.cooldown_state,
+        "evidence_window_size": diagnostics.evidence_window_size,
+        "selected_evidence_event_ids": diagnostics.selected_evidence_event_ids,
+        "durable_write_path": diagnostics.durable_write_path,
+    })
+}
+
+fn auto_reflection_failure_diagnostic_summary(
+    trigger_type: TriggerType,
+    trigger_key: &str,
+    error: &AppError,
+) -> serde_json::Value {
+    let error_class = mcp_error_class(error);
+    serde_json::json!({
+        "trigger_type": trigger_type,
+        "trigger_key": trigger_key,
+        "outcome": "failed",
+        "error_class": error_class.label(),
+        "error_code": error_class.code(),
+        "error_detail": safe_diagnostic_detail(error),
+    })
 }
 
 fn log_auto_reflection_success(

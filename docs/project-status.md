@@ -265,7 +265,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-05-31`，本分支需要 fresh 运行：
+截至 `2026-06-07`，本分支需要 fresh 运行：
 
 - `cargo fmt --check`
 - `git diff --check`
@@ -279,8 +279,8 @@ Implementation notes:
 
 结果：
 
-- `lib unit tests`: 7
-- `application_use_cases`: 24
+- `lib unit tests`: 9
+- `application_use_cases`: 25
 - `bootstrap`: 24
 - `daemon_config`: 12
 - `dashboard_config`: 4
@@ -292,10 +292,10 @@ Implementation notes:
 - `domain_invariants`: 4
 - `domain_snapshot`: 6
 - `evidence_query_dto`: 4
-- `failure_modes`: 35
+- `failure_modes`: 36
 - `first_run_bootstrap_smoke`: 4
 - `local_alpha_release_evidence`: 20
-- `mcp_stdio`: 43
+- `mcp_stdio`: 44
 - `openai_compatible_model`: 11
 - `operation_log`: 9
 - `product_completion_read_models`: 15
@@ -307,7 +307,7 @@ Implementation notes:
 - `sqlite_store`: 23
 - `status_sync`: 11
 - `support_bundle`: 35
-- 合计：352 个测试通过
+- 合计：355 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`

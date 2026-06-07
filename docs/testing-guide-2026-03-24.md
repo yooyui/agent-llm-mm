@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-05-31 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-06-07 fresh 验证更新）
 
 ## 1. 目标
 
@@ -28,10 +28,10 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-05-31`，`cargo test` 全量通过，摘要如下：
+截至 `2026-06-07`，`cargo test` 全量通过，摘要如下：
 
-- `lib unit tests`: 7 passed
-- `application_use_cases`: 24 passed
+- `lib unit tests`: 9 passed
+- `application_use_cases`: 25 passed
 - `bootstrap`: 24 passed
 - `daemon_config`: 12 passed
 - `dashboard_config`: 4 passed
@@ -43,10 +43,10 @@
 - `domain_invariants`: 4 passed
 - `domain_snapshot`: 6 passed
 - `evidence_query_dto`: 4 passed
-- `failure_modes`: 35 passed
+- `failure_modes`: 36 passed
 - `first_run_bootstrap_smoke`: 4 passed
 - `local_alpha_release_evidence`: 20 passed
-- `mcp_stdio`: 43 passed
+- `mcp_stdio`: 44 passed
 - `openai_compatible_model`: 11 passed
 - `operation_log`: 9 passed
 - `product_completion_read_models`: 15 passed
@@ -59,7 +59,7 @@
 - `status_sync`: 11 passed
 - `support_bundle`: 35 passed
 
-合计：352 个测试通过。
+合计：355 个测试通过。
 
 ---
 

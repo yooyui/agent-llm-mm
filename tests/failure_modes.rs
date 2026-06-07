@@ -1351,6 +1351,32 @@ async fn auto_reflection_rejects_proposed_evidence_query_zero_limit_instead_of_m
 }
 
 #[tokio::test]
+async fn fake_event_store_rejects_zero_limit_for_bounded_and_unbounded_evidence_queries() {
+    let deps = test_support::deps_for_failure_modes();
+    let query = EvidenceQuery {
+        namespace: None,
+        owner: Some(Owner::World),
+        kind: Some(EventKind::Observation),
+        limit: Some(0),
+        recorded_after: None,
+        recorded_before: None,
+        event_id_prefix: None,
+    };
+
+    let bounded = EventStore::query_evidence_event_ids(&deps, query.clone()).await;
+    let unbounded = EventStore::query_evidence_event_ids_unbounded(&deps, query).await;
+
+    assert!(matches!(
+        bounded,
+        Err(AppError::InvalidParams(message)) if message.contains("limit must be at least 1")
+    ));
+    assert!(matches!(
+        unbounded,
+        Err(AppError::InvalidParams(message)) if message.contains("limit must be at least 1")
+    ));
+}
+
+#[tokio::test]
 async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger_window_when_ids_are_empty()
  {
     let deps = test_support::deps_for_failure_modes();
@@ -2609,6 +2635,12 @@ impl EventStore for FailureModeDeps {
             .unwrap()
             .evidence_query_trace
             .push(query.clone());
+        if query.limit == Some(0) {
+            return Err(AppError::InvalidParams(
+                "limit must be at least 1".to_string(),
+            ));
+        }
+
         let mut events = self.state.lock().unwrap().committed.events.clone();
         filter_and_order_events(
             &mut events,
@@ -2621,10 +2653,6 @@ impl EventStore for FailureModeDeps {
         );
 
         let limit = query.limit.unwrap_or(10);
-        if limit == 0 {
-            return Ok(Vec::new());
-        }
-
         Ok(events
             .into_iter()
             .take(limit)
@@ -2641,6 +2669,12 @@ impl EventStore for FailureModeDeps {
             .unwrap()
             .evidence_query_trace
             .push(query.clone());
+        if query.limit == Some(0) {
+            return Err(AppError::InvalidParams(
+                "limit must be at least 1".to_string(),
+            ));
+        }
+
         let mut events = self.state.lock().unwrap().committed.events.clone();
         filter_and_order_events(
             &mut events,

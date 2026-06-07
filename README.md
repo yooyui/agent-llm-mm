@@ -16,8 +16,8 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
-- 最近本地验证与产品化 gate 入口：`2026-05-31`
-  - `cargo test` 全量通过，共 352 个测试
+- 最近本地验证与产品化 gate 入口：`2026-06-07`
+  - `cargo test` 全量通过，共 355 个测试
   - `doctor` 预检返回 `status = ok`
   - `status-sync-check` 已加入本地只读文档漂移检查，用于对齐当前测试总数声明，并阻断已勾选计划项与 reality gate 状态不一致的完成声明
   - Local Alpha product smoke 已有 staging / promote 证据刷新入口；具体候选是否 fresh 仍以当前 evidence root 的 summary 为准

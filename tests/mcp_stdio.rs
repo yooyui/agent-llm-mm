@@ -165,6 +165,115 @@ timeout_ms = 30000
     assert_eq!(event_count, 2);
     assert_eq!(reflection_count, 0);
     assert_eq!(stub.request_count().await, 1);
+
+    let trigger_row = sqlx::query(
+        "SELECT operation_kind, status FROM operation_log \
+         WHERE entrypoint = 'ingest_interaction' AND operation_kind = 'trigger' \
+         ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("failed best-effort auto-reflection should append a durable trigger operation log row");
+
+    assert_eq!(trigger_row.get::<String, _>("operation_kind"), "trigger");
+    assert_eq!(trigger_row.get::<String, _>("status"), "failed");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rejected_auto_reflection_trigger_log_does_not_persist_raw_model_rationale() {
+    let raw_secret_rationale = "No revision because sk-secret-token-password-should-not-persist";
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": format!(r#"{{"should_reflect":false,"rationale":"{}"}}"#, raw_secret_rationale)
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    for (episode_reference, summary, trigger_hints) in [
+        (
+            "episode:auto-reflect-rejected-diagnostic-0",
+            "first rollback after violating a hard commitment",
+            json!([]),
+        ),
+        (
+            "episode:auto-reflect-rejected-diagnostic-1",
+            "rollback after violating a hard commitment",
+            json!(["failure", "rollback"]),
+        ),
+    ] {
+        let response = client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "Self_",
+                        "kind": "Action",
+                        "summary": summary
+                    },
+                    "claim_drafts": [],
+                    "episode_reference": episode_reference,
+                    "trigger_hints": trigger_hints
+                }),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            response.get("error").is_none(),
+            "rejected auto-reflection must preserve main ingest success semantics: {response:?}"
+        );
+    }
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let row = sqlx::query(
+        "SELECT operation_kind, status, diagnostic_summary_json FROM operation_log \
+         WHERE entrypoint = 'ingest_interaction' AND operation_kind = 'trigger' \
+         ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("rejected auto-reflection should append a trigger operation log entry");
+
+    assert_eq!(row.get::<String, _>("operation_kind"), "trigger");
+    assert_eq!(row.get::<String, _>("status"), "rejected");
+    let diagnostic = row
+        .get::<Option<String>, _>("diagnostic_summary_json")
+        .expect("rejected trigger should include bounded diagnostic summary");
+    assert!(
+        !diagnostic.contains(raw_secret_rationale),
+        "trigger diagnostic must not persist raw model rationale: {diagnostic}"
+    );
+    assert!(
+        !diagnostic.contains("sk-secret-token-password-should-not-persist"),
+        "trigger diagnostic must not persist secret-like rationale text: {diagnostic}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
