@@ -10,7 +10,7 @@ use crate::{
         reflection::Reflection,
         self_revision::{
             AutoReflectDiagnosticInput, AutoReflectDiagnosticSummary, AutoReflectOutcome,
-            SelfRevisionProposal, SelfRevisionRequest, TriggerType,
+            SelfRevisionProposal, SelfRevisionRequest, SuppressionCategory, TriggerType,
         },
         types::{Namespace, Owner},
     },
@@ -112,6 +112,7 @@ impl AutoReflectResult {
                 trigger_key: input.trigger_key(),
                 outcome: AutoReflectOutcome::Skipped,
                 suppression_reason: None,
+                suppression_category: None,
                 rejection_reason: None,
                 cooldown_boundary: None,
                 evidence_window_size: 0,
@@ -139,6 +140,7 @@ impl AutoReflectResult {
                 trigger_key: candidate.trigger_key.clone(),
                 outcome: AutoReflectOutcome::NotTriggered,
                 suppression_reason: None,
+                suppression_category: None,
                 rejection_reason: None,
                 cooldown_boundary: None,
                 evidence_window_size: evidence_event_ids.len(),
@@ -167,6 +169,7 @@ impl AutoReflectResult {
                 trigger_key: candidate.trigger_key.clone(),
                 outcome: AutoReflectOutcome::Rejected,
                 suppression_reason: None,
+                suppression_category: None,
                 rejection_reason: Some(reason),
                 cooldown_boundary: None,
                 evidence_window_size: evidence_event_ids.len(),
@@ -178,9 +181,9 @@ impl AutoReflectResult {
     fn suppressed(
         candidate: &TriggerCandidate,
         entry: &StoredTriggerLedgerEntry,
-        suppression_reason: impl Into<String>,
+        suppression_category: SuppressionCategory,
     ) -> Self {
-        let suppression_reason = suppression_reason.into();
+        let suppression_reason = suppression_category.as_str().to_string();
         let evidence_event_ids = candidate.evidence_event_ids.clone();
         Self {
             triggered: false,
@@ -199,6 +202,7 @@ impl AutoReflectResult {
                 trigger_key: entry.trigger_key.clone(),
                 outcome: AutoReflectOutcome::Suppressed,
                 suppression_reason: Some(suppression_reason),
+                suppression_category: Some(suppression_category),
                 rejection_reason: None,
                 cooldown_boundary: entry.cooldown_until,
                 evidence_window_size: evidence_event_ids.len(),
@@ -232,6 +236,7 @@ impl AutoReflectResult {
                 trigger_key: candidate.trigger_key.clone(),
                 outcome: AutoReflectOutcome::Handled,
                 suppression_reason: None,
+                suppression_category: None,
                 rejection_reason: None,
                 cooldown_boundary: cooldown_until,
                 evidence_window_size,
@@ -272,7 +277,7 @@ struct IdentityRevisionContext {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SuppressionDecision {
-    reason: &'static str,
+    reason: SuppressionCategory,
 }
 
 pub async fn execute<D>(deps: &D, input: AutoReflectInput) -> Result<AutoReflectResult, AppError>
@@ -461,7 +466,7 @@ where
         .is_some_and(|cooldown_until| cooldown_until > now)
     {
         return Ok(Some(SuppressionDecision {
-            reason: "cooldown_active",
+            reason: SuppressionCategory::CooldownActive,
         }));
     }
 
@@ -475,7 +480,7 @@ where
             .is_some_and(|entry| entry.evidence_window == candidate.evidence_event_ids)
     {
         return Ok(Some(SuppressionDecision {
-            reason: "evidence_window_unchanged",
+            reason: SuppressionCategory::EvidenceWindowUnchanged,
         }));
     }
 
@@ -486,7 +491,7 @@ where
         })
     {
         return Ok(Some(SuppressionDecision {
-            reason: "episode_watermark_unchanged",
+            reason: SuppressionCategory::EpisodeWatermarkUnchanged,
         }));
     }
 
@@ -986,6 +991,14 @@ where
     let query_constrained_candidate_ids =
         if let Some(proposed_evidence_query) = proposal.proposed_evidence_query.clone() {
             let query_limit = proposed_evidence_query.limit;
+            // 与 DTO / SQLite chokepoint 的 limit==0 早拒对称：model 提议的 evidence
+            // query limit==0 必须在解析入口拒绝为 InvalidParams，不得被后置 take(0)
+            // 静默收窄为空集、当成确定性空匹配掩盖（违反 C1「不得被当成空匹配掩盖」意图）。
+            if query_limit == Some(0) {
+                return Err(AppError::InvalidParams(
+                    "proposed evidence query limit must be at least 1".to_string(),
+                ));
+            }
             let proposed_query_event_ids = dedupe_strings(
                 deps.query_evidence_event_ids_unbounded(EvidenceQuery {
                     namespace: proposed_evidence_query.namespace,

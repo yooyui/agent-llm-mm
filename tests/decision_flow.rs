@@ -121,7 +121,10 @@ async fn mock_model_receives_snapshot_context_when_gate_passes() {
     assert_eq!(serialized["selected_action"], "summarize_memory_state");
     assert_eq!(serialized["status"], "model_decision");
     assert_eq!(serialized["reason"], serde_json::Value::Null);
-    assert_eq!(serialized["provider_diagnostics_class"], "bounded-local-only");
+    assert_eq!(
+        serialized["provider_diagnostics_class"],
+        "bounded-local-only"
+    );
     assert_eq!(
         serialized["gate"],
         json!({

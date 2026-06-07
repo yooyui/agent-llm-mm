@@ -2537,6 +2537,131 @@ async fn mcp_tool_call_appends_operation_log_with_correlation_id() {
     );
 }
 
+/// 驱动一次 server 端「积累 → handled → cooldown 抑制」的失败 auto-reflection 流：
+/// 三次 ingest 后第三次会因 cooldown_active 被抑制。返回数据库 URL（与 doctor 共用），
+/// 以及保持数据库目录存活的 guard。供 B1 的两条断言（operation log 写入 / doctor 计数）复用。
+async fn drive_suppressed_auto_reflection_over_stdio() -> (String, TempDir) {
+    let (mut client, database_url, database_dir) = test_support::spawn_stdio_client_with_database()
+        .await
+        .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    // 先累积两条 Self/Action 事件（无 failure 提示 → 不触发，故不调用模型）。
+    // 失败触发的证据窗口阈值为 2，凑满后第三次带提示的 ingest 才会进入抑制评估。
+    for index in 0..2 {
+        client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "Self_",
+                        "kind": "Action",
+                        "summary": format!("rollback #{index} after violating a hard commitment")
+                    },
+                    "claim_drafts": [],
+                    "episode_reference": format!("episode:suppressed-auto-reflect-{index}")
+                }),
+            )
+            .await
+            .unwrap();
+    }
+
+    // 种入一条 Handled 触发账本记录并设置仍在窗口内的 cooldown，作为「先前已处理过反思」的前置条件。
+    // 注意：这里种的是触发账本（cooldown 来源），而非 doctor 计数的 operation_log；
+    // operation_log 的 Trigger/Suppressed 条目仍由下一步真实 ingest 在运行时写入，故仍验证了修复点。
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let cooldown_until = (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339();
+    let handled_at = chrono::Utc::now().to_rfc3339();
+    sqlx::query(
+        "INSERT INTO reflection_trigger_ledger \
+         (ledger_id, trigger_type, namespace, trigger_key, status, evidence_window, handled_at, cooldown_until, episode_watermark, reflection_id) \
+         VALUES (?, 'failure', 'self', 'self:failure', 'handled', '[\"seed-evidence\"]', ?, ?, NULL, ?)",
+    )
+    .bind("ledger-seed-handled")
+    .bind(&handled_at)
+    .bind(&cooldown_until)
+    .bind("reflection-seed-handled")
+    .execute(&pool)
+    .await
+    .expect("seed a handled trigger ledger entry to establish the cooldown precondition");
+
+    // 第三次 ingest 带 failure 提示：should_consider 为真（≥2 条证据 + 提示），
+    // 但 cooldown 仍在窗口内 → 在调用模型之前即被 cooldown_active 抑制（不产生模型请求）。
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "Self_",
+                    "kind": "Action",
+                    "summary": "rollback #2 after violating a hard commitment"
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:suppressed-auto-reflect-2",
+                "trigger_hints": ["failure", "rollback"]
+            }),
+        )
+        .await
+        .unwrap();
+
+    (database_url, database_dir)
+}
+
+/// B1：被抑制的 auto-reflection 必须在 durable operation log 留下一条 Trigger/Suppressed 条目，
+/// 且诊断里带可解释的 cooldown_active。此前无任何代码写 Trigger 条目，移除写入则此断言失败。
+#[tokio::test]
+async fn suppressed_auto_reflection_appends_trigger_operation_log_entry() {
+    let (database_url, _database_dir) = drive_suppressed_auto_reflection_over_stdio().await;
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let row = sqlx::query(
+        "SELECT operation_kind, status, diagnostic_summary_json FROM operation_log \
+         WHERE operation_kind = 'trigger' AND status = 'suppressed' \
+         ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("suppressed auto-reflection must append a trigger operation log entry");
+
+    assert_eq!(row.get::<String, _>("operation_kind"), "trigger");
+    assert_eq!(row.get::<String, _>("status"), "suppressed");
+    let diagnostic = row
+        .get::<Option<String>, _>("diagnostic_summary_json")
+        .expect("trigger operation log entry should carry diagnostic summary");
+    assert!(
+        diagnostic.contains("cooldown_active"),
+        "trigger diagnostic should explain the suppression reason: {diagnostic}"
+    );
+}
+
+/// B1：doctor 的 trigger_candidates_suppressed 此前因无生产写入而运行时恒为 0。
+/// 经真实 server 抑制流后（不手动 seed operation log），doctor 必须读到非零计数。
+#[tokio::test]
+async fn doctor_counts_runtime_suppressed_auto_reflection_without_manual_seed() {
+    use agent_llm_mm::support::config::{AppConfig, DaemonConfig};
+
+    let (database_url, _database_dir) = drive_suppressed_auto_reflection_over_stdio().await;
+
+    let report = agent_llm_mm::run_doctor(AppConfig {
+        database_url,
+        daemon: DaemonConfig {
+            enabled: true,
+            poll_interval_ms: 250,
+            max_concurrent_tasks: 1,
+        },
+        ..Default::default()
+    })
+    .await
+    .expect("doctor should read runtime operation-log diagnostics");
+
+    assert!(
+        report.daemon_observe_only.trigger_candidates_suppressed >= 1,
+        "doctor must count runtime-suppressed auto-reflection candidates, got {}",
+        report.daemon_observe_only.trigger_candidates_suppressed
+    );
+    assert_eq!(report.daemon_observe_only.read_errors, Vec::<String>::new());
+}
+
 #[tokio::test]
 async fn mcp_tool_failure_appends_failed_operation_log_without_changing_error_semantics() {
     let (mut client, database_url, _database_dir) =
@@ -3438,6 +3563,99 @@ async fn replacement_evidence_query_limit_overflow_is_invalid_params_over_stdio(
     assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
 }
 
+#[tokio::test]
+async fn replacement_evidence_query_zero_limit_is_invalid_params_over_stdio() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "kind": "Observation",
+                    "summary": "A matching observation exists, so a zero limit must surface as invalid params, not an empty-query error."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:reflection-zero-limit-source"
+            }),
+        )
+        .await
+        .unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "User",
+                    "kind": "Conversation",
+                    "summary": "Zero query limits should be rejected."
+                },
+                "claim_drafts": [
+                    {
+                        "owner": "Self_",
+                        "subject": "self.role",
+                        "predicate": "is",
+                        "object": "architect",
+                        "mode": "Observed"
+                    }
+                ],
+                "episode_reference": "episode:reflection-zero-limit"
+            }),
+        )
+        .await
+        .unwrap();
+    let superseded_claim_id = ingest
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("event_id"))
+        .and_then(Value::as_str)
+        .map(|event_id| format!("{event_id}:claim:0"))
+        .unwrap();
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {
+                    "summary": "A zero evidence query limit should fail before SQLite treats it as an empty match."
+                },
+                "supersede_claim_id": superseded_claim_id,
+                "replacement_claim": {
+                    "owner": "Self_",
+                    "subject": "self.role",
+                    "predicate": "is",
+                    "object": "principal_architect",
+                    "mode": "Observed"
+                },
+                "replacement_evidence_query": {
+                    "owner": "World",
+                    "kind": "Observation",
+                    "limit": 0
+                }
+            }),
+        )
+        .await
+        .unwrap();
+
+    let error = reflection
+        .get("error")
+        .expect("zero query limit should be reported as invalid params");
+    assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
+    // 仅断言 -32602 不够鉴别：「无匹配空结果」路径同样返回 -32602。必须断言 message
+    // 指明是 limit 校验拒绝，否则移除 C1 guard、零 limit 被当成空匹配掩盖时本测试仍为绿。
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .expect("error must carry a message");
+    assert!(
+        message.contains("limit must be at least 1"),
+        "zero limit must be rejected by the limit guard, not masked as an empty match: {message}"
+    );
+}
+
 mod test_support {
     use super::*;
 
@@ -3548,6 +3766,16 @@ mod test_support {
                 .stdout
                 .take()
                 .ok_or_else(|| io::Error::other("missing child stdout"))?;
+
+            // 必须排空子进程 stderr：它是 piped 但从不读取，一旦 tracing 日志写满 ~64KB
+            // 管道缓冲区，子进程下一次写 stderr 就会阻塞（表现为模型调用「超时」）。
+            // 多次 ingest + 多轮模型往返的用例（如抑制流）正好会触顶。丢弃即可，无测试断言 stderr。
+            if let Some(stderr) = child.stderr.take() {
+                std::thread::spawn(move || {
+                    let mut stderr = stderr;
+                    let _ = io::copy(&mut stderr, &mut io::sink());
+                });
+            }
 
             Ok(Self {
                 _database_dir: database_dir,

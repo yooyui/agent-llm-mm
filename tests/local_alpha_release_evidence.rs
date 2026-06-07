@@ -42,11 +42,16 @@ fn gate_status_counts_match_gate_states_and_overall_status() {
     .expect("summary should be generated from missing evidence");
 
     // 派生计数三者之和必须等于 gate 总数，且与逐个 gate 状态精确吻合。
-    let total = summary.satisfied_gate_count + summary.open_gate_count + summary.not_verified_gate_count;
+    let total =
+        summary.satisfied_gate_count + summary.open_gate_count + summary.not_verified_gate_count;
     assert_eq!(total, summary.gates.len());
     assert_eq!(
         summary.satisfied_gate_count,
-        summary.gates.iter().filter(|g| g.status == "satisfied").count()
+        summary
+            .gates
+            .iter()
+            .filter(|g| g.status == "satisfied")
+            .count()
     );
     assert_eq!(
         summary.open_gate_count,

@@ -39,7 +39,7 @@
 
 截至 `2026-05-31`：
 
-- `cargo test` 全量通过，共 343 个测试
+- `cargo test` 全量通过，共 352 个测试
 - `doctor` 返回 `status = ok`
 
 ## 致谢

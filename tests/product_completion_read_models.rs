@@ -240,7 +240,10 @@ fn episode_summary_projection_is_read_only_local_metadata_over_episode_events() 
         ["evt-action", "evt-outcome"]
     );
     assert_eq!(projection.event_count, 3);
-    assert_eq!(projection.lifecycle_status, EpisodeLifecycleStatus::Concluded);
+    assert_eq!(
+        projection.lifecycle_status,
+        EpisodeLifecycleStatus::Concluded
+    );
     assert!(!projection.writes_performed);
     assert_eq!(projection.durable_self_model_write_path, "run_reflection");
     assert_eq!(

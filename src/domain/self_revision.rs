@@ -32,6 +32,27 @@ pub enum AutoReflectOutcome {
     Skipped,
 }
 
+/// 机器可读的抑制分类。与 `evaluate_trigger_suppression` 产出的三种抑制原因一一对应，
+/// 让下游（doctor / dashboard / 外部消费者）无需对自由文本 `suppression_reason` 做字符串匹配。
+/// 序列化字面量与既有 `suppression_reason` 字符串保持一致，故为 additive 扩展、不破坏现有契约。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SuppressionCategory {
+    CooldownActive,
+    EvidenceWindowUnchanged,
+    EpisodeWatermarkUnchanged,
+}
+
+impl SuppressionCategory {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CooldownActive => "cooldown_active",
+            Self::EvidenceWindowUnchanged => "evidence_window_unchanged",
+            Self::EpisodeWatermarkUnchanged => "episode_watermark_unchanged",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AutoReflectDiagnosticSummary {
     pub trigger_type: TriggerType,
@@ -39,6 +60,7 @@ pub struct AutoReflectDiagnosticSummary {
     pub trigger_key: String,
     pub outcome: AutoReflectOutcome,
     pub suppression_reason: Option<String>,
+    pub suppression_category: Option<SuppressionCategory>,
     pub rejection_reason: Option<String>,
     pub cooldown_boundary: Option<DateTime<Utc>>,
     pub cooldown_state: String,
@@ -54,6 +76,7 @@ pub struct AutoReflectDiagnosticInput {
     pub trigger_key: String,
     pub outcome: AutoReflectOutcome,
     pub suppression_reason: Option<String>,
+    pub suppression_category: Option<SuppressionCategory>,
     pub rejection_reason: Option<String>,
     pub cooldown_boundary: Option<DateTime<Utc>>,
     pub evidence_window_size: usize,
@@ -68,6 +91,7 @@ impl AutoReflectDiagnosticSummary {
             trigger_key,
             outcome,
             suppression_reason,
+            suppression_category,
             rejection_reason,
             cooldown_boundary,
             evidence_window_size,
@@ -85,6 +109,7 @@ impl AutoReflectDiagnosticSummary {
             trigger_key,
             outcome,
             suppression_reason,
+            suppression_category,
             rejection_reason,
             cooldown_boundary,
             cooldown_state: cooldown_state.to_string(),

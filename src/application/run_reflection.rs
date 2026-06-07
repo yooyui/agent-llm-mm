@@ -172,6 +172,18 @@ where
         ));
     }
 
+    // 与 identity canonical claim 对称：commitment 更新的任一 description 不得为纯空白串，
+    // 避免 " " 这类空白内容绕过非空检查后写入 durable commitments。
+    if commitment_updates.as_ref().is_some_and(|updates| {
+        updates
+            .iter()
+            .any(|commitment| commitment.description().trim().is_empty())
+    }) {
+        return Err(AppError::InvalidParams(
+            "commitment reflection updates must not contain blank descriptions".to_string(),
+        ));
+    }
+
     for event_id in &supporting_evidence_event_ids {
         if !deps.has_event(event_id).await? {
             return Err(AppError::InvalidParams(format!(

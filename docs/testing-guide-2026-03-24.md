@@ -31,7 +31,7 @@
 截至 `2026-05-31`，`cargo test` 全量通过，摘要如下：
 
 - `lib unit tests`: 7 passed
-- `application_use_cases`: 23 passed
+- `application_use_cases`: 24 passed
 - `bootstrap`: 24 passed
 - `daemon_config`: 12 passed
 - `dashboard_config`: 4 passed
@@ -42,11 +42,11 @@
 - `demo_openai_compatible_stub`: 1 passed
 - `domain_invariants`: 4 passed
 - `domain_snapshot`: 6 passed
-- `evidence_query_dto`: 3 passed
-- `failure_modes`: 33 passed
+- `evidence_query_dto`: 4 passed
+- `failure_modes`: 35 passed
 - `first_run_bootstrap_smoke`: 4 passed
 - `local_alpha_release_evidence`: 20 passed
-- `mcp_stdio`: 40 passed
+- `mcp_stdio`: 43 passed
 - `openai_compatible_model`: 11 passed
 - `operation_log`: 9 passed
 - `product_completion_read_models`: 15 passed
@@ -55,11 +55,11 @@
 - `release_decision`: 5 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_backup_restore`: 6 passed
-- `sqlite_store`: 21 passed
+- `sqlite_store`: 23 passed
 - `status_sync`: 11 passed
 - `support_bundle`: 35 passed
 
-合计：343 个测试通过。
+合计：352 个测试通过。
 
 ---
 
@@ -222,6 +222,8 @@ cargo test --test sqlite_store
 
 - `sqlite_store_bootstraps_all_tables`
 - `sqlite_query_evidence_event_ids_filters_by_namespace_before_limit`
+- `sqlite_query_evidence_event_ids_filters_by_kind_only`
+- `sqlite_query_evidence_event_ids_rejects_zero_limit`
 - `sqlite_bootstrap_backfills_namespace_for_legacy_event_rows`
 - `sqlite_bootstrap_backfills_namespace_for_legacy_claim_rows`
 - `sqlite_store_rejects_owner_namespace_mismatch_on_write`
@@ -344,6 +346,7 @@ cargo test --test support_bundle support_bundle_reports_openrouter_config_shape_
 - `tests/evidence_query_dto.rs`
   - `evidence_query_dto_parses_recency_window_fields`
   - `evidence_query_dto_rejects_invalid_recency_timestamp`
+  - `evidence_query_dto_rejects_zero_limit`
 - `tests/operation_log.rs`
   - `operation_log_redacts_summary_json_before_persisting`
   - `operation_log_queries_by_correlation_id`

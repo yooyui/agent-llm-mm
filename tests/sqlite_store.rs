@@ -179,6 +179,69 @@ async fn sqlite_query_evidence_event_ids_rejects_limit_above_i64_max() {
 }
 
 #[tokio::test]
+async fn sqlite_query_evidence_event_ids_rejects_zero_limit() {
+    let context = test_support::new_sqlite_store().await;
+
+    let result = context
+        .store
+        .query_evidence_event_ids(EvidenceQuery {
+            namespace: None,
+            owner: None,
+            kind: None,
+            limit: Some(0),
+            recorded_after: None,
+            recorded_before: None,
+            event_id_prefix: None,
+        })
+        .await;
+
+    assert!(matches!(result, Err(AppError::InvalidParams(_))));
+}
+
+#[tokio::test]
+async fn sqlite_query_evidence_event_ids_filters_by_kind_only() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "evt-observation".to_string(),
+            now,
+            Event::new(Owner::World, EventKind::Observation, "world observation"),
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "evt-conversation".to_string(),
+            now + chrono::Duration::seconds(60),
+            Event::new(Owner::User, EventKind::Conversation, "user conversation"),
+        ))
+        .await
+        .unwrap();
+
+    // kind-only 过滤（不带 owner / namespace）：直接映射 event kind taxonomy，
+    // intersect-only 且确定性 newest-first，不引入 ranking。独立 evidence-kind 仍 deferred。
+    let results = context
+        .store
+        .query_evidence_event_ids(EvidenceQuery {
+            namespace: None,
+            owner: None,
+            kind: Some(EventKind::Observation),
+            limit: None,
+            recorded_after: None,
+            recorded_before: None,
+            event_id_prefix: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(results, vec!["evt-observation".to_string()]);
+}
+
+#[tokio::test]
 async fn sqlite_query_evidence_event_ids_unbounded_ignores_default_limit() {
     let context = test_support::new_sqlite_store().await;
     let now = test_support::fixed_now();

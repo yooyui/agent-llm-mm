@@ -161,6 +161,12 @@ async fn query_evidence_event_ids_with_limit(
     query: EvidenceQuery,
     default_limit: Option<usize>,
 ) -> Result<Vec<String>, AppError> {
+    if query.limit == Some(0) {
+        return Err(AppError::InvalidParams(
+            "evidence query limit must be at least 1".to_string(),
+        ));
+    }
+
     let mut sql = String::from("SELECT event_id, recorded_at, owner, kind, summary FROM events");
     let mut predicates = Vec::new();
 

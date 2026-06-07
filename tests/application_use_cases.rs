@@ -446,6 +446,38 @@ async fn run_reflection_rejects_blank_canonical_identity_claim() {
 }
 
 #[tokio::test]
+async fn run_reflection_rejects_blank_commitment_description() {
+    // 与 identity canonical claim 对称：commitment 更新含纯空白 description 时应被拒绝，
+    // 不得绕过非空检查写入 durable commitments。
+    let deps = test_support::reflection_query_deps();
+
+    let result = execute_reflection(
+        &deps,
+        ReflectionInput::record_only(
+            Reflection::new("Blank commitment descriptions must be rejected."),
+            vec!["evt-reflection-1".to_string()],
+        )
+        .with_commitment_updates(vec![Commitment::new(Owner::Self_, " ")]),
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(AppError::InvalidParams(message))
+            if message.contains("blank descriptions")
+    ));
+    // 与 identity blank 测试对称：拒绝后 durable commitments 必须维持 baseline 原状，
+    // 不得有纯空白 " " 项被写入。
+    assert_eq!(
+        deps.commitments(),
+        vec![Commitment::new(
+            Owner::Self_,
+            "forbid:write_identity_core_directly"
+        )]
+    );
+}
+
+#[tokio::test]
 async fn reflection_rejects_inferred_replacement_without_external_evidence() {
     let deps = test_support::in_memory_deps();
 

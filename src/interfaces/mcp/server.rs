@@ -225,14 +225,24 @@ impl Server {
         )
         .await
         {
-            Ok(diagnostics) => log_auto_reflection_success(
-                runtime_hook,
-                &diagnostics,
-                Some(result.event_id.as_str()),
-                &self.runtime.dashboard,
-                dashboard_namespace.clone(),
-                Some(correlation_id.clone()),
-            ),
+            Ok(diagnostics) => {
+                log_auto_reflection_success(
+                    runtime_hook,
+                    &diagnostics,
+                    Some(result.event_id.as_str()),
+                    &self.runtime.dashboard,
+                    dashboard_namespace.clone(),
+                    Some(correlation_id.clone()),
+                );
+                self.runtime
+                    .record_auto_reflection_operation(
+                        "ingest_interaction",
+                        &diagnostics,
+                        dashboard_namespace.clone(),
+                        Some(correlation_id.clone()),
+                    )
+                    .await;
+            }
             Err(error) => {
                 warn!(
                     runtime_hook,
@@ -300,14 +310,24 @@ impl Server {
             )
             .await
             {
-                Ok(diagnostics) => log_auto_reflection_success(
-                    runtime_hook_for("build_self_snapshot", auto_reflect_trigger_type),
-                    &diagnostics,
-                    None,
-                    &self.runtime.dashboard,
-                    auto_reflect_namespace,
-                    Some(correlation_id.clone()),
-                ),
+                Ok(diagnostics) => {
+                    log_auto_reflection_success(
+                        runtime_hook_for("build_self_snapshot", auto_reflect_trigger_type),
+                        &diagnostics,
+                        None,
+                        &self.runtime.dashboard,
+                        auto_reflect_namespace.clone(),
+                        Some(correlation_id.clone()),
+                    );
+                    self.runtime
+                        .record_auto_reflection_operation(
+                            "build_self_snapshot",
+                            &diagnostics,
+                            auto_reflect_namespace,
+                            Some(correlation_id.clone()),
+                        )
+                        .await;
+                }
                 Err(error) => {
                     warn!(
                         runtime_hook =
@@ -399,14 +419,24 @@ impl Server {
             )
             .await
             {
-                Ok(diagnostics) => log_auto_reflection_success(
-                    runtime_hook_for("decide_with_snapshot", auto_reflect_trigger_type),
-                    &diagnostics,
-                    None,
-                    &self.runtime.dashboard,
-                    auto_reflect_namespace,
-                    Some(correlation_id.clone()),
-                ),
+                Ok(diagnostics) => {
+                    log_auto_reflection_success(
+                        runtime_hook_for("decide_with_snapshot", auto_reflect_trigger_type),
+                        &diagnostics,
+                        None,
+                        &self.runtime.dashboard,
+                        auto_reflect_namespace.clone(),
+                        Some(correlation_id.clone()),
+                    );
+                    self.runtime
+                        .record_auto_reflection_operation(
+                            "decide_with_snapshot",
+                            &diagnostics,
+                            auto_reflect_namespace,
+                            Some(correlation_id.clone()),
+                        )
+                        .await;
+                }
                 Err(error) => {
                     warn!(
                         runtime_hook =
@@ -577,6 +607,51 @@ impl Runtime {
                 entrypoint = record.entrypoint,
                 error = %error,
                 "failed to append MCP tool operation log entry"
+            );
+        }
+    }
+
+    /// B1：把 auto-reflection 的诊断落到 durable operation log（OperationLogKind::Trigger）。
+    /// 在此之前没有任何代码写 Trigger 条目，导致 doctor 的 trigger_candidates_suppressed
+    /// 运行时恒为 0（只有测试手动 seed 才非零）。这里 best-effort 写入：失败仅 warn，
+    /// 绝不影响主工具流程，与上面的 record_tool_operation 语义一致。
+    ///
+    /// 只写「有诊断价值」的结局（Handled/Rejected/Suppressed/Pending）；NotTriggered（→ Ok）
+    /// 是绝大多数 ingest 的常态，doctor 也只统计 Failed/Suppressed，写它纯属噪声且会污染
+    /// operation-log 历史，故在此提前返回跳过。
+    async fn record_auto_reflection_operation(
+        &self,
+        entrypoint: &'static str,
+        result: &auto_reflect_if_needed::AutoReflectResult,
+        namespace: Option<String>,
+        correlation_id: Option<String>,
+    ) {
+        let status = auto_reflection_operation_status(result);
+        if status == OperationLogStatus::Ok {
+            return;
+        }
+        let diagnostic_summary_json = serde_json::to_string(&result.diagnostics).ok();
+        let entry = OperationLogEntry {
+            operation_id: Uuid::new_v4().to_string(),
+            occurred_at: Utc::now(),
+            namespace,
+            actor_kind: ActorKind::System,
+            actor_id: "mcp-stdio".to_string(),
+            entrypoint: entrypoint.to_string(),
+            operation_kind: OperationLogKind::Trigger,
+            status,
+            correlation_id,
+            request_summary_json: None,
+            response_summary_json: None,
+            diagnostic_summary_json,
+            redaction_version: 1,
+        };
+
+        if let Err(error) = self.store.append_operation(entry).await {
+            warn!(
+                entrypoint,
+                error = %error,
+                "failed to append auto-reflection trigger operation log entry"
             );
         }
     }
@@ -970,6 +1045,22 @@ fn auto_reflection_status(result: &auto_reflect_if_needed::AutoReflectResult) ->
         Some(TriggerLedgerStatus::Pending) => OperationStatus::Started,
         None if result.triggered => OperationStatus::Handled,
         None => OperationStatus::Ok,
+    }
+}
+
+/// 把 auto-reflection 结果映射到 durable operation log 的状态。与 doctor 的候选读取口径对齐：
+/// 只有 Suppressed/Failed 会被 count_trigger_candidates 计入诊断，Handled/Rejected 留痕但不计数，
+/// NotTriggered/Skipped（无 ledger_status 且未触发）落 Ok，避免污染 suppressed 计数。
+fn auto_reflection_operation_status(
+    result: &auto_reflect_if_needed::AutoReflectResult,
+) -> OperationLogStatus {
+    match result.ledger_status {
+        Some(TriggerLedgerStatus::Handled) => OperationLogStatus::Handled,
+        Some(TriggerLedgerStatus::Rejected) => OperationLogStatus::Rejected,
+        Some(TriggerLedgerStatus::Suppressed) => OperationLogStatus::Suppressed,
+        Some(TriggerLedgerStatus::Pending) => OperationLogStatus::Started,
+        None if result.triggered => OperationLogStatus::Handled,
+        None => OperationLogStatus::Ok,
     }
 }
 

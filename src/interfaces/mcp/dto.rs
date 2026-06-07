@@ -372,6 +372,11 @@ impl TryFrom<EvidenceQueryDto> for EvidenceQuery {
 
     fn try_from(value: EvidenceQueryDto) -> Result<Self, Self::Error> {
         if let Some(limit) = value.limit {
+            if limit == 0 {
+                return Err(AppError::InvalidParams(
+                    "replacement evidence query limit must be at least 1".to_string(),
+                ));
+            }
             i64::try_from(limit).map_err(|_| {
                 AppError::InvalidParams(
                     "replacement evidence query limit exceeds the supported maximum".to_string(),

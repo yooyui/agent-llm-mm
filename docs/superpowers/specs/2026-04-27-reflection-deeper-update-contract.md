@@ -51,6 +51,8 @@ The ingest MCP schema does not expose an identity-core write field. Reflection m
 
 An identity update with an empty `canonical_claims` list is rejected. The contract requires at least one canonical claim for an identity update.
 
+A canonical claim that is blank (empty or whitespace-only) is rejected. Symmetrically, a `commitment_updates` entry whose description is blank (empty or whitespace-only) is rejected. Neither blank identity claims nor blank commitment descriptions may bypass the non-empty check and reach the durable identity or commitment write.
+
 Automatic self-revision does not get a separate identity-write path. When automatic self-revision produces a governed machine patch, the durable write still goes through `run_reflection`.
 
 ## Commitment Replacement Behavior

@@ -61,3 +61,15 @@ fn evidence_query_dto_parses_event_id_prefix() {
     let error = EvidenceQuery::try_from(empty).expect_err("empty prefix should fail");
     assert!(error.to_string().contains("event_id_prefix"));
 }
+
+#[test]
+fn evidence_query_dto_rejects_zero_limit() {
+    let dto = serde_json::from_value::<EvidenceQueryDto>(serde_json::json!({
+        "limit": 0
+    }))
+    .expect("dto deserialization keeps validation in conversion");
+
+    let error = EvidenceQuery::try_from(dto).expect_err("zero limit should fail");
+
+    assert!(error.to_string().contains("at least 1"));
+}

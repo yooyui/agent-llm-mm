@@ -97,7 +97,7 @@ The deterministic ordering rule is:
 
 `limit` must be applied after namespace, owner, kind, and recency filters. A limit must never be interpreted as permission to widen the search beyond the filtered candidate set.
 
-Overflowing or otherwise unsupported limits must remain `invalid_params`.
+Overflowing or otherwise unsupported limits must remain `invalid_params`. A `limit` of `0` is unsupported and must be rejected as `invalid_params` at the shared query chokepoint (and surfaced early at the MCP DTO boundary), rather than treated as a deterministic empty match that would mask the illegal limit behind a downstream "no match" error.
 
 Duplicate event ids must be deduplicated before the result is persisted or used as governed reflection evidence. Deduplication must preserve the first occurrence after deterministic ordering or after explicit-id order, depending on caller context.
 

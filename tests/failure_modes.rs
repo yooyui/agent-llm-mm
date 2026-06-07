@@ -1046,6 +1046,78 @@ async fn auto_reflection_preserves_handled_baseline_across_cooldown_suppression_
     );
 }
 
+/// B3：抑制结果除了自由文本 `suppression_reason`，还要带机器可读的 `suppression_category`。
+/// 这里复用「handled 后立即再触发 → cooldown_active」的路径，断言枚举值与其 JSON 字面量
+/// 同既有字符串口径一致，保证下游可直接按分类匹配而无需解析自由文本。
+#[tokio::test]
+async fn auto_reflection_suppression_exposes_machine_readable_category() {
+    use agent_llm_mm::domain::self_revision::SuppressionCategory;
+
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_failure_window(vec![
+        (
+            "evt-failure-1",
+            "rollback after violating a hard commitment",
+        ),
+        (
+            "evt-failure-2",
+            "second rollback after violating the same hard commitment",
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            vec!["evt-failure-2".to_string()],
+            None,
+        ),
+    );
+
+    let first = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+    let suppressed = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_failure(
+            Namespace::for_project("agent-llm-mm"),
+            vec!["failure".to_string(), "rollback".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(first.triggered);
+    assert_eq!(
+        suppressed.ledger_status,
+        Some(TriggerLedgerStatus::Suppressed)
+    );
+    // 自由文本与机器可读分类必须同源，互为冗余而非歧义。
+    assert_eq!(
+        suppressed.suppression_reason.as_deref(),
+        Some("cooldown_active")
+    );
+    assert_eq!(
+        suppressed.diagnostics.suppression_category,
+        Some(SuppressionCategory::CooldownActive)
+    );
+    assert_eq!(
+        SuppressionCategory::CooldownActive.as_str(),
+        "cooldown_active"
+    );
+
+    let diagnostics_json = serde_json::to_value(&suppressed.diagnostics).unwrap();
+    assert_eq!(diagnostics_json["suppression_category"], "cooldown_active");
+    assert_eq!(diagnostics_json["suppression_reason"], "cooldown_active");
+
+    // 非抑制结果不应携带分类。
+    let handled_json = serde_json::to_value(&first.diagnostics).unwrap();
+    assert!(handled_json["suppression_category"].is_null());
+}
+
 #[tokio::test]
 async fn auto_reflection_rejects_empty_proposed_evidence_query_instead_of_widening() {
     let deps = test_support::deps_for_failure_modes();
@@ -1203,6 +1275,73 @@ async fn auto_reflection_rejects_noop_proposal_when_query_has_no_trigger_window_
         result,
         Err(AppError::InvalidParams(message))
             if message.contains("proposed evidence query did not match the current trigger window")
+    ));
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
+    );
+    assert!(deps.latest_reflection().is_none());
+}
+
+#[tokio::test]
+async fn auto_reflection_rejects_proposed_evidence_query_zero_limit_instead_of_masking_as_empty() {
+    // C1 第三路径覆盖：model 提议的 evidence query limit==0 必须在 governed 解析入口
+    // 被拒绝为 InvalidParams，而非经后置 take(0) 静默收窄为空集、当成确定性空匹配掩盖。
+    // 刻意 seed 与 query 匹配的 World/Observation 事件，使候选集非空——若缺少早拒，
+    // take(0) 会产出空集并 Ok 返回，本测试将假绿；早拒到位时则为干净的 Err。
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_events(vec![
+        StoredEvent::new(
+            "evt-conflict-1".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "matching observation inside the trigger window",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-conflict-2".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "another matching observation inside the trigger window",
+            ),
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            Vec::new(),
+            Some(EvidenceQuery {
+                namespace: None,
+                owner: Some(Owner::World),
+                kind: Some(EventKind::Observation),
+                limit: Some(0),
+                recorded_after: None,
+                recorded_before: None,
+                event_id_prefix: None,
+            }),
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::self_(),
+            vec!["conflict".to_string(), "commitment".to_string()],
+        ),
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(AppError::InvalidParams(message))
+            if message.contains("limit must be at least 1")
     ));
     assert_eq!(
         deps.latest_trigger_status(),
@@ -1570,7 +1709,10 @@ async fn auto_reflection_intersects_proposed_event_id_prefix_with_trigger_window
     .unwrap();
 
     // 前缀过滤仍是与 trigger window 的交集（no-widening）：只保留命中前缀且本就在窗口内的事件。
-    assert_eq!(result.evidence_event_ids, vec!["alpha-conflict".to_string()]);
+    assert_eq!(
+        result.evidence_event_ids,
+        vec!["alpha-conflict".to_string()]
+    );
     assert_eq!(
         deps.latest_reflection()
             .expect("prefix-filtered auto-reflection should persist")
