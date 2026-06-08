@@ -108,7 +108,7 @@ The log summary must be bounded and conservative:
 - excerpts are recent and short; the raw `.log` file is never copied
 - JSON provider payloads, prompt text, request bodies, response bodies, tool
   arguments, cookies, browser session material, local private paths, provider URL
-  userinfo/query values, API keys, bearer values, tokens, passwords, and secrets
+  userinfo/path/query values, API keys, bearer values, tokens, passwords, and secrets
   must be redacted or omitted
 - raw provider payload labels and raw diagnostic labels, including
   `provider_payload`, provider request/response body labels,
@@ -136,7 +136,7 @@ A support bundle must not include by default:
 - private prompt text unless the user explicitly extracts and redacts it
 - remote host credentials, SSH keys, cookies, or browser session data
 - local file-system paths for SQLite databases or config parents
-- provider URL userinfo or query strings
+- provider URL userinfo, path content, or query strings
 
 If a maintainer needs a SQLite database to reproduce a bug, that must be a
 separate explicit action with a separate redaction and backup decision. The
@@ -164,7 +164,7 @@ Tooling and tests treat these terms as sensitive indicators:
 
 Redaction should preserve structure while replacing values with a stable marker
 or shape, for example `<redacted>`, `sqlite://<local-path>`, or a provider URL
-without userinfo or query values. It should not delete whole sections unless the
+without userinfo, path content, or query values. It should not delete whole sections unless the
 section itself is secret-only.
 
 ## Current Test Coverage
@@ -178,7 +178,7 @@ section itself is secret-only.
 - provider credentials are represented as `credential_configured = true`, not as
   secret values
 - SQLite database paths are generalized to `sqlite://<local-path>`
-- provider URL userinfo and query secrets are removed from the emitted URL shape
+- provider URL userinfo, path content, and query secrets are removed from the emitted URL shape
 - bundle output does not contain `Authorization`, `Bearer`, or the serialized
   provider secret indicators used by the test fixture
 - no `.sqlite` file is copied into the bundle

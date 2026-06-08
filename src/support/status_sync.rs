@@ -31,6 +31,7 @@ pub const MONITORED_TEST_SUITES: &[&str] = &[
     "first_run_bootstrap_smoke",
     "local_alpha_release_evidence",
     "mcp_stdio",
+    "non_mvp_product_tracks",
     "openai_compatible_model",
     "operation_log",
     "product_completion_read_models",

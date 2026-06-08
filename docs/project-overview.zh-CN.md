@@ -22,7 +22,7 @@
 - 没有远程 HTTP transport
 - 没有 richer evidence lookup / weight / relation
 - 还没有 Azure / 本地模型 provider；OpenRouter 仅完成 OpenAI-compatible transport 本地验证，不是 live-provider certification
-- 没有更完整的多层 memory 体系
+- release evidence index、provider certification preflight、packaging preflight 和 richer memory semantics projection 均为本机只读 / 预检能力，不生成缺失证据、不认证 live provider、不创建安装包，也不代表完整多层 memory 体系
 
 ## 适合的使用方式
 
@@ -37,9 +37,9 @@
 
 ## 当前验证状态
 
-截至 `2026-06-07`：
+截至 `2026-06-08`：
 
-- `cargo test` 全量通过，共 355 个测试
+- `cargo test -- --list --format terse` 当前枚举 362 个测试
 - `doctor` 返回 `status = ok`
 
 ## 致谢

@@ -22,7 +22,7 @@
 - リモート HTTP transport はありません
 - richer evidence lookup / weight / relation は未実装です
 - Azure とローカルモデル provider はまだ未実装です。OpenRouter は OpenAI-compatible transport のローカル検証に限定され、live-provider certification ではありません
-- より完全な多層 memory モデルはまだ未完成です
+- release evidence index、provider certification preflight、packaging preflight、richer memory semantics projection はローカル read-only / preflight 能力です。不足 evidence を生成せず、live provider を認証せず、installer を作成せず、より完全な多層 memory モデルの完成も意味しません
 
 ## 適した用途
 
@@ -37,9 +37,9 @@
 
 ## 現在の検証状態
 
-`2026-06-07` 時点で：
+`2026-06-08` 時点で：
 
-- `cargo test` は全量通過、355 tests
+- `cargo test -- --list --format terse` は現在 362 tests を列挙します
 - `doctor` は `status = ok` を返します
 
 ## 謝辞

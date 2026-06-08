@@ -1,0 +1,246 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use anyhow::{Context, Result};
+use chrono::Utc;
+use serde::Serialize;
+use serde_json::Value;
+
+use crate::support::config::{AppConfig, ModelConfig};
+
+const REQUIRED_LIVE_EVIDENCE: &[(&str, &str)] = &[
+    (
+        "live_decision_path",
+        "target/reports/provider-certification/{provider}/live-decision.json",
+    ),
+    (
+        "live_self_revision_path",
+        "target/reports/provider-certification/{provider}/live-self-revision.json",
+    ),
+    (
+        "provider_error_handling",
+        "target/reports/provider-certification/{provider}/provider-error-handling.json",
+    ),
+    (
+        "redaction_review",
+        "target/reports/provider-certification/{provider}/redaction-review.json",
+    ),
+];
+
+#[derive(Debug, Clone)]
+pub struct ProviderCertificationOptions {
+    pub config: AppConfig,
+    pub evidence_root: PathBuf,
+    pub output_json_path: Option<PathBuf>,
+    pub output_markdown_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ProviderCertificationSummary {
+    pub generated_at: String,
+    pub kind: &'static str,
+    pub provider: String,
+    pub config_preflight_status: &'static str,
+    pub config_preflight_error: Option<String>,
+    pub provider_config_shape: ProviderConfigShape,
+    pub live_certified: bool,
+    pub live_certification_status: &'static str,
+    pub missing_live_evidence: Vec<String>,
+    pub live_evidence: Vec<ProviderCertificationEvidence>,
+    pub non_claims: Vec<String>,
+    pub markdown: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ProviderConfigShape {
+    pub base_url: Option<String>,
+    pub model: Option<String>,
+    pub timeout_ms: Option<u64>,
+    pub credential_configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ProviderCertificationEvidence {
+    pub name: &'static str,
+    pub status: &'static str,
+    pub evidence_path: String,
+}
+
+pub fn summarize_provider_certification(
+    options: ProviderCertificationOptions,
+) -> Result<ProviderCertificationSummary> {
+    let provider = options.config.model_provider.as_str().to_string();
+    let config_preflight_error = options.config.validate().err();
+    let config_preflight_status = if config_preflight_error.is_some() {
+        "failed"
+    } else {
+        "passed"
+    };
+    let live_evidence = live_evidence(&provider, &options.evidence_root);
+    let missing_live_evidence = live_evidence
+        .iter()
+        .filter(|entry| entry.status != "present")
+        .map(|entry| entry.name.to_string())
+        .collect::<Vec<_>>();
+    let non_claims = vec![
+        "not live provider certification".to_string(),
+        "not provider endpoint reachability evidence".to_string(),
+        "not live decision quality evidence".to_string(),
+        "not live self-revision evidence".to_string(),
+        "not release approval".to_string(),
+    ];
+    let markdown = render_markdown(
+        &provider,
+        config_preflight_status,
+        "blocked",
+        &live_evidence,
+    );
+
+    let summary = ProviderCertificationSummary {
+        generated_at: Utc::now().to_rfc3339(),
+        kind: "provider_certification_summary",
+        provider,
+        config_preflight_status,
+        config_preflight_error,
+        provider_config_shape: provider_config_shape(&options.config),
+        live_certified: false,
+        live_certification_status: "blocked",
+        missing_live_evidence,
+        live_evidence,
+        non_claims,
+        markdown,
+    };
+
+    if let Some(path) = options.output_json_path {
+        write_json(&path, &summary)?;
+    }
+    if let Some(path) = options.output_markdown_path {
+        write_text(&path, &summary.markdown)?;
+    }
+
+    Ok(summary)
+}
+
+fn live_evidence(provider: &str, evidence_root: &Path) -> Vec<ProviderCertificationEvidence> {
+    REQUIRED_LIVE_EVIDENCE
+        .iter()
+        .map(|(name, template)| {
+            let evidence_path = template.replace("{provider}", provider);
+            let status = live_evidence_status(provider, &evidence_root.join(&evidence_path));
+
+            ProviderCertificationEvidence {
+                name,
+                status,
+                evidence_path,
+            }
+        })
+        .collect()
+}
+
+fn live_evidence_status(provider: &str, path: &Path) -> &'static str {
+    let Ok(bytes) = fs::read(path) else {
+        return "missing";
+    };
+    if bytes.is_empty() {
+        return "invalid";
+    }
+
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        return "invalid";
+    };
+    let provider_matches = value.get("provider").and_then(Value::as_str) == Some(provider);
+    let passed = value.get("status").and_then(Value::as_str) == Some("passed");
+
+    if provider_matches && passed {
+        "present"
+    } else {
+        "invalid"
+    }
+}
+
+fn provider_config_shape(config: &AppConfig) -> ProviderConfigShape {
+    match &config.model_config {
+        ModelConfig::Mock => ProviderConfigShape {
+            base_url: None,
+            model: None,
+            timeout_ms: None,
+            credential_configured: false,
+        },
+        ModelConfig::OpenAiCompatible(provider) | ModelConfig::OpenRouter(provider) => {
+            ProviderConfigShape {
+                base_url: Some(base_url_shape(&provider.base_url)),
+                model: Some(provider.model.clone()),
+                timeout_ms: Some(provider.timeout_ms),
+                credential_configured: !provider.api_key.trim().is_empty(),
+            }
+        }
+    }
+}
+
+fn base_url_shape(base_url: &str) -> String {
+    let Ok(parsed) = reqwest::Url::parse(base_url) else {
+        return "<redacted>".to_string();
+    };
+    let Some(host) = parsed.host_str() else {
+        return "<redacted>".to_string();
+    };
+
+    let mut shaped = format!("{}://{}", parsed.scheme(), host);
+    if let Some(port) = parsed.port() {
+        shaped.push(':');
+        shaped.push_str(&port.to_string());
+    }
+    if parsed.path() != "/" {
+        shaped.push_str("/<redacted-path>");
+    }
+    shaped
+}
+
+fn render_markdown(
+    provider: &str,
+    config_preflight_status: &str,
+    live_certification_status: &str,
+    live_evidence: &[ProviderCertificationEvidence],
+) -> String {
+    let mut output = String::new();
+    output.push_str("# Provider Certification Preflight\n\n");
+    output.push_str(&format!("- provider: `{provider}`\n"));
+    output.push_str(&format!(
+        "- config_preflight_status: `{config_preflight_status}`\n"
+    ));
+    output.push_str("- live_certified: `false`\n");
+    output.push_str(&format!(
+        "- live_certification_status: `{live_certification_status}`\n\n"
+    ));
+    output.push_str("| Evidence | Status | Path |\n");
+    output.push_str("| --- | --- | --- |\n");
+    for entry in live_evidence {
+        output.push_str(&format!(
+            "| `{}` | `{}` | {} |\n",
+            entry.name, entry.status, entry.evidence_path
+        ));
+    }
+    output
+}
+
+fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create output directory {}", parent.display()))?;
+    }
+    fs::write(
+        path,
+        serde_json::to_vec_pretty(value).context("serialize provider certification summary")?,
+    )
+    .with_context(|| format!("write {}", path.display()))
+}
+
+fn write_text(path: &Path, value: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create output directory {}", parent.display()))?;
+    }
+    fs::write(path, value).with_context(|| format!("write {}", path.display()))
+}

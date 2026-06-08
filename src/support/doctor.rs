@@ -924,7 +924,9 @@ fn provider_base_url_shape(base_url: &str) -> String {
         shaped.push(':');
         shaped.push_str(&port.to_string());
     }
-    shaped.push_str(parsed.path());
+    if parsed.path() != "/" {
+        shaped.push_str("/<redacted-path>");
+    }
     shaped
 }
 

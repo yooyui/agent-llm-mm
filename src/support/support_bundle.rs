@@ -1339,7 +1339,7 @@ fn manifest(generated_at: &str, output_dir: &Path) -> Result<Manifest> {
             "full sqlite databases",
             "unredacted toml files",
             "raw local log files",
-            "provider url userinfo and query values",
+            "provider url userinfo, path, and query values",
             "ssh keys",
             "cookies",
             "browser session data",
@@ -1429,7 +1429,9 @@ fn base_url_shape(base_url: &str) -> String {
         shaped.push(':');
         shaped.push_str(&port.to_string());
     }
-    shaped.push_str(parsed.path());
+    if parsed.path() != "/" {
+        shaped.push_str("/<redacted-path>");
+    }
     shaped
 }
 

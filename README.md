@@ -16,8 +16,8 @@
 - 存储：SQLite
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
-- 最近本地验证与产品化 gate 入口：`2026-06-07`
-  - `cargo test` 全量通过，共 355 个测试
+- 最近本地验证与产品化 gate 入口：`2026-06-08`
+  - `cargo test -- --list --format terse` 当前枚举 362 个测试；新增 `non_mvp_product_tracks` 覆盖 4 条非 MVP 产品化 read-only / preflight 切片
   - `doctor` 预检返回 `status = ok`
   - `status-sync-check` 已加入本地只读文档漂移检查，用于对齐当前测试总数声明，并阻断已勾选计划项与 reality gate 状态不一致的完成声明
   - Local Alpha product smoke 已有 staging / promote 证据刷新入口；具体候选是否 fresh 仍以当前 evidence root 的 summary 为准
@@ -25,6 +25,9 @@
   - Local first-run bootstrap smoke 已加入脚本入口，用于模拟 `bootstrap-local -> doctor` 的本地首启证据
   - Local Alpha evidence summary 已加入本地只读 gate 状态汇总入口；它会把本地 first-run simulation 与真实 fresh-machine evidence 分成独立 gate，不运行 product smoke、不启动服务、不上传文件、不认证 Local Alpha 完成；当前缺真实 fresh-machine、Windows runtime parity 和人工 release decision 时仍保持 `in_progress`
   - Product readiness checker 已加入候选级本地门禁汇总，会把真实 fresh-machine、Windows parity、release decision、release engineering、remote/team、安全/auth、daemon writes 和产品措辞 gate 缺口保持为 blocked
+  - Release evidence index 已加入候选级本地只读索引，可把 Local Alpha evidence summary 与 product readiness gates 合并为 present / missing / not_verified / blocked 的机器可读 JSON/Markdown；它不生成缺失证据、不批准发布、不上传文件、不启动服务
+  - Provider certification preflight 已加入本地只读 provider 配置/证据预检，会保留 OpenRouter / OpenAI-compatible live certification 为 blocked，且输出中不序列化 API key、URL userinfo、path secret 或 query secret
+  - Packaging preflight 已加入候选级本地只读打包预检，会区分 source-only release soak artifacts 与真实 binary archive / installer / service manager / auto-updater 证据，并在缺失、占位或不完整时保持 blocked
   - Local release soak runner 已加入本地 release evidence 入口；它生成 candidate-specific evidence directory、`compatibility-matrix.json` 和 `release-boundaries.json`，并对发布证据日志做路径形状化和敏感标记扫描；它不生成 Windows runner、真实 fresh-machine、remote/team、daemon writes 或发布认证证据
   - SQLite backup / restore 本地脚本门禁已覆盖备份恢复 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份和拒绝 `..` restore target
 
@@ -124,6 +127,18 @@
   - 读取 Local Alpha evidence summary、release decision artifact、remote/team capability inventory、security/auth gates 和 product wording guard
   - `real_fresh_machine`、`windows_parity`、`release_decision`、`remote_team`、`security_auth`、`daemon_writes` 或 blocked wording 缺失时保持 `ready = false`
   - 不运行 smoke、不启动服务、不上传文件、不认证 Local Alpha、Beta、remote/team 或 GA
+- release evidence index
+  - 提供候选级本地只读 evidence index：`./scripts/release-evidence-index.sh <release-candidate> [evidence_root] [output_dir]`
+  - 汇总 Local Alpha evidence summary 与 product readiness gate，输出 present / missing / not_verified / blocked 条目、缺口计数、non-claims 和 Markdown
+  - 不生成缺失 evidence、不运行 smoke、不启动服务、不上传文件、不写 release decision，也不认证 Local Alpha / Beta / GA
+- provider certification preflight
+  - 提供本地只读 provider certification 预检：`./scripts/provider-certification-check.sh [config_path] [evidence_root] [output_dir]`
+  - 校验当前 provider config shape，并列出 live decision path、live self-revision path、provider error handling、redaction review 等 live certification 缺口
+  - 输出会形状化 provider base URL，并把 URL path 内容整体脱敏；live evidence 文件必须是非空 JSON、`provider` 匹配且 `status = "passed"` 才能算 present；该能力不序列化 API key、URL userinfo、path secret 或 query secret，不调用 provider endpoint，也不代表 OpenRouter / OpenAI-compatible live certified
+- packaging preflight
+  - 提供候选级本地只读 packaging 预检：`./scripts/packaging-preflight-check.sh <release-candidate> [evidence_root] [output_dir]`
+  - 区分 source-only release soak artifacts 与真实 binary archive / installer / service manager / auto-updater evidence
+  - binary archive evidence 要求预期 archive 全部存在且非空；零字节占位或单平台部分 archive 会保持 blocked，不创建 tag、安装包、上传或发布认证证据
 - local release decision artifact
   - 提供 source-only release decision 模板/生成器：`./scripts/release-decision-local.sh <candidate-name> <evidence-root>`
   - 记录 candidate、evidence directory、open gates、human decision、reviewer、rollback note 和 non-claims；支持 `blocked`、`rejected`、`deferred`、`approved` 四种 decision，其中 `rejected` / `deferred` 是显式非批准决策，`approved` 仍需要完整证据、reviewer 和 rollback note

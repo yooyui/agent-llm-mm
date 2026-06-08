@@ -81,7 +81,7 @@
 - 已实现 OpenRouter adapter 本地切片：通过 OpenAI-compatible `/chat/completions` transport 接入，覆盖 config parser、doctor、support bundle、MCP `stdio` decision path 和 self-revision path 的本地 stub 回归
 - 已支持通过本地 TOML 配置文件选择 provider
 - runtime 已能按配置在 `mock`、`openai-compatible` 与 `openrouter` 间切换
-- `doctor` 会输出 provider / base_url shape / model，但不会泄露 API key、URL userinfo 或 query secret
+- `doctor` 会输出 provider / base_url shape / model，但不会泄露 API key、URL userinfo、path content 或 query secret
 - `doctor.provider_matrix` 已输出当前只读 provider matrix：`mock`、`openai-compatible`、`openrouter` 为 `supported` / configurable；`azure-openai`、`local` 为 `planned-only` / not configurable，并列出缺失的 config parser、doctor diagnostics、model adapter、error handling、redaction 和 MCP stdio tests
 - planned-only provider 仍会被配置解析拒绝，不能被当成已实现 adapter
 - OpenRouter 当前不代表真实 OpenRouter live provider 已认证，也不是 provider gateway
@@ -141,7 +141,7 @@ Implementation notes:
 
 - 已新增首版本机支持包生成入口：`./scripts/generate-support-bundle.sh <output_dir> [config_path] [--log-file <path>] [--correlation-id <id>]`
 - 生成器输出 `manifest.json`、`doctor.json`、`config-shape.json`、`operation-summaries.json`、`release-metadata.json`、`product-smoke-summary.json` 和 `local-log-excerpts.json`
-- `doctor` / config 只保留脱敏 shape：SQLite URL 会泛化为 `sqlite://<local-path>`，provider credential 只输出布尔值，provider URL 会移除 userinfo 与 query；support bundle 的 `doctor.json` 不执行 runtime bootstrap
+- `doctor` / config 只保留脱敏 shape：SQLite URL 会泛化为 `sqlite://<local-path>`，provider credential 只输出布尔值，provider URL 会移除 userinfo、path content 与 query；support bundle 的 `doctor.json` 不执行 runtime bootstrap
 - operation summaries 通过 read-only SQLite 连接读取最多 25 条 durable operation-log metadata，不输出 request / response / diagnostic payload summary；user/project namespace 只输出 shape，secret-like operation id / correlation id 会替换为 `<redacted-metadata>`；可显式传入生成型 `--correlation-id mcp-tool-call-<uuid-v4>` 只导出匹配 correlation id 的 metadata，并在 `operation-summaries.json.filter` 记录过滤条件；数据库或 `operation_log` 表不存在时会标记 unavailable，不创建或迁移数据库
 - 非生成型、非 canonical 或非 v4 的 correlation id filter 会在创建 bundle 输出目录前被拒绝，避免把 secret-like 文本写进诊断包 metadata
 - local log excerpts 只在显式 `--log-file <path>` 时生成 bounded / redacted 摘要，secret-like config/log 文件名会折叠成 `<local-path>/<redacted-name>`；不自动扫描日志目录、home、系统日志、browser profile、SSH/cookie/session、shell history 或 `target/` 输出，也不复制原始 `.log` 文件
@@ -258,19 +258,20 @@ Implementation notes:
 - richer evidence weighting / full ranking engine
 - `identity_core` 的 richer schema 与版本化形成机制
 - `commitments` 的 richer schema、升级 / 失效策略与更细粒度生命周期
-- 更多 provider 类型（Azure、本地模型网关；OpenRouter live-provider certification）
+- 更多 provider 类型（Azure、本地模型网关；OpenRouter live-provider certification 仍由 provider certification preflight 保持 blocked）
 - richer `claim / episode / identity` schema
 - durable working memory / procedural memory 的独立建模
 - 持续后台自治运行、独立 daemon 与更完整的多层 memory 自治系统
 
 ## 当前验证状态
 
-截至 `2026-06-07`，本分支需要 fresh 运行：
+截至 `2026-06-08`，本分支需要 fresh 运行：
 
 - `cargo fmt --check`
 - `git diff --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo test`
+- `cargo test --test non_mvp_product_tracks -v`
 - `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor` 或 `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor-cargo.sqlite cargo run --quiet --bin agent_llm_mm -- doctor`
 - `cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner --test openai_compatible_model --test mcp_stdio -v`
 - `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest`
@@ -296,6 +297,7 @@ Implementation notes:
 - `first_run_bootstrap_smoke`: 4
 - `local_alpha_release_evidence`: 20
 - `mcp_stdio`: 44
+- `non_mvp_product_tracks`: 7
 - `openai_compatible_model`: 11
 - `operation_log`: 9
 - `product_completion_read_models`: 15
@@ -307,13 +309,17 @@ Implementation notes:
 - `sqlite_store`: 23
 - `status_sync`: 11
 - `support_bundle`: 35
-- 合计：355 个测试通过
+- 合计：362 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`
 - Local Alpha support bundle 生成允许的 JSON 文件，敏感词扫描无未脱敏命中，且未包含 `.sqlite`、`.toml` 或原始 `.log` 文件
 - Local release soak runner 生成 source-only `compatibility-matrix.json` 和 `release-boundaries.json` blocker artifacts；它们记录边界，不生成真实 Windows / fresh-machine / daemon write / release approval 证据
 - Local release soak runner 可生成 `target/reports/releases/<candidate-name>/` 候选证据，覆盖 doctor、dashboard HTTP 回归、product smoke、first-run simulation、support bundle、redacted command logs、secret/artifact scan、release evidence secret scan、support bundle / product smoke SHA-256 manifest 和 Local Alpha evidence summary；它不生成 Windows runner、真实 fresh-machine、remote/team、daemon writes、上传、tag、安装包或发布认证证据
+- Release evidence index 可把候选 evidence root 下的 Local Alpha evidence summary 与 product readiness gate 合并为 present / missing / not_verified / blocked 的本地只读索引；它只输出 JSON/Markdown，不生成缺失 evidence、不批准 release、不上传文件
+- Provider certification preflight 可校验本地 provider config shape 并列出 live certification 缺口；它保持 OpenRouter / OpenAI-compatible live certification 为 blocked，不调用 provider endpoint，且不输出 API key、URL userinfo、path secret 或 query secret；live evidence 占位、空文件、错误 provider 或 failed status 会保持 invalid/missing
+- Packaging preflight 可区分 source-only soak artifacts 与真实 binary archive / installer / service manager / auto-updater evidence；缺少真实打包证据、零字节占位或部分平台 archive 时保持 blocked，不创建 tag、安装包、上传或发布认证证据
+- Richer memory semantics projection 已提供只读 evidence relation / episode summary / semantic claim / procedural memory / durable self-model write 状态投影；它不新增 durable memory layer 写路径，也不是 full ranking engine
 - `first-run-bootstrap-smoke-local.sh` 已提供 `bootstrap-local -> doctor` 的本地 fresh-machine simulation evidence，包含 env 隔离、输出目录隔离、`doctor.json` / `summary.json` 和 isolated SQLite 证据；但真实 fresh-machine install / Windows runner 实机验证仍需单独记录，当前本机没有 `pwsh` 时，PowerShell runtime parity 只能视为待补证据
 - SQLite backup / restore 本地脚本门禁已覆盖 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份、拒绝 in-memory / invalid URL 和拒绝 `..` restore target；这不是远程备份、云同步或生产灾备证明
 

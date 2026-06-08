@@ -1,4 +1,4 @@
-# 本机 MCP 接入说明（2026-03-26，按 2026-04-29 fresh 验证更新）
+# 本机 MCP 接入说明（2026-03-26，按 2026-06-08 fresh 验证更新）
 
 ## 1. 目标
 
@@ -72,13 +72,14 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 - 存在后台 daemon / 定时自治进程
 - 所有 MCP 请求都会自动反思
 
-截至 `2026-06-07`，fresh 验证还包括：
+截至 `2026-06-08`，fresh 验证还包括：
 
-- `cargo test` 全量通过，355 个测试通过
-- 其中 `application_use_cases` 25、`failure_modes` 36、`mcp_stdio` 44、`sqlite_store` 23、`dashboard_http` 7、`daemon_config` 12、`support_bundle` 35、`provider_config` 17、`status_sync` 11、`local_alpha_release_evidence` 20、`product_completion_read_models` 15、`product_readiness` 15、`release_decision` 5
+- `cargo test -- --list --format terse` 当前枚举 362 个测试
+- 其中 `application_use_cases` 25、`failure_modes` 36、`mcp_stdio` 44、`sqlite_store` 23、`dashboard_http` 7、`daemon_config` 12、`support_bundle` 35、`provider_config` 17、`status_sync` 11、`local_alpha_release_evidence` 20、`product_completion_read_models` 15、`product_readiness` 15、`release_decision` 5、`non_mvp_product_tracks` 7
 - self-revision demo package wrapper 可生成本地 artifact report
 - `release-soak-local.sh` 已提供本地 release evidence runner，可记录 candidate-specific doctor / dashboard HTTP / product smoke / first-run simulation / support bundle / evidence summary、compatibility matrix 和 release boundary 证据；它不生成 Windows runner、真实 fresh-machine、remote/team、上传、tag、安装包或发布认证证据
 - `product-readiness-check.sh` 已提供本地候选 readiness gate，能够把 release decision、release engineering、真实 fresh-machine、Windows parity、remote/team、安全/auth 和产品措辞缺口保持为 blocked
+- `release-evidence-index.sh`、`provider-certification-check.sh` 和 `packaging-preflight-check.sh` 已提供候选 evidence 索引、provider live-certification 缺口预检和 packaging 缺口预检；这些脚本不新增 MCP tool、不调用 provider endpoint、不生成 installer、不上传文件，也不改变 `stdio` 接入契约；provider evidence 占位文件和零字节/部分 packaging archive 不会被当作完整证据
 
 ## 4. 启动服务
 

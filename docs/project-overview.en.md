@@ -22,7 +22,7 @@
 - There is no remote HTTP transport
 - There is no richer evidence lookup / weight / relation yet
 - Azure and local-model providers are not implemented yet; OpenRouter is limited to local OpenAI-compatible transport verification, not live-provider certification
-- The broader multi-layer memory model is still incomplete
+- The release evidence index, provider certification preflight, packaging preflight, and richer memory semantics projection are local read-only / preflight capabilities; they do not create missing evidence, certify live providers, build installers, or complete the broader multi-layer memory model
 
 ## Best Fit
 
@@ -37,9 +37,9 @@
 
 ## Verification Status
 
-As of `2026-06-07`:
+As of `2026-06-08`:
 
-- `cargo test` passes in full with 355 tests
+- `cargo test -- --list --format terse` currently enumerates 362 tests
 - `doctor` returns `status = ok`
 
 ## Acknowledgement

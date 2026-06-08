@@ -32,7 +32,7 @@ provider-specific MCP `stdio` regressions are added in the same change.
 | --- | --- | --- | --- |
 | Config validation behavior | Config loading must preserve provider selection, provider-specific fields, config-file precedence, and required-field validation. Missing required provider fields must fail before normal runtime use. | existing | `tests/provider_config.rs` covers default `mock`, explicit `openai-compatible` and `openrouter` config loading, example TOML parsing, `AGENT_LLM_MM_CONFIG`, `AGENT_LLM_MM_DATABASE_URL`, and missing required field failures through `doctor`. |
 | Provider matrix diagnostics | `doctor` must report the current provider matrix as a read-only contract and must not mark future providers as supported or configurable. Planned-only rows must expose the missing config parser, doctor diagnostics, model adapter, error handling, redaction, and MCP stdio test prerequisites. | existing | `tests/provider_config.rs::provider_matrix_lists_supported_and_future_providers_as_contract_only`, `tests/provider_config.rs::future_providers_are_rejected_by_config_parser_until_implemented`, and `tests/provider_config.rs::doctor_reports_provider_matrix_without_marking_future_providers_supported`. |
-| `doctor` redaction behavior | `doctor` may expose provider, base URL shape, model, provider matrix, status, and runtime readiness, but must not expose API keys, URL userinfo, query values, or equivalent secrets. | existing | `tests/provider_config.rs::doctor_report_does_not_contain_api_key_in_serialized_output` and `tests/provider_config.rs::doctor_reports_openrouter_provider_without_exposing_api_key` assert provider secrets are absent from serialized reports. |
+| `doctor` redaction behavior | `doctor` may expose provider, base URL origin shape, model, provider matrix, status, and runtime readiness, but must not expose API keys, URL userinfo, path content, query values, or equivalent secrets. | existing | `tests/provider_config.rs::doctor_report_does_not_contain_api_key_in_serialized_output` and `tests/provider_config.rs::doctor_reports_openrouter_provider_without_exposing_api_key` assert provider secrets are absent from serialized reports. |
 | Timeout handling | Provider network calls must use bounded timeout configuration and surface timeout failures as provider errors, not hangs or silent fallback. | existing | `tests/openai_compatible_model.rs::openai_compatible_model_surfaces_timeout_as_error` confirms that a 200ms timeout against a non-responding server surfaces as a provider error. |
 | Non-success HTTP status behavior | Non-2xx provider responses must return observable provider errors. | existing | `tests/openai_compatible_model.rs::openai_compatible_model_surfaces_non_success_status`. |
 | Malformed JSON behavior | Malformed or schema-incompatible model responses must fail without panic and without fabricating a valid decision or self-revision proposal. | existing | `tests/openai_compatible_model.rs::openai_compatible_model_fails_gracefully_on_malformed_json_response` confirms that completely invalid JSON is surfaced as a provider error without panic. |
@@ -70,7 +70,8 @@ Compatibility and safety requirements:
 - malformed provider HTTP JSON must fail without panic and without fabricating a
   valid decision
 - serialized decision responses and diagnostics must not expose provider API
-  keys, URL userinfo, query secrets, or raw provider error payloads
+  keys, URL userinfo, path content, query secrets, or raw provider error
+  payloads
 - the envelope does not execute tools, schedule work, or create identity /
   commitment / reflection writes
 

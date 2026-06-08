@@ -14,6 +14,7 @@ pub mod evidence_link;
 pub mod evidence_relation;
 pub mod identity_core;
 pub mod memory_layer_projection;
+pub mod memory_semantics_projection;
 pub mod operation_log;
 pub mod reflection;
 pub mod rules;

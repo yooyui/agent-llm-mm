@@ -56,10 +56,11 @@
 
 ### 3. 自动化验证已经存在
 
-截至 `2026-05-31` 的本地验证结果：
+截至 `2026-06-08` 的本地验证结果：
 
-- `cargo test` 全量通过，共 352 个测试
+- `cargo test -- --list --format terse` 当前枚举 362 个测试
 - `doctor` 返回 `status = ok`
+- `cargo test --test non_mvp_product_tracks -v` 覆盖 release evidence index、provider certification preflight、packaging preflight 和 richer memory semantics projection 的本地只读 / preflight 边界
 
 ### 4. 当前边界已经能被文档清楚说明
 
@@ -108,6 +109,7 @@ SQLite 落盘已经可用，默认路径语义也已收口为“本机用户共�
 - 按 [Release Gate](release-gate.md) 跑完整发布 gate（minimum gate、self-revision 证据 gate、dashboard gate），并单独记录 sandbox-only failure 与代码失败的区别
 - 按 [Release Engineering](product/release-engineering.md) 记录 release evidence directory、version naming、changelog、compatibility matrix、soak 证据和 deprecation 状态
 - 若候选变更涉及 runtime、persistence、dashboard、daemon、provider 或 MCP 行为，运行 `./scripts/release-soak-local.sh <candidate-name> [config_path]` 生成本机候选证据；该脚本不生成真实 fresh-machine、Windows runner、remote/team、安装包、tag 或发布认证证据
+- 若候选变更涉及 release evidence、provider certification、packaging 或 richer memory semantics，运行 `./scripts/release-evidence-index.sh <candidate-name>`、`./scripts/provider-certification-check.sh [config_path]`、`./scripts/packaging-preflight-check.sh <candidate-name>` 和 `cargo test --test non_mvp_product_tracks -v`；这些 preflight 只读取本地 evidence/config shape，不认证 live provider、不创建安装包、不上传文件；provider evidence 占位文件、URL path secret、零字节或部分 packaging archive 都不能被当作通过证据
 - 确认 README、状态文档、路线图、三语说明都已更新
 - 确认接入命令与验证命令可以直接复制使用
 - 确认对“已实现 / 部分实现 / 未实现”的边界没有过度承诺

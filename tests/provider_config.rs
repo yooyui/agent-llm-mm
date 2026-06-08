@@ -307,7 +307,7 @@ async fn doctor_reports_openrouter_provider_without_exposing_api_key() {
         database_url,
         model_provider: ModelProviderKind::OpenRouter,
         model_config: ModelConfig::OpenRouter(OpenAiCompatibleConfig {
-            base_url: "https://doctor-user:doctor-password@openrouter.example.test/api/v1?token=doctor-query-secret".to_string(),
+            base_url: "https://doctor-user:doctor-password@openrouter.example.test/api/sk-doctor-path-secret/v1?token=doctor-query-secret".to_string(),
             api_key: "openrouter-secret-key".to_string(),
             model: "openrouter/test-model".to_string(),
             timeout_ms: 30_000,
@@ -323,7 +323,7 @@ async fn doctor_reports_openrouter_provider_without_exposing_api_key() {
     assert_eq!(report.model.as_deref(), Some("openrouter/test-model"));
     assert_eq!(
         report.base_url.as_deref(),
-        Some("https://openrouter.example.test/api/v1")
+        Some("https://openrouter.example.test/<redacted-path>")
     );
     assert!(
         report
@@ -338,7 +338,12 @@ async fn doctor_reports_openrouter_provider_without_exposing_api_key() {
         !serialized.contains("openrouter-secret-key"),
         "doctor output must not expose provider api keys"
     );
-    for forbidden in ["doctor-user", "doctor-password", "doctor-query-secret"] {
+    for forbidden in [
+        "doctor-user",
+        "doctor-password",
+        "sk-doctor-path-secret",
+        "doctor-query-secret",
+    ] {
         assert!(
             !serialized.contains(forbidden),
             "doctor output must not expose provider URL secrets: {forbidden}"

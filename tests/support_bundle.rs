@@ -166,7 +166,7 @@ async fn support_bundle_generates_redacted_local_diagnostics() {
             .as_array()
             .expect("manifest excluded list")
             .iter()
-            .any(|entry| entry == "provider url userinfo and query values")
+            .any(|entry| entry == "provider url userinfo, path, and query values")
     );
     assert_eq!(manifest["integrity"]["algorithm"], "sha256");
     assert_eq!(
@@ -189,7 +189,7 @@ async fn support_bundle_generates_redacted_local_diagnostics() {
     assert_eq!(config_shape["model"]["provider"], "openai-compatible");
     assert_eq!(
         config_shape["model"]["base_url"],
-        "https://api.example.test/v1"
+        "https://api.example.test/<redacted-path>"
     );
     assert_eq!(config_shape["model"]["credential_configured"], true);
     assert_eq!(config_shape["dashboard"]["enabled"], true);
@@ -261,6 +261,7 @@ async fn support_bundle_reports_openrouter_config_shape_without_provider_secrets
     let api_key = "openrouter-support-secret";
     let url_user = "openrouter-user";
     let url_password = "openrouter-password";
+    let path_secret = "sk-openrouter-path-secret";
     let query_secret = "openrouter-query-secret";
 
     generate_support_bundle(SupportBundleOptions {
@@ -270,7 +271,7 @@ async fn support_bundle_reports_openrouter_config_shape_without_provider_secrets
             model_provider: ModelProviderKind::OpenRouter,
             model_config: ModelConfig::OpenRouter(OpenAiCompatibleConfig {
                 base_url: format!(
-                    "https://{url_user}:{url_password}@openrouter.example.test/api/v1?token={query_secret}"
+                    "https://{url_user}:{url_password}@openrouter.example.test/api/{path_secret}/v1?token={query_secret}"
                 ),
                 api_key: api_key.to_string(),
                 model: "openrouter/test-model".to_string(),
@@ -292,7 +293,7 @@ async fn support_bundle_reports_openrouter_config_shape_without_provider_secrets
     assert_eq!(config_shape["model"]["provider"], "openrouter");
     assert_eq!(
         config_shape["model"]["base_url"],
-        "https://openrouter.example.test/api/v1"
+        "https://openrouter.example.test/<redacted-path>"
     );
     assert_eq!(config_shape["model"]["model"], "openrouter/test-model");
     assert_eq!(config_shape["model"]["timeout_ms"], 45_000);
@@ -306,7 +307,7 @@ async fn support_bundle_reports_openrouter_config_shape_without_provider_secrets
         .collect::<Vec<_>>()
         .join("\n");
 
-    for forbidden in [api_key, url_user, url_password, query_secret] {
+    for forbidden in [api_key, url_user, url_password, path_secret, query_secret] {
         assert!(
             !all_bundle_text.contains(forbidden),
             "support bundle leaked OpenRouter provider secret: {forbidden}"

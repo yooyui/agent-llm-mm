@@ -18,6 +18,8 @@
 
 2026-05-16 又补齐了 Local Alpha SQLite backup / restore 本地回归门禁：`cargo test --test sqlite_backup_restore -v` 覆盖 backup -> restore-to-new-path roundtrip、restore 拒绝覆盖、backup 拒绝 live DB 子目录、in-memory / invalid URL 拒绝和 `..` restore target 拒绝。该门禁把 data lifecycle 从纯文档规则推进为可回归验证的本地脚本边界，但仍不是远程备份、云同步、定时备份或生产灾备。
 
+2026-06-08 补齐了四条非 MVP 产品化 read-only / preflight 切片：`release-evidence-index.sh` 会把候选 evidence root 下的 Local Alpha evidence summary 与 product readiness gates 合并成 present / missing / not_verified / blocked 索引；`provider-certification-check.sh` 会校验 provider config shape、脱敏 URL path 内容，并列出 live decision、live self-revision、error handling 和 redaction review 证据缺口，只有非空、provider 匹配且 `status = "passed"` 的 JSON 才能算 present；`packaging-preflight-check.sh` 会区分 source-only release soak artifacts 与真实 binary archive / installer / service manager / auto-updater evidence，零字节或部分 archive 不会满足 binary archive gate；`memory_semantics_projection` 会只读暴露 evidence relations、episode summaries、semantic claims、procedural memory 和 durable self-model write 状态。这些能力只用于本地审查和缺口收口，不生成缺失证据、不调用 provider endpoint、不创建安装包、不上传文件、不授予 durable memory write，也不改变 Local Alpha / Beta / GA / production-ready 边界。
+
 ## 下一阶段：正式产品化
 
 目标：
@@ -32,6 +34,7 @@
 - daemon 先经过 observe-only gate：Local Alpha 阶段不调用 `run_reflection`、不写 identity / commitments、不启动 remote listener；当前 `doctor.daemon_observe_only` 只提供本机只读 preflight 诊断和 operation-log failed / suppressed 候选计数，`serve` 也只会在 `[daemon].enabled = true` 时启动 observe-only lifecycle handle
 - correlation ID 先用于 observability：成功/失败 MCP tool call、dashboard event 和 operation-log metadata 可按 `mcp-tool-call-<uuid-v4>` 串联，但不新增语义写路径
 - 架构结构优化先以只读诊断落地：`doctor.system_layer_report` 展示 substrate / signal / memory / policy / control_loop / actuator / interface / release_boundary 的当前状态和 blocker，不代表大规模重构、daemon 写能力、remote/team、完整 memory layering 或 Local Alpha 完成
+- 候选证据、provider certification、packaging 和 richer memory semantics 先以本地只读索引 / preflight 落地：这些入口报告缺口，不生成外部证据、不认证 live provider、不生成 installer、不新增 durable self-model 写路径
 
 当前权威规划：
 
@@ -81,7 +84,7 @@
 - `decide_with_snapshot` 与 `build_self_snapshot` 当前仍要求显式 `auto_reflect_namespace`
 - `run_reflection` 仍是唯一 durable write path；没有新增旁路持久化接口
 - direct `run_reflection` 不递归 auto-reflection；没有后台 daemon 或“所有入口自动反思”
-- richer memory semantics 尚未落地
+- richer memory semantics 当前只有只读 projection 首片，尚未落地完整 schema、ranking engine、procedural memory 或 durable self-model writes
 
 ### 3. 提高 self-revision 的可观测性与治理精度
 

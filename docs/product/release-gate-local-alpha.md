@@ -248,7 +248,7 @@ Required boundary:
   history, or `target/` output
 - local log excerpts must be bounded and redacted, must omit raw provider
   payloads, prompt text, request bodies, response bodies, tool arguments, cookies,
-  browser session material, local private paths, provider URL userinfo/query
+  browser session material, local private paths, provider URL userinfo/path/query
   values, API keys, bearer values, tokens, passwords, and secrets, and must not
   copy the raw `.log` file
 - oversized explicit log files must be read from a bounded tail window, discard
@@ -256,7 +256,7 @@ Required boundary:
   implying original file line numbers
 - excluded contents include API keys, `Authorization` / `Bearer` values, raw
   provider payloads with secrets, full SQLite databases by default, unredacted
-  TOML files, provider URL userinfo/query secrets, SSH keys, cookies, and
+  TOML files, provider URL userinfo/path/query secrets, SSH keys, cookies, and
   browser session data
 - support bundle tests must prove redaction, bounded operation summaries, and
   bounded explicit local log excerpts
