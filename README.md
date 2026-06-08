@@ -17,7 +17,7 @@
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
 - 最近本地验证与产品化 gate 入口：`2026-06-08`
-  - `cargo test -- --list --format terse` 当前枚举 383 个测试；新增 `non_mvp_product_tracks`、`local_alpha_external_evidence`、`provider_live_certification` 和 `packaging_archive` 覆盖非 MVP 产品化 read-only / preflight / evidence 校验切片
+  - `cargo test -- --list --format terse` 当前枚举 395 个测试；新增 `non_mvp_product_tracks`、`local_alpha_external_evidence`、`provider_live_certification` 和 `packaging_archive` 覆盖非 MVP 产品化 read-only / preflight / evidence 校验切片
   - `doctor` 预检返回 `status = ok`
   - `status-sync-check` 已加入本地只读文档漂移检查，用于对齐当前测试总数声明，并阻断已勾选计划项与 reality gate 状态不一致的完成声明
   - Local Alpha product smoke 已有 staging / promote 证据刷新入口；具体候选是否 fresh 仍以当前 evidence root 的 summary 为准
@@ -142,7 +142,7 @@
   - 提供候选级本地只读 packaging 预检：`./scripts/packaging-preflight-check.sh <release-candidate> [evidence_root] [output_dir]`
   - 区分 source-only release soak artifacts 与真实 binary archive / installer / service manager / auto-updater evidence
   - `./scripts/packaging-archive-evidence.sh <release-candidate> [evidence_root]` 可为已存在的四个平台 archive 写入本地 manifest / SHA-256 evidence；它不构建二进制、不创建 installer、不上传或打 tag
-  - binary archive evidence 要求预期 archive 全部存在、非空，并与 `packaging-archive-manifest.json` 的 name / size / SHA-256 匹配；零字节占位、单平台部分 archive、缺失 manifest 或 manifest mismatch 会保持 blocked，不创建 tag、安装包、上传或发布认证证据
+  - binary archive evidence 要求预期 archive 全部存在、非空、可解析为对应 `.tar.gz` / `.zip` archive，并与 `packaging-archive-manifest.json` 的 name / size / SHA-256 匹配；纯文本占位、截断 archive、零字节占位、单平台部分 archive、缺失 manifest 或 manifest mismatch 会保持 blocked，不创建 tag、安装包、上传或发布认证证据
 - local release decision artifact
   - 提供 source-only release decision 模板/生成器：`./scripts/release-decision-local.sh <candidate-name> <evidence-root>`
   - 记录 candidate、evidence directory、open gates、human decision、reviewer、rollback note 和 non-claims；支持 `blocked`、`rejected`、`deferred`、`approved` 四种 decision，其中 `rejected` / `deferred` 是显式非批准决策，`approved` 仍需要完整证据、reviewer 和 rollback note
@@ -194,9 +194,11 @@
   - event / claim / trigger ledger 均保留明确 namespace，legacy event rows 会按 owner 规则回填
 - `openai-compatible` provider
   - 通过配置文件选择 provider
+  - provider 密钥可直接放在本机私有 `api_key`，也可用 `api_key_env` 从环境变量读取
   - 支持本地 `chat/completions` 风格兼容接口
 - OpenRouter provider
   - 通过 `[model] provider = "openrouter"` 与 `[model.openrouter]` 配置选择
+  - `examples/agent-llm-mm.openrouter.example.toml` 默认使用 `api_key_env = "AGENT_LLM_MM_OPENROUTER_API_KEY"`
   - 复用 OpenAI-compatible `/chat/completions` transport，并覆盖 config parser、doctor、support bundle、MCP `stdio` decision path 和 self-revision path 的本地 stub 回归
   - 当前不声称真实 OpenRouter live provider 已认证，也不是 provider gateway
 - 本机接入链路

@@ -102,6 +102,48 @@ timeout_ms = 55000
 }
 
 #[test]
+fn load_from_path_reads_provider_api_key_from_environment_reference() {
+    let temp_dir = tempdir().expect("temp dir");
+    let config_path = temp_dir.path().join("agent-llm-mm-openrouter-env.toml");
+    fs::write(
+        &config_path,
+        r#"
+transport = "stdio"
+database_url = "sqlite:///tmp/openrouter-provider.sqlite"
+
+[model]
+provider = "openrouter"
+
+[model.openrouter]
+base_url = "https://openrouter.example.test/api/v1"
+api_key_env = "AGENT_LLM_MM_TEST_PROVIDER_API_KEY"
+model = "openrouter/test-model"
+timeout_ms = 55000
+"#,
+    )
+    .expect("write config");
+    let _guard = EnvGuard::set([(
+        "AGENT_LLM_MM_TEST_PROVIDER_API_KEY",
+        Some("env-openrouter-key"),
+    )]);
+
+    let config = AppConfig::load_from_path(&config_path).expect("config");
+
+    assert_eq!(
+        config.model_config,
+        ModelConfig::OpenRouter(OpenAiCompatibleConfig {
+            base_url: "https://openrouter.example.test/api/v1".to_string(),
+            api_key: "env-openrouter-key".to_string(),
+            model: "openrouter/test-model".to_string(),
+            timeout_ms: 55_000,
+        })
+    );
+    config
+        .validate()
+        .expect("provider api_key_env config validates");
+}
+
+#[test]
 fn load_prefers_config_path_from_environment() {
     let temp_dir = tempdir().expect("temp dir");
     let config_path = temp_dir.path().join("custom-provider.toml");
@@ -192,6 +234,10 @@ fn prod_local_example_config_parses_with_local_dashboard_and_disabled_daemon() {
 
 #[test]
 fn openrouter_example_config_parses_without_live_looking_secret() {
+    let _guard = EnvGuard::set([(
+        "AGENT_LLM_MM_OPENROUTER_API_KEY",
+        Some("example-openrouter-key"),
+    )]);
     let config = load_example_config("agent-llm-mm.openrouter.example.toml");
 
     assert_eq!(config.transport, TransportKind::Stdio);
@@ -199,7 +245,7 @@ fn openrouter_example_config_parses_without_live_looking_secret() {
     let ModelConfig::OpenRouter(provider_config) = &config.model_config else {
         panic!("openrouter example should use openrouter provider settings");
     };
-    assert_eq!(provider_config.api_key, "REPLACE_WITH_OPENROUTER_SECRET");
+    assert_eq!(provider_config.api_key, "example-openrouter-key");
     assert!(
         !provider_config.api_key.starts_with("sk-"),
         "OpenRouter example must not contain a live-looking API key"

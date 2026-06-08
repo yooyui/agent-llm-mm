@@ -153,7 +153,9 @@ cargo test --test non_mvp_product_tracks -v
 ```bash
 cargo fmt --check
 git diff --check
-bash -n scripts/release-evidence-index.sh scripts/provider-certification-check.sh scripts/packaging-preflight-check.sh
+bash -n scripts/release-evidence-index.sh
+bash -n scripts/provider-certification-check.sh
+bash -n scripts/packaging-preflight-check.sh
 cargo test --test non_mvp_product_tracks -v
 cargo test --test product_readiness -v
 cargo test --test provider_config -v

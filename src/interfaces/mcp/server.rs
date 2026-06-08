@@ -695,6 +695,7 @@ impl Runtime {
         trigger_key: &str,
         error: &AppError,
     ) {
+        let status = auto_reflection_failure_operation_status(error);
         let entry = OperationLogEntry {
             operation_id: Uuid::new_v4().to_string(),
             occurred_at: Utc::now(),
@@ -703,7 +704,7 @@ impl Runtime {
             actor_id: "mcp-stdio".to_string(),
             entrypoint: entrypoint.to_string(),
             operation_kind: OperationLogKind::Trigger,
-            status: OperationLogStatus::Failed,
+            status,
             correlation_id,
             request_summary_json: None,
             response_summary_json: None,
@@ -1070,6 +1071,8 @@ fn auto_reflection_diagnostic_summary(
         "trigger_type": diagnostics.trigger_type,
         "namespace": diagnostics.namespace,
         "trigger_key": diagnostics.trigger_key,
+        "ledger_status": result.ledger_status.map(TriggerLedgerStatus::as_str),
+        "reflection_id": result.reflection_id,
         "outcome": diagnostics.outcome,
         "suppression_reason": diagnostics.suppression_reason,
         "suppression_category": diagnostics.suppression_category,
@@ -1091,14 +1094,28 @@ fn auto_reflection_failure_diagnostic_summary(
     error: &AppError,
 ) -> serde_json::Value {
     let error_class = mcp_error_class(error);
+    let is_policy_rejection = is_auto_reflection_policy_rejection(error);
     serde_json::json!({
         "trigger_type": trigger_type,
         "trigger_key": trigger_key,
-        "outcome": "failed",
+        "outcome": if is_policy_rejection { "rejected" } else { "failed" },
+        "rejection_category": if is_policy_rejection { Some("governance_policy") } else { None },
         "error_class": error_class.label(),
         "error_code": error_class.code(),
         "error_detail": safe_diagnostic_detail(error),
     })
+}
+
+fn auto_reflection_failure_operation_status(error: &AppError) -> OperationLogStatus {
+    if is_auto_reflection_policy_rejection(error) {
+        OperationLogStatus::Rejected
+    } else {
+        OperationLogStatus::Failed
+    }
+}
+
+fn is_auto_reflection_policy_rejection(error: &AppError) -> bool {
+    matches!(error, AppError::InvalidParams(_))
 }
 
 fn log_auto_reflection_success(
@@ -1118,18 +1135,23 @@ fn log_auto_reflection_success(
         ledger_status = ?result.ledger_status,
         reflection_id = ?result.reflection_id,
         suppression_reason = ?result.suppression_reason,
-        reason = ?result.reason,
+        rejection_reason = ?result
+            .diagnostics
+            .rejection_reason
+            .as_ref()
+            .map(|_| "model_rationale_omitted"),
         cooldown_until = ?result.cooldown_until,
         evidence_event_ids = ?result.evidence_event_ids,
         "best-effort auto-reflection completed"
     );
+    let dashboard_payload = auto_reflection_diagnostic_summary(result);
     dashboard.record_auto_reflection(
         runtime_hook,
         namespace,
         correlation_id,
         auto_reflection_status(result),
         auto_reflection_summary(result),
-        result,
+        &dashboard_payload,
     );
 }
 
@@ -1177,8 +1199,11 @@ fn auto_reflection_summary(result: &auto_reflect_if_needed::AutoReflectResult) -
     if let Some(reason) = result.suppression_reason.as_deref() {
         return format!("auto-reflection suppressed: {reason}");
     }
-    if let Some(reason) = result.reason.as_deref() {
-        return format!("auto-reflection checked: {reason}");
+    if result.ledger_status == Some(TriggerLedgerStatus::Rejected) {
+        return "auto-reflection rejected model proposal".to_string();
+    }
+    if result.reason.is_some() {
+        return "auto-reflection checked runtime evidence".to_string();
     }
     "auto-reflection checked runtime evidence".to_string()
 }

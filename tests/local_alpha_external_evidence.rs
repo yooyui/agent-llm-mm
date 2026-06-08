@@ -398,3 +398,64 @@ fn windows_parity_gate_accepts_runtime_command_evidence_metadata() {
         gate.reason
     );
 }
+
+#[test]
+fn windows_parity_gate_accepts_generic_runner_when_platform_is_windows() {
+    let temp_dir = tempdir().expect("temp dir");
+    let summary_path = temp_dir.path().join("windows-parity/summary.json");
+    fs::create_dir_all(summary_path.parent().expect("summary parent"))
+        .expect("create windows parity evidence dir");
+    fs::write(
+        &summary_path,
+        json!({
+            "evidence_kind": "windows_runtime_parity",
+            "captured_at": "2026-06-08T00:00:00Z",
+            "status": "verified",
+            "runner": "github-actions",
+            "platform": "windows-latest",
+            "runtime_parity": true,
+            "command_evidence": [
+                {
+                    "name": "bootstrap-local",
+                    "command": "pwsh -File scripts/agent-llm-mm.ps1 bootstrap-local",
+                    "status": "passed",
+                    "exit_code": 0
+                },
+                {
+                    "name": "doctor",
+                    "command": "pwsh -File scripts/agent-llm-mm.ps1 doctor",
+                    "status": "passed",
+                    "exit_code": 0
+                },
+                {
+                    "name": "product-smoke",
+                    "command": "pwsh -File scripts/product-smoke-local.ps1",
+                    "status": "passed",
+                    "exit_code": 0
+                }
+            ]
+        })
+        .to_string(),
+    )
+    .expect("write complete windows parity evidence");
+
+    let summary = summarize_local_alpha_evidence(LocalAlphaEvidenceOptions {
+        evidence_root: temp_dir.path().to_path_buf(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("summarize local alpha evidence");
+
+    let gate = summary
+        .gates
+        .iter()
+        .find(|gate| gate.name == "windows_parity")
+        .expect("windows parity gate");
+    assert_eq!(gate.status, "satisfied");
+    assert!(
+        gate.reason
+            .contains("Windows runtime parity evidence is verified"),
+        "reason should accept Windows platform independent of runner: {}",
+        gate.reason
+    );
+}

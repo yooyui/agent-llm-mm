@@ -46,14 +46,14 @@ Copy-Item .\examples\agent-llm-mm.dev.example.toml .\agent-llm-mm.local.toml
 
 - `examples/agent-llm-mm.dev.example.toml`: 本地开发和手工测试，默认 `provider = "mock"`，dashboard disabled。
 - `examples/agent-llm-mm.prod-local.example.toml`: 正式本地数据，dashboard 只监听 `127.0.0.1`，daemon disabled；复制后必须替换 `database_url` 和 provider 占位值。
-- `examples/agent-llm-mm.openrouter.example.toml`: OpenRouter 本地配置模板；通过 OpenAI-compatible `/chat/completions` transport 使用，不代表真实 live-provider certification。
+- `examples/agent-llm-mm.openrouter.example.toml`: OpenRouter 本地配置模板；默认通过 `api_key_env = "AGENT_LLM_MM_OPENROUTER_API_KEY"` 读取本机环境变量，通过 OpenAI-compatible `/chat/completions` transport 使用，不代表真实 live-provider certification。
 - `examples/agent-llm-mm.demo.example.toml`: self-revision demo runner 专用，通常不要手工复制为日常配置。
 
 `examples/agent-llm-mm.example.toml` 只是通用入口说明，不再承载所有用途。然后编辑 `agent-llm-mm.local.toml`：
 
 - 固定自己的 `database_url`
 - 选择 `provider`
-- dev/mock profile 不需要 API key；选择 `openai-compatible`、`openrouter` 或 prod-local profile 时，才在已忽略的 `agent-llm-mm.local.toml` 里填写 `base_url`、`api_key` 和 `model`
+- dev/mock profile 不需要 API key；选择 `openai-compatible`、`openrouter` 或 prod-local profile 时，才在已忽略的 `agent-llm-mm.local.toml` 里填写 `base_url`、`model`，并二选一配置本机私有 `api_key` 或 `api_key_env`
 
 常见 Windows SQLite URL 示例；dev、demo、prod-local 必须使用不同文件。按数据生命周期口径，`prod-local` 对应 formal 数据，`dev` / manual profile 对应 test 数据，demo profile 只对应 demo 数据：
 
@@ -69,7 +69,7 @@ database_url = "sqlite:///D:/agent-llm-mm/dev.sqlite"
 pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 ```
 
-示例 profile 是结构模板，包含占位 `database_url`。先复制到 `agent-llm-mm.local.toml`，替换为本机可写 SQLite 路径后，再检查本机私有配置；如果选择 prod-local profile，还必须同时替换 `base_url`、`api_key` 和 `model`：
+示例 profile 是结构模板，包含占位 `database_url`。先复制到 `agent-llm-mm.local.toml`，替换为本机可写 SQLite 路径后，再检查本机私有配置；如果选择 prod-local profile，还必须同时替换 `base_url`、`model`，并配置本机私有 `api_key` 或 `api_key_env`：
 
 ```powershell
 pwsh -File .\scripts\agent-llm-mm.ps1 doctor .\agent-llm-mm.local.toml

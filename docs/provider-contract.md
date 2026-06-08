@@ -158,10 +158,14 @@ If the new provider adds provider-specific parsing or transport behavior, add pr
   `evidence_kind`, `mode = live`, non-empty `generated_at`,
   `local_only = false`, `endpoint_reached = true`,
   `redaction_reviewed = true`, `request_outcome = passed`, and successful
-  command evidence with explicit `exit_code = 0` all match the expected slot.
-  Stub/simulated provider evidence, placeholder JSON, thin self-labeled live
-  JSON, wrong-provider files, failed files, malformed JSON, or files missing
-  those live metadata/provenance fields must stay invalid and must not set
-  `live_certified = true`.
+  command evidence with `name = provider-live-certification`,
+  `command = scripts/provider-live-certification-run.sh --live` or
+  `command = ./scripts/provider-live-certification-run.sh --live`, and explicit
+  `exit_code = 0` all match the expected slot. Stub/simulated provider
+  evidence, placeholder JSON, thin self-labeled live JSON, wrong-provider files,
+  failed files, malformed JSON, unsupported command evidence, or files missing
+  those live metadata/provenance fields must stay invalid. Complete live
+  evidence still must not set `live_certified = true` unless config preflight
+  also passes.
 - This checklist does not turn the project into a remote provider service or production credential manager.
 - This checklist does not change the MCP tool contract, dashboard boundary, or automatic self-revision runtime hooks.

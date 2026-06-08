@@ -25,6 +25,7 @@ fn main() -> Result<()> {
             "--evidence-root" => {
                 evidence_root = Some(next_path_value(&mut args, "--evidence-root")?)
             }
+            "--live" => {}
             "--stub-evidence" => stub_evidence = true,
             _ => return Err(anyhow!("unknown argument: {arg}")),
         }
@@ -53,7 +54,7 @@ fn main() -> Result<()> {
 
 fn print_usage() {
     eprintln!(
-        "usage: provider_live_certification_run --stub-evidence [--config-path <path>] [--evidence-root <path>]\n\nWithout --stub-evidence, live provider certification is rejected until real network checks are implemented."
+        "usage: provider_live_certification_run (--live | --stub-evidence) [--config-path <path>] [--evidence-root <path>]\n\nLive provider certification is rejected until real network checks are implemented. Use --stub-evidence only for explicit stub/simulated evidence."
     );
 }
 

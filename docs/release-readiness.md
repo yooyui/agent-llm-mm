@@ -58,7 +58,7 @@
 
 截至 `2026-06-08` 的本地验证结果：
 
-- `cargo test -- --list --format terse` 当前枚举 383 个测试
+- `cargo test -- --list --format terse` 当前枚举 395 个测试
 - `doctor` 返回 `status = ok`
 - `cargo test --test non_mvp_product_tracks -v` 覆盖 release evidence index、provider certification preflight、packaging preflight 和 richer memory semantics projection 的本地只读 / preflight 边界
 

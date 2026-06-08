@@ -97,7 +97,9 @@ cargo test
 Run additionally when release evidence changes:
 
 ```bash
-bash -n scripts/local-alpha-evidence-summary.sh scripts/local-alpha-release-gate-refresh.sh scripts/release-soak-local.sh
+bash -n scripts/local-alpha-evidence-summary.sh
+bash -n scripts/local-alpha-release-gate-refresh.sh
+bash -n scripts/release-soak-local.sh
 cargo test --test local_alpha_release_evidence -v
 ./scripts/local-alpha-evidence-summary.sh --evidence-root .
 ```

@@ -159,36 +159,10 @@ fn preflight_remains_blocked_when_live_evidence_has_not_been_generated() {
 #[test]
 fn preflight_accepts_explicit_live_evidence_files_only() {
     let temp_dir = tempdir().expect("temp dir");
-    let evidence_dir = temp_dir
-        .path()
-        .join("target/reports/provider-certification/openrouter");
-    fs::create_dir_all(&evidence_dir).expect("create provider evidence dir");
-    for (file_name, evidence_kind) in EVIDENCE_FILES {
-        fs::write(
-            evidence_dir.join(file_name),
-            serde_json::to_vec_pretty(&serde_json::json!({
-                "provider": "openrouter",
-                "status": "passed",
-                "evidence_kind": evidence_kind,
-                "mode": "live",
-                "generated_at": "2026-06-08T00:00:00Z",
-                "local_only": false,
-                "endpoint_reached": true,
-                "redaction_reviewed": true,
-                "request_outcome": "passed",
-                "command_evidence": [
-                    {
-                        "name": "provider-live-certification",
-                        "command": "scripts/provider-live-certification-run.sh --live",
-                        "status": "passed",
-                        "exit_code": 0
-                    }
-                ]
-            }))
-            .expect("json"),
-        )
-        .expect("write live evidence");
-    }
+    write_live_evidence_files(
+        temp_dir.path(),
+        "scripts/provider-live-certification-run.sh --live",
+    );
 
     let summary = summarize_provider_certification(ProviderCertificationOptions {
         config: openrouter_config(),
@@ -206,6 +180,62 @@ fn preflight_accepts_explicit_live_evidence_files_only() {
             .live_evidence
             .iter()
             .all(|entry| entry.status == "present")
+    );
+}
+
+#[test]
+fn preflight_keeps_live_certification_blocked_when_config_preflight_fails() {
+    let temp_dir = tempdir().expect("temp dir");
+    write_live_evidence_files(
+        temp_dir.path(),
+        "scripts/provider-live-certification-run.sh --live",
+    );
+
+    let summary = summarize_provider_certification(ProviderCertificationOptions {
+        config: invalid_openrouter_config(),
+        evidence_root: temp_dir.path().to_path_buf(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("provider certification preflight");
+
+    assert_eq!(summary.config_preflight_status, "failed");
+    assert!(!summary.live_certified);
+    assert_eq!(summary.live_certification_status, "blocked");
+    assert!(summary.missing_live_evidence.is_empty());
+    assert!(
+        summary
+            .live_evidence
+            .iter()
+            .all(|entry| entry.status == "present"),
+        "live evidence remains independently reported as present: {:?}",
+        summary.live_evidence
+    );
+}
+
+#[test]
+fn preflight_rejects_unsupported_command_evidence() {
+    let temp_dir = tempdir().expect("temp dir");
+    write_live_evidence_files(temp_dir.path(), "echo not-provider-live-certification");
+
+    let summary = summarize_provider_certification(ProviderCertificationOptions {
+        config: openrouter_config(),
+        evidence_root: temp_dir.path().to_path_buf(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("provider certification preflight");
+
+    assert!(!summary.live_certified);
+    assert_eq!(summary.live_certification_status, "blocked");
+    assert_eq!(summary.missing_live_evidence.len(), EVIDENCE_FILES.len());
+    assert!(
+        summary
+            .live_evidence
+            .iter()
+            .all(|entry| entry.status == "invalid"),
+        "unsupported command evidence must not satisfy live certification: {:?}",
+        summary.live_evidence
     );
 }
 
@@ -324,6 +354,60 @@ fn live_mode_without_stub_flag_is_rejected_by_api_and_cli() {
     );
 }
 
+#[test]
+fn explicit_live_flag_is_rejected_as_unimplemented_by_cli_and_wrapper() {
+    let temp_dir = tempdir().expect("temp dir");
+    let config_path = temp_dir.path().join("config.toml");
+    fs::write(&config_path, openrouter_config_toml()).expect("write config");
+
+    let binary = std::env::var("CARGO_BIN_EXE_provider_live_certification_run")
+        .expect("provider_live_certification_run test binary path");
+    let cli_output = Command::new(binary)
+        .arg("--live")
+        .arg("--config-path")
+        .arg(&config_path)
+        .arg("--evidence-root")
+        .arg(temp_dir.path())
+        .output()
+        .expect("run provider live certification CLI");
+
+    assert!(
+        !cli_output.status.success(),
+        "explicit CLI live mode must fail"
+    );
+    let cli_stderr = String::from_utf8_lossy(&cli_output.stderr);
+    assert!(
+        cli_stderr.contains("live provider certification is not implemented yet"),
+        "CLI --live should reach the live-not-implemented error: {cli_stderr}"
+    );
+    assert!(
+        !cli_stderr.contains("unknown argument"),
+        "CLI --live should be a recognized explicit live mode: {cli_stderr}"
+    );
+
+    let wrapper_output = Command::new("bash")
+        .arg("scripts/provider-live-certification-run.sh")
+        .arg("--live")
+        .arg(&config_path)
+        .arg(temp_dir.path())
+        .output()
+        .expect("run provider live certification wrapper");
+
+    assert!(
+        !wrapper_output.status.success(),
+        "explicit wrapper live mode must fail"
+    );
+    let wrapper_stderr = String::from_utf8_lossy(&wrapper_output.stderr);
+    assert!(
+        wrapper_stderr.contains("live provider certification is not implemented yet"),
+        "wrapper --live should reach the live-not-implemented error: {wrapper_stderr}"
+    );
+    assert!(
+        !wrapper_stderr.contains("failed to read config file --live"),
+        "wrapper --live should not be treated as a config path: {wrapper_stderr}"
+    );
+}
+
 fn openrouter_config() -> AppConfig {
     AppConfig {
         model_provider: ModelProviderKind::OpenRouter,
@@ -335,4 +419,60 @@ fn openrouter_config() -> AppConfig {
         }),
         ..Default::default()
     }
+}
+
+fn invalid_openrouter_config() -> AppConfig {
+    AppConfig {
+        model_provider: ModelProviderKind::OpenRouter,
+        model_config: ModelConfig::OpenRouter(OpenAiCompatibleConfig {
+            base_url: "https://openrouter.example.test/api/v1?token=query-secret".to_string(),
+            api_key: "".to_string(),
+            model: "openrouter/test-model".to_string(),
+            timeout_ms: 30_000,
+        }),
+        ..Default::default()
+    }
+}
+
+fn write_live_evidence_files(evidence_root: &std::path::Path, command: &str) {
+    let evidence_dir = evidence_root.join("target/reports/provider-certification/openrouter");
+    fs::create_dir_all(&evidence_dir).expect("create provider evidence dir");
+    for (file_name, evidence_kind) in EVIDENCE_FILES {
+        fs::write(
+            evidence_dir.join(file_name),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "provider": "openrouter",
+                "status": "passed",
+                "evidence_kind": evidence_kind,
+                "mode": "live",
+                "generated_at": "2026-06-08T00:00:00Z",
+                "local_only": false,
+                "endpoint_reached": true,
+                "redaction_reviewed": true,
+                "request_outcome": "passed",
+                "command_evidence": [
+                    {
+                        "name": "provider-live-certification",
+                        "command": command,
+                        "status": "passed",
+                        "exit_code": 0
+                    }
+                ]
+            }))
+            .expect("json"),
+        )
+        .expect("write live evidence");
+    }
+}
+
+fn openrouter_config_toml() -> &'static str {
+    r#"
+[model]
+provider = "openrouter"
+
+[model.openrouter]
+base_url = "https://openrouter.example.test/api/v1"
+api_key = "openrouter-secret-key"
+model = "openrouter/test-model"
+"#
 }

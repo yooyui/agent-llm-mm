@@ -144,10 +144,10 @@ fn local_alpha_entry(gate: &LocalAlphaGateSummary) -> ReleaseEvidenceIndexEntry 
 }
 
 fn product_gate_entry(gate: &ProductReadinessGate) -> ReleaseEvidenceIndexEntry {
-    let status = match gate.name {
-        "remote_team" | "security_auth" => "blocked",
-        _ if gate.status == "satisfied" => "present",
-        _ if gate.status == "not_verified" => "not_verified",
+    let status = match gate.status {
+        "satisfied" => "present",
+        "blocked" => "blocked",
+        "not_verified" => "not_verified",
         _ => "missing",
     };
     entry(

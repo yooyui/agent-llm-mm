@@ -171,11 +171,13 @@ Expected archive names:
 - `agent-llm-mm-linux-x86_64.tar.gz`
 - `agent-llm-mm-windows-x86_64.zip`
 
-The command rejects missing and zero-byte archives before writing the manifest.
-On success it writes `packaging-archive-manifest.json` with archive names,
-sizes, SHA-256 values, `local_only = true`, `complete = true`, and non-claims.
+The command rejects missing, zero-byte, plain-text placeholder, and truncated
+archives before writing the manifest. On success it writes
+`packaging-archive-manifest.json` with archive names, sizes, SHA-256 values,
+`local_only = true`, `complete = true`, and non-claims.
 `packaging-preflight-check` only satisfies the `binary_archive` blocker when
-all expected archives are present and match the manifest. Installer,
+all expected archives are parseable as the expected `.tar.gz` / `.zip` archive
+format and match the manifest. Installer,
 service-manager, and auto-updater blockers remain `not_implemented`, so
 `packaging_ready` remains false until those later gates exist.
 

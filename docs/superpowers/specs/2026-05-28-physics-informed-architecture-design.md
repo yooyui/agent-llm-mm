@@ -34,7 +34,7 @@ Observed baseline:
 
 - `dev-work` carries the reviewed local implementation slices; branch ahead
   count is not used as release evidence.
-- Current branch `cargo test` total declaration: 383 tests.
+- Current branch `cargo test` total declaration: 395 tests.
 - `status-sync-check` reported that documented test totals and plan/status
   reality gates are in sync.
 - `doctor` reported `status = ok` when run with an isolated writable SQLite

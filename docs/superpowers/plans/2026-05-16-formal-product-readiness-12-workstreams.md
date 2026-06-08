@@ -641,7 +641,8 @@ It turns the 12 remaining product-readiness gaps into execution workstreams.
   Documented and regression-tested local SQLite backup / restore helpers:
 
   ```bash
-  bash -n scripts/backup-sqlite.sh scripts/restore-sqlite.sh
+  bash -n scripts/backup-sqlite.sh
+  bash -n scripts/restore-sqlite.sh
   cargo test --test sqlite_backup_restore -v
   ```
 

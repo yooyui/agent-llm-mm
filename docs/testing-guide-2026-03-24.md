@@ -47,14 +47,14 @@
 - `first_run_bootstrap_smoke`: 4 passed
 - `local_alpha_external_evidence`: 7 passed
 - `local_alpha_release_evidence`: 20 passed
-- `mcp_stdio`: 44 passed
-- `non_mvp_product_tracks`: 7 passed
+- `mcp_stdio`: 46 passed
+- `non_mvp_product_tracks`: 8 passed
 - `openai_compatible_model`: 11 passed
 - `operation_log`: 9 passed
 - `packaging_archive`: 7 passed
 - `product_completion_read_models`: 15 passed
 - `product_readiness`: 15 passed
-- `provider_config`: 17 passed
+- `provider_config`: 18 passed
 - `provider_live_certification`: 7 passed
 - `release_decision`: 5 passed
 - `self_revision_demo_runner`: 2 passed
@@ -63,7 +63,7 @@
 - `status_sync`: 11 passed
 - `support_bundle`: 35 passed
 
-合计：383 个测试通过。
+合计：395 个测试通过。
 
 ---
 
@@ -117,9 +117,21 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 12. 如果改动涉及 Local Alpha evidence summary、发布证据汇总或 gate status 输出，补跑 `bash -n scripts/local-alpha-evidence-summary.sh`、`cargo test --test local_alpha_release_evidence -v`，并用 `cargo run --quiet --bin local_alpha_evidence_summary -- --evidence-root .` spot-check JSON 输出；该 summary 只是本地只读 gate 状态汇总，不是自动认证
 13. 如果改动涉及 Local Alpha release-gate refresh 或本机 gate 证据刷新流程，补跑 `bash -n scripts/local-alpha-release-gate-refresh.sh`、`cargo test --test local_alpha_release_evidence -v`，并按需执行 `./scripts/local-alpha-release-gate-refresh.sh [config_path]`；该 refresh 只产生本机可复现证据，不生成真实 fresh-machine、Windows runner、remote/team 或发布决策证据
 14. 如果改动涉及 release engineering、release evidence directory、soak evidence 或候选发布说明，补跑 `bash -n scripts/release-soak-local.sh`、`cargo test --test local_alpha_release_evidence release_soak -v`，并按需执行 `./scripts/release-soak-local.sh <candidate-name> [config_path]`；该 soak 只生成本地 release evidence，不生成真实 fresh-machine、Windows runner、remote/team、上传、tag、安装包或发布认证证据
-15. 如果改动涉及 SQLite 备份、恢复、schema migration 前置检查或 data lifecycle gate，补跑 `bash -n scripts/backup-sqlite.sh scripts/restore-sqlite.sh` 和 `cargo test --test sqlite_backup_restore -v`
+15. 如果改动涉及 SQLite 备份、恢复、schema migration 前置检查或 data lifecycle gate，补跑以下命令：
+    ```bash
+    bash -n scripts/backup-sqlite.sh
+    bash -n scripts/restore-sqlite.sh
+    cargo test --test sqlite_backup_restore -v
+    ```
 16. 如果改动涉及 product readiness、release decision artifact、产品措辞 gate、remote/team inventory/security gates、evidence relation、episode projection、layered memory projection 或 `doctor.system_layer_report`，补跑 `cargo test --test product_readiness -v`、`cargo test --test release_decision -v`、`cargo test --test product_completion_read_models -v`、`cargo test --test provider_config -v` 和 `./scripts/product-readiness-check.sh <candidate-name>` 的本地预检；这些检查只能核验本地门禁、doctor 只读架构层报告、runtime / declared-test-contract dependency-rule evidence、physics-informed non-claim / wording guard 和只读投影，不生成真实 fresh-machine、Windows runner、remote/team 产品模式、GA 或发布认证证据
-17. 如果改动涉及 release evidence index、provider certification preflight、packaging preflight 或 richer memory semantics projection，补跑 `cargo test --test non_mvp_product_tracks -v`、`bash -n scripts/release-evidence-index.sh scripts/provider-certification-check.sh scripts/packaging-preflight-check.sh`，并按需执行对应脚本；这些 preflight 只读取本地 evidence/config shape，不调用 provider endpoint、不生成 installer、不上传文件、不认证 live provider、Local Alpha、Beta、GA 或 production-ready；provider live evidence 需要非空 JSON、匹配 provider、`status = "passed"`、expected `evidence_kind`、`mode = "live"`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = "passed"` 和带显式 `exit_code = 0` 的成功 command evidence；packaging archive evidence 需要预期 archive 全部存在、非空，并与 manifest 的 name / size / SHA-256 匹配
+17. 如果改动涉及 release evidence index、provider certification preflight、packaging preflight 或 richer memory semantics projection，补跑以下命令，并按需执行对应脚本：
+    ```bash
+    cargo test --test non_mvp_product_tracks -v
+    bash -n scripts/release-evidence-index.sh
+    bash -n scripts/provider-certification-check.sh
+    bash -n scripts/packaging-preflight-check.sh
+    ```
+    这些 preflight 只读取本地 evidence/config shape，不调用 provider endpoint、不生成 installer、不上传文件、不认证 live provider、Local Alpha、Beta、GA 或 production-ready；provider live evidence 需要非空 JSON、匹配 provider、`status = "passed"`、expected `evidence_kind`、`mode = "live"`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = "passed"` 和带显式 `exit_code = 0` 的成功 command evidence；packaging archive evidence 需要预期 archive 全部存在、非空、可解析为对应 `.tar.gz` / `.zip` archive，并与 manifest 的 name / size / SHA-256 匹配
 
 如果当前机器没有 `pwsh`，PowerShell runtime 行为测试会跳过；这种情况下只代表 Rust 测试覆盖了 PowerShell 脚本文本契约和 no-clobber 静态断言，Windows runner 或 Windows 实机验证仍需单独记录。
 
@@ -244,7 +256,8 @@ cargo test --test sqlite_store
 ### 6.2 SQLite backup / restore 脚本门禁
 
 ```zsh
-bash -n scripts/backup-sqlite.sh scripts/restore-sqlite.sh
+bash -n scripts/backup-sqlite.sh
+bash -n scripts/restore-sqlite.sh
 cargo test --test sqlite_backup_restore -v
 ```
 
@@ -666,9 +679,9 @@ cargo test --test non_mvp_product_tracks provider_certification -v
 
 通过标准：
 
-- 省略 `--stub-evidence` 的 live mode 必须失败，不能伪装成 live check
+- 省略 `--stub-evidence` 或显式传入 `--live` 的 live mode 必须失败并返回 live-not-implemented 错误，不能伪装成 live check，也不能把 `--live` 当作 config path
 - `--stub-evidence` 只生成 stub/simulated evidence，文件标记 `local_only = true`，且 preflight 仍保持 `live_certified = false`
-- live evidence 只有同时满足 provider、`status = passed`、expected `evidence_kind`、`mode = live`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = passed` 和带显式 `exit_code = 0` 的成功 command evidence 才算 present
+- live evidence 只有同时满足 provider、`status = passed`、expected `evidence_kind`、`mode = live`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = passed`，以及 `name = provider-live-certification`、`command = scripts/provider-live-certification-run.sh --live` 或 `command = ./scripts/provider-live-certification-run.sh --live`、显式 `exit_code = 0` 的成功 command evidence 才算 present；即便 live evidence complete，config preflight 失败时 `live_certified` 仍必须 blocked
 - 输出不得包含 API key、URL userinfo、URL path 内容、query secret、model id、request body 或 response body
 
 ---
@@ -685,9 +698,9 @@ cargo test --test non_mvp_product_tracks packaging_preflight -v
 
 通过标准：
 
-- 缺失 archive 或零字节 archive 必须失败且不能写 manifest
+- 缺失 archive、零字节 archive、纯文本占位 archive 或截断 archive 必须失败且不能写 manifest
 - 成功 manifest 只包含候选名、archive 文件名、size、SHA-256、`local_only = true`、`complete = true` 和 non-claims，不能写绝对路径
-- packaging preflight 只有在四个平台 archive 都存在并与 manifest 的 name / size / SHA-256 匹配时才满足 `binary_archive`
+- packaging preflight 只有在四个平台 archive 都存在、可解析为对应 `.tar.gz` / `.zip` archive，并与 manifest 的 name / size / SHA-256 匹配时才满足 `binary_archive`
 - `installer`、`service_manager`、`auto_updater` 仍保持 `not_implemented`，所以 `packaging_ready` 仍为 false
 
 ---

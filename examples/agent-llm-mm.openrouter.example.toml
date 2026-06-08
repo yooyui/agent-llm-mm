@@ -3,6 +3,8 @@
 # This uses the OpenRouter adapter through the OpenAI-compatible chat
 # completions transport. It is a local configuration template only; it is not
 # live-provider certification and must not contain a real API key in git.
+# Before running doctor/serve with this profile, set:
+#   AGENT_LLM_MM_OPENROUTER_API_KEY
 
 transport = "stdio"
 database_url = "sqlite:///absolute/path/to/openrouter/agent-llm-mm.sqlite"
@@ -12,7 +14,7 @@ provider = "openrouter"
 
 [model.openrouter]
 base_url = "https://openrouter.ai/api/v1"
-api_key = "REPLACE_WITH_OPENROUTER_SECRET"
+api_key_env = "AGENT_LLM_MM_OPENROUTER_API_KEY"
 model = "openrouter/auto"
 timeout_ms = 30000
 

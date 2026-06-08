@@ -39,7 +39,7 @@
 
 `2026-06-08` 時点で：
 
-- `cargo test -- --list --format terse` は現在 383 tests を列挙します
+- `cargo test -- --list --format terse` は現在 395 tests を列挙します
 - `doctor` は `status = ok` を返します
 
 ## 謝辞

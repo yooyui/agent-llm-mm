@@ -277,6 +277,243 @@ timeout_ms = 30000
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dashboard_auto_reflection_event_omits_rejected_model_rationale() {
+    let raw_secret_rationale =
+        "No revision because sk-dashboard-secret-token-password-should-not-persist";
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": format!(r#"{{"should_reflect":false,"rationale":"{}"}}"#, raw_secret_rationale)
+                }
+            }]
+        }),
+    )
+    .await;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("reserve port");
+    let port = listener.local_addr().expect("local addr").port();
+    drop(listener);
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+
+[dashboard]
+enabled = true
+host = "127.0.0.1"
+port = {port}
+event_capacity = 50
+required = true
+"#,
+        stub.base_url()
+    );
+    let (mut client, _database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    for (episode_reference, summary, trigger_hints) in [
+        (
+            "episode:dashboard-auto-reflect-rejected-diagnostic-0",
+            "first rollback after violating a hard commitment",
+            json!([]),
+        ),
+        (
+            "episode:dashboard-auto-reflect-rejected-diagnostic-1",
+            "rollback after violating a hard commitment",
+            json!(["failure", "rollback"]),
+        ),
+    ] {
+        let response = client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "Self_",
+                        "kind": "Action",
+                        "summary": summary
+                    },
+                    "claim_drafts": [],
+                    "episode_reference": episode_reference,
+                    "trigger_hints": trigger_hints
+                }),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            response.get("error").is_none(),
+            "rejected auto-reflection must preserve main ingest success semantics: {response:?}"
+        );
+    }
+
+    let events: serde_json::Value =
+        reqwest::get(format!("http://127.0.0.1:{port}/api/events?limit=20"))
+            .await
+            .expect("dashboard events response")
+            .json()
+            .await
+            .expect("dashboard events json");
+    let reflection_event = events
+        .as_array()
+        .expect("events array")
+        .iter()
+        .find(|event| {
+            event.get("operation").and_then(Value::as_str) == Some("ingest_interaction:failure")
+                && event.get("status").and_then(Value::as_str) == Some("rejected")
+        })
+        .expect("dashboard should record the rejected auto-reflection event");
+
+    let summary = reflection_event
+        .get("summary")
+        .and_then(Value::as_str)
+        .expect("dashboard event should include summary");
+    assert!(
+        !summary.contains(raw_secret_rationale),
+        "dashboard summary must not expose raw model rationale: {reflection_event:?}"
+    );
+    assert!(
+        !summary.contains("sk-dashboard-secret-token-password-should-not-persist"),
+        "dashboard summary must not expose secret-like rationale text: {reflection_event:?}"
+    );
+
+    let payload = reflection_event
+        .get("payload")
+        .expect("dashboard event should include payload");
+    let payload_json = payload.to_string();
+    assert!(
+        !payload_json.contains(raw_secret_rationale),
+        "dashboard payload must not expose raw model rationale: {reflection_event:?}"
+    );
+    assert!(
+        !payload_json.contains("sk-dashboard-secret-token-password-should-not-persist"),
+        "dashboard payload must not expose secret-like rationale text: {reflection_event:?}"
+    );
+    assert_eq!(
+        payload.get("trigger_type").and_then(Value::as_str),
+        Some("failure")
+    );
+    assert_eq!(
+        payload.get("ledger_status").and_then(Value::as_str),
+        Some("rejected")
+    );
+    assert_eq!(
+        payload.get("rejection_reason").and_then(Value::as_str),
+        Some("model_rationale_omitted")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn governed_auto_reflection_rejection_error_appends_rejected_trigger_operation_log() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": r#"{"should_reflect":true,"rationale":"Rejected evidence should be classified as governance policy, not a runtime failure.","machine_patch":{"identity_patch":null,"commitment_patch":{"commitments":["prefer:reflect_before_repeating_rollback"]}},"proposed_evidence_event_ids":["evt-outside-window"],"confidence":"medium"}"#
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    for (episode_reference, summary, trigger_hints) in [
+        (
+            "episode:auto-reflect-governed-rejection-error-0",
+            "first rollback after violating a hard commitment",
+            json!([]),
+        ),
+        (
+            "episode:auto-reflect-governed-rejection-error-1",
+            "rollback after violating a hard commitment",
+            json!(["failure", "rollback"]),
+        ),
+    ] {
+        let response = client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "Self_",
+                        "kind": "Action",
+                        "summary": summary
+                    },
+                    "claim_drafts": [],
+                    "episode_reference": episode_reference,
+                    "trigger_hints": trigger_hints
+                }),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            response.get("error").is_none(),
+            "governed rejected auto-reflection must preserve main ingest success semantics: {response:?}"
+        );
+    }
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let row = sqlx::query(
+        "SELECT operation_kind, status, diagnostic_summary_json FROM operation_log \
+         WHERE entrypoint = 'ingest_interaction' AND operation_kind = 'trigger' \
+         ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("governed rejection should append a trigger operation log entry");
+
+    assert_eq!(row.get::<String, _>("operation_kind"), "trigger");
+    assert_eq!(row.get::<String, _>("status"), "rejected");
+    let diagnostic: serde_json::Value = serde_json::from_str(
+        &row.get::<Option<String>, _>("diagnostic_summary_json")
+            .expect("rejected trigger should include bounded diagnostic summary"),
+    )
+    .expect("diagnostic summary should be json");
+    assert_eq!(
+        diagnostic.get("outcome").and_then(Value::as_str),
+        Some("rejected")
+    );
+    assert_eq!(
+        diagnostic.get("rejection_category").and_then(Value::as_str),
+        Some("governance_policy")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ingest_interaction_auto_reflects_once_and_does_not_recurse_inside_run_reflection() {
     let stub = test_support::StubServer::spawn(
         200,

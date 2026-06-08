@@ -39,7 +39,7 @@
 
 As of `2026-06-08`:
 
-- `cargo test -- --list --format terse` currently enumerates 383 tests
+- `cargo test -- --list --format terse` currently enumerates 395 tests
 - `doctor` returns `status = ok`
 
 ## Acknowledgement

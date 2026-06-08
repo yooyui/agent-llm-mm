@@ -1,13 +1,15 @@
 use std::{
     fs,
-    io::Read,
+    io::{self, Read},
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
+use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
+use zip::ZipArchive;
 
 use crate::support::release_candidate::validate_release_candidate;
 
@@ -63,6 +65,8 @@ pub fn generate_packaging_archive_evidence(
         let archive_path = packaging_dir.join(name);
         match fs::metadata(&archive_path) {
             Ok(metadata) if metadata.is_file() && metadata.len() > 0 => {
+                validate_archive_file_format(&archive_path, name)
+                    .with_context(|| format!("invalid archive format for {name}"))?;
                 archives.push(PackagingArchiveEntry {
                     name: name.to_string(),
                     size_bytes: metadata.len(),
@@ -121,6 +125,13 @@ pub fn validate_packaging_archive_manifest(
     root: &Path,
     release_candidate: &str,
 ) -> PackagingArchiveManifestValidation {
+    if let Err(error) = validate_release_candidate(release_candidate) {
+        return validation(
+            "invalid",
+            format!("invalid release candidate for packaging archive manifest: {error}"),
+        );
+    }
+
     let manifest_path = manifest_path(root, release_candidate);
     let manifest_bytes = match fs::read(&manifest_path) {
         Ok(bytes) => bytes,
@@ -243,6 +254,9 @@ pub fn validate_packaging_archive_manifest(
                 ),
             );
         }
+        if let Err(error) = validate_archive_file_format(&archive_path, expected) {
+            return validation("invalid", error.to_string());
+        }
 
         let actual_sha256 = match sha256_file(&archive_path) {
             Ok(sha256) => sha256,
@@ -295,6 +309,73 @@ fn sha256_file(path: &Path) -> Result<String> {
     }
 
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn validate_archive_file_format(path: &Path, name: &str) -> Result<()> {
+    if name.ends_with(".tar.gz") {
+        return validate_tar_gz_archive(path, name).with_context(|| {
+            format!("invalid archive format for {name}: expected gzip-compressed tar archive")
+        });
+    }
+    if name.ends_with(".zip") {
+        return validate_zip_archive(path, name)
+            .with_context(|| format!("invalid archive format for {name}: expected zip archive"));
+    }
+
+    Err(anyhow!(
+        "invalid archive format for {name}: expected gzip-compressed tar archive or zip archive"
+    ))
+}
+
+fn validate_tar_gz_archive(path: &Path, name: &str) -> Result<()> {
+    let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut decoder = GzDecoder::new(file);
+    let mut has_entries = false;
+
+    {
+        let mut archive = tar::Archive::new(&mut decoder);
+        let entries = archive
+            .entries()
+            .with_context(|| format!("read tar entries for {name}"))?;
+        for entry in entries {
+            let mut entry = entry.with_context(|| format!("read tar entry for {name}"))?;
+            io::copy(&mut entry, &mut io::sink())
+                .with_context(|| format!("read tar entry contents for {name}"))?;
+            has_entries = true;
+        }
+    }
+
+    if !has_entries {
+        return Err(anyhow!(
+            "invalid archive format for {name}: gzip-compressed tar archive contains no entries"
+        ));
+    }
+
+    io::copy(&mut decoder, &mut io::sink())
+        .with_context(|| format!("finish gzip stream for {name}"))?;
+    Ok(())
+}
+
+fn validate_zip_archive(path: &Path, name: &str) -> Result<()> {
+    let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut archive =
+        ZipArchive::new(file).with_context(|| format!("read zip central directory for {name}"))?;
+
+    if archive.is_empty() {
+        return Err(anyhow!(
+            "invalid archive format for {name}: zip archive contains no entries"
+        ));
+    }
+
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index_raw(index)
+            .with_context(|| format!("read raw zip entry {index} for {name}"))?;
+        io::copy(&mut entry, &mut io::sink())
+            .with_context(|| format!("read raw zip entry contents for {name}"))?;
+    }
+
+    Ok(())
 }
 
 fn validation(

@@ -333,10 +333,17 @@ impl AppConfig {
 fn provider_config(config: FileOpenAiCompatibleConfig) -> OpenAiCompatibleConfig {
     OpenAiCompatibleConfig {
         base_url: config.base_url.unwrap_or_default(),
-        api_key: config.api_key.unwrap_or_default(),
+        api_key: provider_api_key(config.api_key, config.api_key_env),
         model: config.model.unwrap_or_default(),
         timeout_ms: config.timeout_ms.unwrap_or(DEFAULT_OPENAI_TIMEOUT_MS),
     }
+}
+
+fn provider_api_key(api_key: Option<String>, api_key_env: Option<String>) -> String {
+    api_key
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| api_key_env.and_then(|env_var| std::env::var(env_var).ok()))
+        .unwrap_or_default()
 }
 
 fn validate_chat_completion_config(
@@ -434,6 +441,7 @@ struct FileModelConfig {
 struct FileOpenAiCompatibleConfig {
     base_url: Option<String>,
     api_key: Option<String>,
+    api_key_env: Option<String>,
     model: Option<String>,
     timeout_ms: Option<u64>,
 }

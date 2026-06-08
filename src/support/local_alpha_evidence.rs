@@ -372,11 +372,10 @@ fn windows_parity_gate(root: &Path) -> LocalAlphaGateSummary {
         );
     };
 
-    let runner_or_platform_is_windows = summary
-        .runner
-        .as_deref()
-        .or(summary.platform.as_deref())
-        .is_some_and(|value| value.to_ascii_lowercase().contains("windows"));
+    let runner_or_platform_is_windows = [summary.runner.as_deref(), summary.platform.as_deref()]
+        .into_iter()
+        .flatten()
+        .any(|value| value.to_ascii_lowercase().contains("windows"));
 
     if !runner_or_platform_is_windows {
         return gate(

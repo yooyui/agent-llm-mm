@@ -38,13 +38,40 @@ fn release_evidence_index_lists_present_missing_and_blocked_candidate_evidence()
     assert_entry(&index, "product_smoke", "present");
     assert_entry(&index, "support_bundle", "present");
     assert_entry(&index, "windows_parity", "not_verified");
-    assert_entry(&index, "release_decision", "missing");
+    assert_entry(&index, "release_decision", "blocked");
     assert_entry(&index, "remote_team", "blocked");
     assert!(
         index
             .non_claims
             .iter()
             .any(|claim| claim.contains("not release approval"))
+    );
+}
+
+#[test]
+fn release_evidence_index_preserves_blocked_product_wording_gate_status() {
+    let temp_dir = tempdir().expect("temp dir");
+    write_product_smoke_latest(temp_dir.path());
+    write_first_run_simulation(temp_dir.path());
+    write_support_bundle(temp_dir.path());
+
+    let index = build_release_evidence_index(ReleaseEvidenceIndexOptions {
+        evidence_root: temp_dir.path().to_path_buf(),
+        release_candidate: "ga-production-ready-remote-team".to_string(),
+        output_json_path: None,
+        output_markdown_path: None,
+    })
+    .expect("release evidence index should build with blocked product wording");
+
+    assert_entry(&index, "product_wording", "blocked");
+    assert_eq!(
+        index.blocked_gate_count,
+        index
+            .entries
+            .iter()
+            .filter(|entry| entry.status == "blocked")
+            .count(),
+        "blocked_gate_count should exactly match blocked index entries"
     );
 }
 

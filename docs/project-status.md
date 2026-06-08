@@ -298,14 +298,14 @@ Implementation notes:
 - `first_run_bootstrap_smoke`: 4
 - `local_alpha_external_evidence`: 7
 - `local_alpha_release_evidence`: 20
-- `mcp_stdio`: 44
-- `non_mvp_product_tracks`: 7
+- `mcp_stdio`: 46
+- `non_mvp_product_tracks`: 8
 - `openai_compatible_model`: 11
 - `operation_log`: 9
 - `packaging_archive`: 7
 - `product_completion_read_models`: 15
 - `product_readiness`: 15
-- `provider_config`: 17
+- `provider_config`: 18
 - `provider_live_certification`: 7
 - `release_decision`: 5
 - `self_revision_demo_runner`: 2
@@ -313,7 +313,7 @@ Implementation notes:
 - `sqlite_store`: 23
 - `status_sync`: 11
 - `support_bundle`: 35
-- 合计：383 个测试通过
+- 合计：395 个测试通过
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`
@@ -322,7 +322,7 @@ Implementation notes:
 - Local release soak runner 可生成 `target/reports/releases/<candidate-name>/` 候选证据，覆盖 doctor、dashboard HTTP 回归、product smoke、first-run simulation、support bundle、redacted command logs、secret/artifact scan、release evidence secret scan、support bundle / product smoke SHA-256 manifest 和 Local Alpha evidence summary；它不生成 Windows runner、真实 fresh-machine、remote/team、daemon writes、上传、tag、安装包或发布认证证据
 - Release evidence index 可把候选 evidence root 下的 Local Alpha evidence summary 与 product readiness gate 合并为 present / missing / not_verified / blocked 的本地只读索引；它只输出 JSON/Markdown，不生成缺失 evidence、不批准 release、不上传文件
 - Provider certification preflight 可校验本地 provider config shape 并列出 live certification 缺口；它保持 OpenRouter / OpenAI-compatible live certification 为 blocked，不调用 provider endpoint，且不输出 API key、URL userinfo、path secret 或 query secret；live evidence 只有在 provider、status、expected evidence_kind、`mode = live`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = passed` 和带显式 `exit_code = 0` 的成功 command evidence 同时满足时才算 present；stub/simulated runner 只能生成本地模拟证据，不能让 `live_certified = true`
-- Packaging preflight 可区分 source-only soak artifacts 与真实 binary archive / installer / service manager / auto-updater evidence；新增 archive manifest / SHA-256 evidence 生成入口只校验已存在 archive，不构建二进制；缺少真实打包证据、零字节占位、部分平台 archive、缺失 manifest 或 manifest mismatch 时保持 blocked，不创建 tag、安装包、上传或发布认证证据
+- Packaging preflight 可区分 source-only soak artifacts 与真实 binary archive / installer / service manager / auto-updater evidence；新增 archive manifest / SHA-256 evidence 生成入口只校验已存在 archive 是否可解析为对应 `.tar.gz` / `.zip`、文件大小和 SHA-256，不构建二进制；缺少真实打包证据、纯文本占位、截断 archive、零字节占位、部分平台 archive、缺失 manifest 或 manifest mismatch 时保持 blocked，不创建 tag、安装包、上传或发布认证证据
 - Richer memory semantics projection 已提供只读 evidence relation / episode summary / semantic claim / procedural memory / durable self-model write 状态投影；它不新增 durable memory layer 写路径，也不是 full ranking engine
 - `first-run-bootstrap-smoke-local.sh` 已提供 `bootstrap-local -> doctor` 的本地 fresh-machine simulation evidence，包含 env 隔离、输出目录隔离、`doctor.json` / `summary.json` 和 isolated SQLite 证据；但真实 fresh-machine install / Windows runner 实机验证仍需单独记录，当前本机没有 `pwsh` 时，PowerShell runtime parity 只能视为待补证据
 - SQLite backup / restore 本地脚本门禁已覆盖 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份、拒绝 in-memory / invalid URL 和拒绝 `..` restore target；这不是远程备份、云同步或生产灾备证明

@@ -88,7 +88,7 @@ pub fn summarize_provider_certification(
         .filter(|entry| entry.status != "present")
         .map(|entry| entry.name.to_string())
         .collect::<Vec<_>>();
-    let live_certified = missing_live_evidence.is_empty();
+    let live_certified = config_preflight_error.is_none() && missing_live_evidence.is_empty();
     let live_certification_status = if live_certified { "passed" } else { "blocked" };
     let non_claims = vec![
         "not live provider certification".to_string(),
@@ -200,11 +200,20 @@ fn command_evidence_is_successful(value: &Value) -> bool {
         && value
             .get("name")
             .and_then(Value::as_str)
-            .is_some_and(|name| !name.trim().is_empty())
+            .is_some_and(|name| name.trim() == "provider-live-certification")
         && value
             .get("command")
             .and_then(Value::as_str)
-            .is_some_and(|command| !command.trim().is_empty())
+            .is_some_and(command_is_supported_live_certification_shape)
+}
+
+fn command_is_supported_live_certification_shape(command: &str) -> bool {
+    let tokens = command.split_whitespace().collect::<Vec<_>>();
+    matches!(
+        tokens.as_slice(),
+        ["scripts/provider-live-certification-run.sh", "--live"]
+            | ["./scripts/provider-live-certification-run.sh", "--live"]
+    )
 }
 
 fn provider_config_shape(config: &AppConfig) -> ProviderConfigShape {
