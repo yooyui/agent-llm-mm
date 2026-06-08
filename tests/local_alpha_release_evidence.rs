@@ -322,6 +322,12 @@ fn support_bundle_placeholder_files_do_not_satisfy_gate() {
 fn satisfied_evidence_keeps_overall_review_ready_not_automatically_complete() {
     let temp_dir = tempdir().expect("temp dir");
     write_first_run_summary(temp_dir.path(), true);
+    write_first_run_summary_at(
+        &temp_dir
+            .path()
+            .join("target/first-run-bootstrap-smoke/local-alpha-gate"),
+        false,
+    );
     write_product_smoke_latest(temp_dir.path());
     write_windows_parity(temp_dir.path(), "verified");
     write_support_bundle(temp_dir.path(), &allowed_support_bundle_files());
@@ -667,7 +673,10 @@ fn assert_gate(summary: &Value, name: &str, status: &str, reason_contains: &str)
         .find(|gate| gate["name"] == name)
         .unwrap_or_else(|| panic!("missing gate {name}; gates={gates:?}"));
 
-    assert_eq!(gate["status"], status);
+    assert_eq!(
+        gate["status"], status,
+        "gate {name} status mismatch; gate={gate:?}"
+    );
     let reason = gate["reason"].as_str().unwrap_or_default();
     assert!(
         reason.contains(reason_contains),
@@ -703,22 +712,44 @@ fn write_first_run_summary(root: &std::path::Path, real_fresh_machine_evidence: 
 
 fn write_first_run_summary_at(output_dir: &std::path::Path, real_fresh_machine_evidence: bool) {
     fs::create_dir_all(output_dir).expect("create first-run dir");
+    let mut summary = serde_json::json!({
+        "local_only": true,
+        "real_fresh_machine_evidence": real_fresh_machine_evidence,
+        "doctor_status": "ok",
+        "self_revision_write_path": "run_reflection",
+        "daemon_enabled": false,
+        "daemon_writes_allowed": false,
+        "sqlite_database_exists": true,
+        "started_serve": false,
+        "ran_product_smoke": false
+    });
+    if real_fresh_machine_evidence {
+        summary["kind"] = serde_json::json!("real_first_run_bootstrap_evidence");
+        summary["evidence_kind"] = serde_json::json!("real_fresh_machine_first_run");
+        summary["fresh_machine_simulation"] = serde_json::json!(false);
+        summary["captured_at"] = serde_json::json!("2026-06-08T00:00:00Z");
+        summary["source_checkout"] = serde_json::json!("clean-clone-or-unpacked-archive");
+        summary["command_evidence"] = serde_json::json!([
+            {
+                "name": "bootstrap-local",
+                "command": "./scripts/agent-llm-mm.sh bootstrap-local",
+                "status": "passed",
+                "exit_code": 0
+            },
+            {
+                "name": "doctor",
+                "command": "./scripts/agent-llm-mm.sh doctor",
+                "status": "passed",
+                "exit_code": 0
+            }
+        ]);
+    } else {
+        summary["kind"] = serde_json::json!("local_first_run_bootstrap_simulation");
+        summary["fresh_machine_simulation"] = serde_json::json!(true);
+    }
     fs::write(
         output_dir.join("summary.json"),
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "kind": "local_first_run_bootstrap_simulation",
-            "local_only": true,
-            "fresh_machine_simulation": true,
-            "real_fresh_machine_evidence": real_fresh_machine_evidence,
-            "doctor_status": "ok",
-            "self_revision_write_path": "run_reflection",
-            "daemon_enabled": false,
-            "daemon_writes_allowed": false,
-            "sqlite_database_exists": true,
-            "started_serve": false,
-            "ran_product_smoke": false
-        }))
-        .expect("json"),
+        serde_json::to_vec_pretty(&summary).expect("json"),
     )
     .expect("write first-run summary");
 }
@@ -729,7 +760,25 @@ fn write_real_first_run_summary_at(output_dir: &std::path::Path) {
         output_dir.join("summary.json"),
         serde_json::to_vec_pretty(&serde_json::json!({
             "kind": "real_first_run_bootstrap_evidence",
+            "evidence_kind": "real_fresh_machine_first_run",
+            "captured_at": "2026-06-08T00:00:00Z",
+            "source_checkout": "clean-clone-or-unpacked-archive",
+            "command_evidence": [
+                {
+                    "name": "bootstrap-local",
+                    "command": "./scripts/agent-llm-mm.sh bootstrap-local",
+                    "status": "passed",
+                    "exit_code": 0
+                },
+                {
+                    "name": "doctor",
+                    "command": "./scripts/agent-llm-mm.sh doctor",
+                    "status": "passed",
+                    "exit_code": 0
+                }
+            ],
             "local_only": true,
+            "fresh_machine_simulation": false,
             "real_fresh_machine_evidence": true,
             "doctor_status": "ok",
             "self_revision_write_path": "run_reflection",
@@ -775,9 +824,31 @@ fn write_windows_parity_at(output_dir: &std::path::Path, status: &str) {
     fs::write(
         output_dir.join("summary.json"),
         serde_json::to_vec_pretty(&serde_json::json!({
+            "evidence_kind": "windows_runtime_parity",
+            "captured_at": "2026-06-08T00:00:00Z",
             "status": status,
             "runner": "windows",
-            "runtime_parity": true
+            "runtime_parity": true,
+            "command_evidence": [
+                {
+                    "name": "bootstrap-local",
+                    "command": "pwsh -File scripts/agent-llm-mm.ps1 bootstrap-local",
+                    "status": "passed",
+                    "exit_code": 0
+                },
+                {
+                    "name": "doctor",
+                    "command": "pwsh -File scripts/agent-llm-mm.ps1 doctor",
+                    "status": "passed",
+                    "exit_code": 0
+                },
+                {
+                    "name": "product-smoke",
+                    "command": "pwsh -File scripts/product-smoke-local.ps1",
+                    "status": "passed",
+                    "exit_code": 0
+                }
+            ]
         }))
         .expect("json"),
     )

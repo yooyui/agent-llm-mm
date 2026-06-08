@@ -76,6 +76,12 @@ pub struct ReleaseBlocker {
 
 #[derive(Debug, Deserialize)]
 struct FirstRunSummary {
+    kind: Option<String>,
+    evidence_kind: Option<String>,
+    captured_at: Option<String>,
+    source_checkout: Option<String>,
+    command_evidence: Option<Vec<CommandEvidence>>,
+    commands: Option<Vec<CommandEvidence>>,
     doctor_status: Option<String>,
     fresh_machine_simulation: Option<bool>,
     real_fresh_machine_evidence: Option<bool>,
@@ -90,10 +96,23 @@ struct FirstRunSummary {
 
 #[derive(Debug, Deserialize)]
 struct WindowsParitySummary {
+    kind: Option<String>,
+    evidence_kind: Option<String>,
+    captured_at: Option<String>,
+    command_evidence: Option<Vec<CommandEvidence>>,
+    commands: Option<Vec<CommandEvidence>>,
     status: Option<String>,
     runner: Option<String>,
     platform: Option<String>,
     runtime_parity: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CommandEvidence {
+    name: Option<String>,
+    command: Option<String>,
+    status: Option<String>,
+    exit_code: Option<i32>,
 }
 
 pub fn summarize_local_alpha_evidence(
@@ -205,6 +224,10 @@ fn first_run_bootstrap_gate(root: &Path) -> LocalAlphaGateSummary {
     }
     if summary.real_fresh_machine_evidence != Some(true) {
         reasons.push("real fresh-machine evidence is false");
+    } else if real_fresh_machine_conflicts_with_simulation_metadata(&summary) {
+        reasons.push("real fresh-machine evidence conflicts with simulation metadata");
+    } else if !real_fresh_machine_metadata_is_complete(&summary) {
+        reasons.push("real fresh-machine evidence metadata is incomplete");
     }
     if summary.local_only != Some(true) {
         reasons.push("local_only is not true");
@@ -355,10 +378,24 @@ fn windows_parity_gate(root: &Path) -> LocalAlphaGateSummary {
         .or(summary.platform.as_deref())
         .is_some_and(|value| value.to_ascii_lowercase().contains("windows"));
 
-    if summary.status.as_deref() == Some("verified")
-        && summary.runtime_parity == Some(true)
-        && runner_or_platform_is_windows
-    {
+    if !runner_or_platform_is_windows {
+        return gate(
+            "windows_parity",
+            "not_verified",
+            Some(relative),
+            "missing Windows runner or platform evidence",
+        );
+    }
+
+    let mut reasons = Vec::new();
+    if summary.status.as_deref() != Some("verified") || summary.runtime_parity != Some(true) {
+        reasons.push("Windows runtime parity evidence is not verified");
+    }
+    if !windows_runtime_command_evidence_is_complete(&summary) {
+        reasons.push("Windows runtime command evidence is incomplete");
+    }
+
+    if reasons.is_empty() {
         gate(
             "windows_parity",
             "satisfied",
@@ -370,13 +407,114 @@ fn windows_parity_gate(root: &Path) -> LocalAlphaGateSummary {
             "windows_parity",
             "not_verified",
             Some(relative),
-            if runner_or_platform_is_windows {
-                "Windows runtime parity evidence is not verified"
-            } else {
-                "missing Windows runner or platform evidence"
-            },
+            reasons.join("; "),
         )
     }
+}
+
+fn real_fresh_machine_metadata_is_complete(summary: &FirstRunSummary) -> bool {
+    real_fresh_machine_marker_matches(summary.kind.as_deref())
+        && real_fresh_machine_marker_matches(summary.evidence_kind.as_deref())
+        && summary.fresh_machine_simulation == Some(false)
+        && non_empty_string(summary.captured_at.as_deref())
+        && non_empty_string(summary.source_checkout.as_deref())
+        && command_evidence_contains(summary.command_entries(), &["bootstrap-local", "doctor"])
+}
+
+fn real_fresh_machine_conflicts_with_simulation_metadata(summary: &FirstRunSummary) -> bool {
+    summary.fresh_machine_simulation == Some(true)
+        || evidence_marker_contains_simulation(summary.kind.as_deref())
+        || evidence_marker_contains_simulation(summary.evidence_kind.as_deref())
+}
+
+fn real_fresh_machine_marker_matches(value: Option<&str>) -> bool {
+    value.is_some_and(|value| {
+        matches!(
+            value,
+            "real_fresh_machine_first_run" | "real_first_run_bootstrap_evidence"
+        )
+    })
+}
+
+fn evidence_marker_contains_simulation(value: Option<&str>) -> bool {
+    value.is_some_and(|value| value.to_ascii_lowercase().contains("simulation"))
+}
+
+fn windows_runtime_command_evidence_is_complete(summary: &WindowsParitySummary) -> bool {
+    evidence_kind_matches(
+        summary.kind.as_deref(),
+        summary.evidence_kind.as_deref(),
+        &["windows_runtime_parity"],
+    ) && non_empty_string(summary.captured_at.as_deref())
+        && command_evidence_contains(
+            summary.command_entries(),
+            &["bootstrap", "doctor", "product-smoke"],
+        )
+}
+
+impl FirstRunSummary {
+    fn command_entries(&self) -> impl Iterator<Item = &CommandEvidence> {
+        self.command_evidence
+            .iter()
+            .flat_map(|entries| entries.iter())
+            .chain(self.commands.iter().flat_map(|entries| entries.iter()))
+    }
+}
+
+impl WindowsParitySummary {
+    fn command_entries(&self) -> impl Iterator<Item = &CommandEvidence> {
+        self.command_evidence
+            .iter()
+            .flat_map(|entries| entries.iter())
+            .chain(self.commands.iter().flat_map(|entries| entries.iter()))
+    }
+}
+
+fn evidence_kind_matches(
+    kind: Option<&str>,
+    evidence_kind: Option<&str>,
+    allowed: &[&str],
+) -> bool {
+    [kind, evidence_kind]
+        .into_iter()
+        .flatten()
+        .any(|value| allowed.contains(&value))
+}
+
+fn non_empty_string(value: Option<&str>) -> bool {
+    value.is_some_and(|value| !value.trim().is_empty())
+}
+
+fn command_evidence_contains<'a>(
+    commands: impl Iterator<Item = &'a CommandEvidence>,
+    required_fragments: &[&str],
+) -> bool {
+    let commands = commands.collect::<Vec<_>>();
+    required_fragments.iter().all(|fragment| {
+        commands
+            .iter()
+            .any(|command| command_matches(command, fragment))
+    })
+}
+
+fn command_matches(command: &CommandEvidence, fragment: &str) -> bool {
+    command_is_successful(command) && command_identifier(command).contains(fragment)
+}
+
+fn command_is_successful(command: &CommandEvidence) -> bool {
+    matches!(
+        command.status.as_deref(),
+        Some("passed" | "ok" | "success" | "satisfied" | "verified")
+    ) && command.exit_code == Some(0)
+}
+
+fn command_identifier(command: &CommandEvidence) -> String {
+    format!(
+        "{} {}",
+        command.name.as_deref().unwrap_or_default(),
+        command.command.as_deref().unwrap_or_default()
+    )
+    .to_ascii_lowercase()
 }
 
 fn support_bundle_gate(root: &Path) -> LocalAlphaGateSummary {

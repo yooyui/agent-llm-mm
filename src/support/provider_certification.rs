@@ -10,22 +10,26 @@ use serde_json::Value;
 
 use crate::support::config::{AppConfig, ModelConfig};
 
-const REQUIRED_LIVE_EVIDENCE: &[(&str, &str)] = &[
+const REQUIRED_LIVE_EVIDENCE: &[(&str, &str, &str)] = &[
     (
         "live_decision_path",
         "target/reports/provider-certification/{provider}/live-decision.json",
+        "live_decision",
     ),
     (
         "live_self_revision_path",
         "target/reports/provider-certification/{provider}/live-self-revision.json",
+        "live_self_revision",
     ),
     (
         "provider_error_handling",
         "target/reports/provider-certification/{provider}/provider-error-handling.json",
+        "provider_error_handling",
     ),
     (
         "redaction_review",
         "target/reports/provider-certification/{provider}/redaction-review.json",
+        "redaction_review",
     ),
 ];
 
@@ -84,6 +88,8 @@ pub fn summarize_provider_certification(
         .filter(|entry| entry.status != "present")
         .map(|entry| entry.name.to_string())
         .collect::<Vec<_>>();
+    let live_certified = missing_live_evidence.is_empty();
+    let live_certification_status = if live_certified { "passed" } else { "blocked" };
     let non_claims = vec![
         "not live provider certification".to_string(),
         "not provider endpoint reachability evidence".to_string(),
@@ -94,7 +100,8 @@ pub fn summarize_provider_certification(
     let markdown = render_markdown(
         &provider,
         config_preflight_status,
-        "blocked",
+        live_certified,
+        live_certification_status,
         &live_evidence,
     );
 
@@ -105,8 +112,8 @@ pub fn summarize_provider_certification(
         config_preflight_status,
         config_preflight_error,
         provider_config_shape: provider_config_shape(&options.config),
-        live_certified: false,
-        live_certification_status: "blocked",
+        live_certified,
+        live_certification_status,
         missing_live_evidence,
         live_evidence,
         non_claims,
@@ -126,9 +133,10 @@ pub fn summarize_provider_certification(
 fn live_evidence(provider: &str, evidence_root: &Path) -> Vec<ProviderCertificationEvidence> {
     REQUIRED_LIVE_EVIDENCE
         .iter()
-        .map(|(name, template)| {
+        .map(|(name, template, expected_kind)| {
             let evidence_path = template.replace("{provider}", provider);
-            let status = live_evidence_status(provider, &evidence_root.join(&evidence_path));
+            let status =
+                live_evidence_status(provider, expected_kind, &evidence_root.join(&evidence_path));
 
             ProviderCertificationEvidence {
                 name,
@@ -139,7 +147,7 @@ fn live_evidence(provider: &str, evidence_root: &Path) -> Vec<ProviderCertificat
         .collect()
 }
 
-fn live_evidence_status(provider: &str, path: &Path) -> &'static str {
+fn live_evidence_status(provider: &str, expected_kind: &str, path: &Path) -> &'static str {
     let Ok(bytes) = fs::read(path) else {
         return "missing";
     };
@@ -152,12 +160,51 @@ fn live_evidence_status(provider: &str, path: &Path) -> &'static str {
     };
     let provider_matches = value.get("provider").and_then(Value::as_str) == Some(provider);
     let passed = value.get("status").and_then(Value::as_str) == Some("passed");
+    let evidence_kind_matches =
+        value.get("evidence_kind").and_then(Value::as_str) == Some(expected_kind);
+    let live_mode = value.get("mode").and_then(Value::as_str) == Some("live");
+    let generated_at_present = value
+        .get("generated_at")
+        .and_then(Value::as_str)
+        .is_some_and(|stamp| !stamp.trim().is_empty());
+    let live_not_local_only = value.get("local_only").and_then(Value::as_bool) == Some(false);
+    let live_provenance_complete = live_provenance_is_complete(&value);
 
-    if provider_matches && passed {
+    if provider_matches
+        && passed
+        && evidence_kind_matches
+        && live_mode
+        && generated_at_present
+        && live_not_local_only
+        && live_provenance_complete
+    {
         "present"
     } else {
         "invalid"
     }
+}
+
+fn live_provenance_is_complete(value: &Value) -> bool {
+    value.get("endpoint_reached").and_then(Value::as_bool) == Some(true)
+        && value.get("redaction_reviewed").and_then(Value::as_bool) == Some(true)
+        && value.get("request_outcome").and_then(Value::as_str) == Some("passed")
+        && value
+            .get("command_evidence")
+            .and_then(Value::as_array)
+            .is_some_and(|commands| commands.iter().any(command_evidence_is_successful))
+}
+
+fn command_evidence_is_successful(value: &Value) -> bool {
+    value.get("status").and_then(Value::as_str) == Some("passed")
+        && value.get("exit_code").and_then(Value::as_i64) == Some(0)
+        && value
+            .get("name")
+            .and_then(Value::as_str)
+            .is_some_and(|name| !name.trim().is_empty())
+        && value
+            .get("command")
+            .and_then(Value::as_str)
+            .is_some_and(|command| !command.trim().is_empty())
 }
 
 fn provider_config_shape(config: &AppConfig) -> ProviderConfigShape {
@@ -201,6 +248,7 @@ fn base_url_shape(base_url: &str) -> String {
 fn render_markdown(
     provider: &str,
     config_preflight_status: &str,
+    live_certified: bool,
     live_certification_status: &str,
     live_evidence: &[ProviderCertificationEvidence],
 ) -> String {
@@ -210,7 +258,7 @@ fn render_markdown(
     output.push_str(&format!(
         "- config_preflight_status: `{config_preflight_status}`\n"
     ));
-    output.push_str("- live_certified: `false`\n");
+    output.push_str(&format!("- live_certified: `{live_certified}`\n"));
     output.push_str(&format!(
         "- live_certification_status: `{live_certification_status}`\n\n"
     ));

@@ -45,14 +45,17 @@
 - `evidence_query_dto`: 4 passed
 - `failure_modes`: 36 passed
 - `first_run_bootstrap_smoke`: 4 passed
+- `local_alpha_external_evidence`: 7 passed
 - `local_alpha_release_evidence`: 20 passed
 - `mcp_stdio`: 44 passed
 - `non_mvp_product_tracks`: 7 passed
 - `openai_compatible_model`: 11 passed
 - `operation_log`: 9 passed
+- `packaging_archive`: 7 passed
 - `product_completion_read_models`: 15 passed
 - `product_readiness`: 15 passed
 - `provider_config`: 17 passed
+- `provider_live_certification`: 7 passed
 - `release_decision`: 5 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_backup_restore`: 6 passed
@@ -60,7 +63,7 @@
 - `status_sync`: 11 passed
 - `support_bundle`: 35 passed
 
-合计：362 个测试通过。
+合计：383 个测试通过。
 
 ---
 
@@ -116,7 +119,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 14. 如果改动涉及 release engineering、release evidence directory、soak evidence 或候选发布说明，补跑 `bash -n scripts/release-soak-local.sh`、`cargo test --test local_alpha_release_evidence release_soak -v`，并按需执行 `./scripts/release-soak-local.sh <candidate-name> [config_path]`；该 soak 只生成本地 release evidence，不生成真实 fresh-machine、Windows runner、remote/team、上传、tag、安装包或发布认证证据
 15. 如果改动涉及 SQLite 备份、恢复、schema migration 前置检查或 data lifecycle gate，补跑 `bash -n scripts/backup-sqlite.sh scripts/restore-sqlite.sh` 和 `cargo test --test sqlite_backup_restore -v`
 16. 如果改动涉及 product readiness、release decision artifact、产品措辞 gate、remote/team inventory/security gates、evidence relation、episode projection、layered memory projection 或 `doctor.system_layer_report`，补跑 `cargo test --test product_readiness -v`、`cargo test --test release_decision -v`、`cargo test --test product_completion_read_models -v`、`cargo test --test provider_config -v` 和 `./scripts/product-readiness-check.sh <candidate-name>` 的本地预检；这些检查只能核验本地门禁、doctor 只读架构层报告、runtime / declared-test-contract dependency-rule evidence、physics-informed non-claim / wording guard 和只读投影，不生成真实 fresh-machine、Windows runner、remote/team 产品模式、GA 或发布认证证据
-17. 如果改动涉及 release evidence index、provider certification preflight、packaging preflight 或 richer memory semantics projection，补跑 `cargo test --test non_mvp_product_tracks -v`、`bash -n scripts/release-evidence-index.sh scripts/provider-certification-check.sh scripts/packaging-preflight-check.sh`，并按需执行对应脚本；这些 preflight 只读取本地 evidence/config shape，不调用 provider endpoint、不生成 installer、不上传文件、不认证 live provider、Local Alpha、Beta、GA 或 production-ready；provider live evidence 需要非空 JSON、匹配 provider 且 `status = "passed"`，packaging archive evidence 需要预期 archive 全部存在且非空
+17. 如果改动涉及 release evidence index、provider certification preflight、packaging preflight 或 richer memory semantics projection，补跑 `cargo test --test non_mvp_product_tracks -v`、`bash -n scripts/release-evidence-index.sh scripts/provider-certification-check.sh scripts/packaging-preflight-check.sh`，并按需执行对应脚本；这些 preflight 只读取本地 evidence/config shape，不调用 provider endpoint、不生成 installer、不上传文件、不认证 live provider、Local Alpha、Beta、GA 或 production-ready；provider live evidence 需要非空 JSON、匹配 provider、`status = "passed"`、expected `evidence_kind`、`mode = "live"`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = "passed"` 和带显式 `exit_code = 0` 的成功 command evidence；packaging archive evidence 需要预期 archive 全部存在、非空，并与 manifest 的 name / size / SHA-256 匹配
 
 如果当前机器没有 `pwsh`，PowerShell runtime 行为测试会跳过；这种情况下只代表 Rust 测试覆盖了 PowerShell 脚本文本契约和 no-clobber 静态断言，Windows runner 或 Windows 实机验证仍需单独记录。
 
@@ -651,7 +654,45 @@ cargo test --test first_run_bootstrap_smoke -v
 
 ---
 
-### 6.14 Local release soak runner
+### 6.14 Provider live certification evidence runner
+
+如果改动涉及 provider certification preflight、live evidence schema、provider URL / credential redaction，或显式 provider evidence runner，需要补跑：
+
+```zsh
+bash -n scripts/provider-live-certification-run.sh
+cargo test --test provider_live_certification -v
+cargo test --test non_mvp_product_tracks provider_certification -v
+```
+
+通过标准：
+
+- 省略 `--stub-evidence` 的 live mode 必须失败，不能伪装成 live check
+- `--stub-evidence` 只生成 stub/simulated evidence，文件标记 `local_only = true`，且 preflight 仍保持 `live_certified = false`
+- live evidence 只有同时满足 provider、`status = passed`、expected `evidence_kind`、`mode = live`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = passed` 和带显式 `exit_code = 0` 的成功 command evidence 才算 present
+- 输出不得包含 API key、URL userinfo、URL path 内容、query secret、model id、request body 或 response body
+
+---
+
+### 6.15 Packaging archive evidence
+
+如果改动涉及 packaging preflight、候选 archive 命名、checksum manifest 或 release packaging 证据，需要补跑：
+
+```zsh
+bash -n scripts/packaging-archive-evidence.sh
+cargo test --test packaging_archive -v
+cargo test --test non_mvp_product_tracks packaging_preflight -v
+```
+
+通过标准：
+
+- 缺失 archive 或零字节 archive 必须失败且不能写 manifest
+- 成功 manifest 只包含候选名、archive 文件名、size、SHA-256、`local_only = true`、`complete = true` 和 non-claims，不能写绝对路径
+- packaging preflight 只有在四个平台 archive 都存在并与 manifest 的 name / size / SHA-256 匹配时才满足 `binary_archive`
+- `installer`、`service_manager`、`auto_updater` 仍保持 `not_implemented`，所以 `packaging_ready` 仍为 false
+
+---
+
+### 6.16 Local release soak runner
 
 如果改动涉及 release engineering、候选发布证据目录、soak evidence、release note 或产品化发布口径，需要补跑本地 release soak：
 

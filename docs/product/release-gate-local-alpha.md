@@ -328,8 +328,10 @@ Expected inputs under `--evidence-root`:
   `target/first-run-bootstrap-smoke/local-alpha-gate/summary.json`
 - Windows parity evidence at `windows-parity/summary.json`, or the documented
   release evidence path `target/windows-parity/local-alpha-gate/summary.json`;
-  the summary must include a Windows runner or Windows platform marker, not only
-  a generic `verified` status
+  the summary must include a Windows runner or Windows platform marker,
+  `evidence_kind = windows_runtime_parity`, non-empty `captured_at`, and
+  successful bootstrap / doctor / product-smoke command evidence, not only a
+  generic `verified` status
 - support bundle evidence at `support-bundle/`, or the documented release
   evidence path `target/support-bundles/local-alpha-gate/`, containing only the
   allowed local diagnostic files listed in the Support Bundle Gate
@@ -350,6 +352,11 @@ Required boundary:
   `not_verified`
 - `real_fresh_machine_evidence = false` in the first-run summary must prevent a
   Local Alpha complete status
+- `real_fresh_machine_evidence = true` is not sufficient by itself; real
+  fresh-machine evidence must also include a real fresh-machine evidence kind,
+  `fresh_machine_simulation = false`, non-empty `captured_at`, non-empty
+  `source_checkout`, and successful `bootstrap-local` / `doctor` command
+  evidence with explicit `exit_code = 0`
 - `fresh_machine_simulation = true` in the same summary may satisfy the
   separate `first_run_simulation` gate, but must not satisfy the real
   fresh-machine `first_run_bootstrap` gate by itself

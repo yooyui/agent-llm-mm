@@ -17,7 +17,7 @@
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
 - 最近本地验证与产品化 gate 入口：`2026-06-08`
-  - `cargo test -- --list --format terse` 当前枚举 362 个测试；新增 `non_mvp_product_tracks` 覆盖 4 条非 MVP 产品化 read-only / preflight 切片
+  - `cargo test -- --list --format terse` 当前枚举 383 个测试；新增 `non_mvp_product_tracks`、`local_alpha_external_evidence`、`provider_live_certification` 和 `packaging_archive` 覆盖非 MVP 产品化 read-only / preflight / evidence 校验切片
   - `doctor` 预检返回 `status = ok`
   - `status-sync-check` 已加入本地只读文档漂移检查，用于对齐当前测试总数声明，并阻断已勾选计划项与 reality gate 状态不一致的完成声明
   - Local Alpha product smoke 已有 staging / promote 证据刷新入口；具体候选是否 fresh 仍以当前 evidence root 的 summary 为准
@@ -119,6 +119,7 @@
 - local alpha evidence summary
   - 提供本地只读 gate 汇总入口：`./scripts/local-alpha-evidence-summary.sh`
   - 读取已有 product smoke latest、first-run bootstrap summary、Windows parity summary 和 support bundle 目录，输出 JSON 与可选 Markdown；其中 `first_run_simulation` 只表示本地首启模拟证据，`first_run_bootstrap` 仍要求真实 fresh-machine evidence
+  - 真实 fresh-machine summary 必须带明确 real evidence kind、`fresh_machine_simulation = false`、`captured_at`、`source_checkout`，以及带显式 `exit_code = 0` 的成功 `bootstrap-local` / `doctor` command evidence；Windows parity summary 必须带 `windows_runtime_parity` kind、`captured_at` 和带显式 `exit_code = 0` 的成功 bootstrap / doctor / product-smoke command evidence
   - 每个 gate 输出 `name`、`status`、`evidence_path` 或 `reason`；fresh-machine 证据缺失时对应 gate 保持 `open`，Windows 证据缺失或无法验证时保持 `open` / `not_verified`，整体 summary 才汇总为 `in_progress`
   - 不启动 `serve`，不运行 product smoke，不上传文件，不触发 daemon 写，不新增 durable write path；`run_reflection` 仍是唯一 durable identity / commitment / reflection 写路径
   - 该能力只是可审查的状态汇总，不是自动认证，也不代表 Local Alpha 已完成
@@ -134,11 +135,14 @@
 - provider certification preflight
   - 提供本地只读 provider certification 预检：`./scripts/provider-certification-check.sh [config_path] [evidence_root] [output_dir]`
   - 校验当前 provider config shape，并列出 live decision path、live self-revision path、provider error handling、redaction review 等 live certification 缺口
-  - 输出会形状化 provider base URL，并把 URL path 内容整体脱敏；live evidence 文件必须是非空 JSON、`provider` 匹配且 `status = "passed"` 才能算 present；该能力不序列化 API key、URL userinfo、path secret 或 query secret，不调用 provider endpoint，也不代表 OpenRouter / OpenAI-compatible live certified
+  - 输出会形状化 provider base URL，并把 URL path 内容整体脱敏；live evidence 文件必须是非空 JSON，且 `provider`、`status = "passed"`、对应 `evidence_kind`、`mode = "live"`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = "passed"` 和带显式 `exit_code = 0` 的成功 command evidence 同时满足才算 present；stub/simulated evidence 会保持 invalid，不会让 `live_certified = true`
+  - 显式 stub runner `./scripts/provider-live-certification-run.sh --stub-evidence [config_path] [evidence_root]` 只生成本地模拟证据并默认标记 `local_only = true`；省略 `--stub-evidence` 的 live mode 会拒绝执行，直到真实 live checks 实现
+  - 该能力不序列化 API key、URL userinfo、path secret 或 query secret，不调用 provider endpoint，也不代表 OpenRouter / OpenAI-compatible live certified
 - packaging preflight
   - 提供候选级本地只读 packaging 预检：`./scripts/packaging-preflight-check.sh <release-candidate> [evidence_root] [output_dir]`
   - 区分 source-only release soak artifacts 与真实 binary archive / installer / service manager / auto-updater evidence
-  - binary archive evidence 要求预期 archive 全部存在且非空；零字节占位或单平台部分 archive 会保持 blocked，不创建 tag、安装包、上传或发布认证证据
+  - `./scripts/packaging-archive-evidence.sh <release-candidate> [evidence_root]` 可为已存在的四个平台 archive 写入本地 manifest / SHA-256 evidence；它不构建二进制、不创建 installer、不上传或打 tag
+  - binary archive evidence 要求预期 archive 全部存在、非空，并与 `packaging-archive-manifest.json` 的 name / size / SHA-256 匹配；零字节占位、单平台部分 archive、缺失 manifest 或 manifest mismatch 会保持 blocked，不创建 tag、安装包、上传或发布认证证据
 - local release decision artifact
   - 提供 source-only release decision 模板/生成器：`./scripts/release-decision-local.sh <candidate-name> <evidence-root>`
   - 记录 candidate、evidence directory、open gates、human decision、reviewer、rollback note 和 non-claims；支持 `blocked`、`rejected`、`deferred`、`approved` 四种 decision，其中 `rejected` / `deferred` 是显式非批准决策，`approved` 仍需要完整证据、reviewer 和 rollback note

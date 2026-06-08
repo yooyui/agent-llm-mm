@@ -7,7 +7,10 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::Serialize;
 
-use crate::support::release_candidate::validate_release_candidate;
+use crate::support::{
+    packaging_archive::{EXPECTED_PACKAGING_ARCHIVES, validate_packaging_archive_manifest},
+    release_candidate::validate_release_candidate,
+};
 
 #[derive(Debug, Clone)]
 pub struct PackagingPreflightOptions {
@@ -132,16 +135,10 @@ fn packaging_blockers(root: &Path, release_candidate: &str) -> Vec<PackagingPref
 fn binary_archive_blocker(root: &Path, release_candidate: &str) -> PackagingPreflightBlocker {
     let relative_dir = format!("target/reports/releases/{release_candidate}/packaging");
     let packaging_dir = root.join(&relative_dir);
-    let archive_names = [
-        "agent-llm-mm-macos-aarch64.tar.gz",
-        "agent-llm-mm-macos-x86_64.tar.gz",
-        "agent-llm-mm-linux-x86_64.tar.gz",
-        "agent-llm-mm-windows-x86_64.zip",
-    ];
     let mut missing = Vec::new();
     let mut zero_byte = Vec::new();
 
-    for name in archive_names.iter().copied() {
+    for name in EXPECTED_PACKAGING_ARCHIVES.iter().copied() {
         let path = packaging_dir.join(name);
         match fs::metadata(&path) {
             Ok(metadata) if metadata.is_file() && metadata.len() > 0 => {}
@@ -151,11 +148,21 @@ fn binary_archive_blocker(root: &Path, release_candidate: &str) -> PackagingPref
     }
 
     if missing.is_empty() && zero_byte.is_empty() {
+        let manifest_validation = validate_packaging_archive_manifest(root, release_candidate);
+        if manifest_validation.status != "satisfied" {
+            return blocker(
+                "binary_archive",
+                manifest_validation.status,
+                Some(relative_dir),
+                manifest_validation.reason,
+            );
+        }
+
         return blocker(
             "binary_archive",
             "satisfied",
             Some(relative_dir),
-            "all expected binary archive evidence files are present and non-empty",
+            manifest_validation.reason,
         );
     }
 
@@ -170,7 +177,7 @@ fn binary_archive_blocker(root: &Path, release_candidate: &str) -> PackagingPref
         return blocker("binary_archive", "invalid", Some(relative_dir), reason);
     }
 
-    if missing.len() == archive_names.len() {
+    if missing.len() == EXPECTED_PACKAGING_ARCHIVES.len() {
         blocker(
             "binary_archive",
             "missing",

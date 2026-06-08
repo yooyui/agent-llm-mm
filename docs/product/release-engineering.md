@@ -154,6 +154,35 @@ binary package, installer, service manager, auto-updater, Windows runner
 evidence, real fresh-machine evidence, remote/team evidence, upload, release
 decision, or Local Alpha certification.
 
+## Packaging Archive Evidence
+
+When a release candidate already has platform archives under
+`target/reports/releases/<candidate-name>/packaging/`, record local checksum
+evidence with:
+
+```bash
+./scripts/packaging-archive-evidence.sh <candidate-name> [evidence_root]
+```
+
+Expected archive names:
+
+- `agent-llm-mm-macos-aarch64.tar.gz`
+- `agent-llm-mm-macos-x86_64.tar.gz`
+- `agent-llm-mm-linux-x86_64.tar.gz`
+- `agent-llm-mm-windows-x86_64.zip`
+
+The command rejects missing and zero-byte archives before writing the manifest.
+On success it writes `packaging-archive-manifest.json` with archive names,
+sizes, SHA-256 values, `local_only = true`, `complete = true`, and non-claims.
+`packaging-preflight-check` only satisfies the `binary_archive` blocker when
+all expected archives are present and match the manifest. Installer,
+service-manager, and auto-updater blockers remain `not_implemented`, so
+`packaging_ready` remains false until those later gates exist.
+
+This is evidence over existing local files only. It does not build binaries,
+create installers, upload artifacts, tag a release, or certify production-ready
+packaging.
+
 ## Deprecation Policy
 
 Deprecations must be explicit, documented, and conservative.

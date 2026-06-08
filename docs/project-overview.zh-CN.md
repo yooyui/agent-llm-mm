@@ -39,7 +39,7 @@
 
 截至 `2026-06-08`：
 
-- `cargo test -- --list --format terse` 当前枚举 362 个测试
+- `cargo test -- --list --format terse` 当前枚举 383 个测试
 - `doctor` 返回 `status = ok`
 
 ## 致谢

@@ -153,5 +153,15 @@ If the new provider adds provider-specific parsing or transport behavior, add pr
 - This checklist does not add Azure OpenAI, local gateway, or any other future provider.
 - The provider matrix does not make `azure-openai`, `local`, or any other future provider configurable or runnable.
 - OpenRouter support is limited to the OpenAI-compatible chat completions transport verified against local stubs; it is not live-provider certification.
+- Provider certification preflight remains local and read-only. A live evidence
+  file is only present when provider, `status = passed`, expected
+  `evidence_kind`, `mode = live`, non-empty `generated_at`,
+  `local_only = false`, `endpoint_reached = true`,
+  `redaction_reviewed = true`, `request_outcome = passed`, and successful
+  command evidence with explicit `exit_code = 0` all match the expected slot.
+  Stub/simulated provider evidence, placeholder JSON, thin self-labeled live
+  JSON, wrong-provider files, failed files, malformed JSON, or files missing
+  those live metadata/provenance fields must stay invalid and must not set
+  `live_certified = true`.
 - This checklist does not turn the project into a remote provider service or production credential manager.
 - This checklist does not change the MCP tool contract, dashboard boundary, or automatic self-revision runtime hooks.

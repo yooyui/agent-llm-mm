@@ -15,7 +15,7 @@
 - `run_reflection` remains the only durable identity / commitment / reflection write path.
 - New summaries are read-only and must not start `serve`, run remote commands, upload files, call provider APIs, create release tags, or generate installers.
 - Provider certification preflight must redact API keys, URL userinfo, URL path content, and query secrets.
-- Provider live evidence files must be non-empty JSON with matching `provider` and `status = "passed"` before they can be reported as present.
+- Provider live evidence files must be non-empty JSON with matching `provider`, `status = "passed"`, expected `evidence_kind`, `mode = "live"`, non-empty `generated_at`, `local_only = false`, live provenance fields, and successful command evidence before they can be reported as present.
 - Packaging preflight must keep installer, service manager, auto-updater, and binary packaging blocked until real complete artifacts exist; zero-byte or partial binary archives are not enough.
 - Documentation must keep the repository positioned as local-first productization in progress, not Beta/GA/production-ready.
 
