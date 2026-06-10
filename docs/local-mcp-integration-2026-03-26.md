@@ -152,7 +152,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - SQLite 持久化
 - `namespace` 最小闭环
 - `openai-compatible` provider
-- OpenRouter provider（通过 OpenAI-compatible `/chat/completions` transport 的本地 stub 验证，不代表 live-provider certification）
+- OpenRouter provider（通过 OpenAI-compatible `/chat/completions` transport；配置示例和本地 stub 不是 live evidence，显式 `--live` runner 才能生成 bounded live preflight evidence）
 - 配置文件驱动的 provider 选择
 - trigger-ledger-backed automatic self-revision MVP
   - 当前 MCP-wired automatic path 只有 4 条：
@@ -178,7 +178,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 原因：
 
 - commitment gate 是真实能力
-- 下游模型已可走 `openai-compatible` 或 OpenRouter；OpenRouter 当前只表示本地 stub 验证的 OpenAI-compatible `/chat/completions` transport，不是 live-provider certification
+- 下游模型已可走 `openai-compatible` 或 OpenRouter；配置示例和本地 stub 不是 live evidence，显式 `--live` runner 只生成 bounded live preflight evidence，不是 provider 质量、SLA 或 gateway 认证
 - 返回契约仍是最小动作字符串
 - 更适合作为流程验证能力，而不是最终生产决策能力
 - 当前领域层与协调器能表达 `failure / conflict / periodic` trigger type
@@ -190,7 +190,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - richer 自动 evidence lookup
 - richer evidence weighting / relation / ranking
 - richer reflection 语义（当前已有最小 `identity_core` / `commitments` 深层修订，但仍不是 richer schema / versioned policy）
-- 更多 provider 类型（Azure、本地模型；OpenRouter live-provider certification 仍未完成）
+- 更多 provider 类型（Azure、本地模型；provider 质量、SLA 和 gateway 认证仍未完成）
 - 持续后台自治运行、独立 daemon、完整自治代理行为
 
 ## 8. 正式接入时需要注意的点

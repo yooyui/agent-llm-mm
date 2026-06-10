@@ -21,6 +21,9 @@ provider = "mock"
 # OpenRouter is an optional supported provider profile. Prefer copying
 # examples/agent-llm-mm.openrouter.example.toml instead of mixing provider
 # profiles in one config. Keep secrets in AGENT_LLM_MM_OPENROUTER_API_KEY.
+# Config examples alone are not live evidence; run
+# ./scripts/provider-live-certification-run.sh --live [config_path] [evidence_root]
+# when you need bounded provider preflight evidence.
 #
 # [model]
 # provider = "openrouter"

@@ -21,8 +21,8 @@
 - `decide_with_snapshot` 已可走 `openai-compatible` 或 OpenRouter provider，但返回契约仍是最小动作字符串
 - 没有远程 HTTP transport
 - 没有 richer evidence lookup / weight / relation
-- 还没有 Azure / 本地模型 provider；OpenRouter 仅完成 OpenAI-compatible transport 本地验证，不是 live-provider certification
-- release evidence index、provider certification preflight、packaging preflight 和 richer memory semantics projection 均为本机只读 / 预检能力，不生成缺失证据、不认证 live provider、不创建安装包，也不代表完整多层 memory 体系
+- 还没有 Azure / 本地模型 provider；OpenRouter 通过 OpenAI-compatible transport 使用，显式 live runner 只生成 provider preflight evidence，不是 provider 质量认证、SLA 或 gateway 认证
+- release evidence index、provider certification preflight、packaging preflight 和 richer memory semantics projection 均为本机只读 / 预检能力，不生成缺失产品证据、不认证 provider 质量、不创建安装包，也不代表完整多层 memory 体系
 
 ## 适合的使用方式
 

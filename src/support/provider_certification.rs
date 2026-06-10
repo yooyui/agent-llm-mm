@@ -91,10 +91,11 @@ pub fn summarize_provider_certification(
     let live_certified = config_preflight_error.is_none() && missing_live_evidence.is_empty();
     let live_certification_status = if live_certified { "passed" } else { "blocked" };
     let non_claims = vec![
-        "not live provider certification".to_string(),
-        "not provider endpoint reachability evidence".to_string(),
+        "not provider quality certification".to_string(),
+        "not provider SLA evidence".to_string(),
+        "not provider gateway certification".to_string(),
         "not live decision quality evidence".to_string(),
-        "not live self-revision evidence".to_string(),
+        "not live self-revision quality evidence".to_string(),
         "not release approval".to_string(),
     ];
     let markdown = render_markdown(
@@ -227,7 +228,7 @@ fn provider_config_shape(config: &AppConfig) -> ProviderConfigShape {
         ModelConfig::OpenAiCompatible(provider) | ModelConfig::OpenRouter(provider) => {
             ProviderConfigShape {
                 base_url: Some(base_url_shape(&provider.base_url)),
-                model: Some(provider.model.clone()),
+                model: Some("<redacted-model>".to_string()),
                 timeout_ms: Some(provider.timeout_ms),
                 credential_configured: !provider.api_key.trim().is_empty(),
             }

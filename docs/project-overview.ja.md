@@ -21,8 +21,8 @@
 - `decide_with_snapshot` は `openai-compatible` または OpenRouter provider を利用できますが、返却契約はまだ最小の action string です
 - リモート HTTP transport はありません
 - richer evidence lookup / weight / relation は未実装です
-- Azure とローカルモデル provider はまだ未実装です。OpenRouter は OpenAI-compatible transport のローカル検証に限定され、live-provider certification ではありません
-- release evidence index、provider certification preflight、packaging preflight、richer memory semantics projection はローカル read-only / preflight 能力です。不足 evidence を生成せず、live provider を認証せず、installer を作成せず、より完全な多層 memory モデルの完成も意味しません
+- Azure とローカルモデル provider はまだ未実装です。OpenRouter は OpenAI-compatible transport を利用し、明示的な live runner は provider preflight evidence だけを生成します。provider quality、SLA、gateway certification ではありません
+- release evidence index、provider certification preflight、packaging preflight、richer memory semantics projection はローカル read-only / preflight 能力です。不足している product evidence を生成せず、provider quality を認証せず、installer を作成せず、より完全な多層 memory モデルの完成も意味しません
 
 ## 適した用途
 

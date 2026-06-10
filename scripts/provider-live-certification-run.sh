@@ -6,12 +6,11 @@ usage() {
   cat >&2 <<'USAGE'
 usage: ./scripts/provider-live-certification-run.sh (--live | --stub-evidence) [config_path] [evidence_root]
 
-Generates explicit provider certification evidence files only when
---stub-evidence is provided. This stub/simulated mode does not call provider
-endpoints and does not claim real live provider certification.
+Generates provider certification evidence files. --live calls the configured
+provider endpoint and writes bounded, redacted evidence. --stub-evidence writes
+explicit stub/simulated evidence that does not satisfy live certification.
 
-Live network certification is not implemented yet; --live and omitted mode
-are rejected by the Rust runner.
+Omitted or conflicting mode is rejected; choose --live or --stub-evidence.
 USAGE
 }
 
@@ -22,12 +21,33 @@ fi
 
 stub_evidence=""
 live_mode=""
-if [[ "${1:-}" == "--stub-evidence" ]]; then
-  stub_evidence="yes"
-  shift
-elif [[ "${1:-}" == "--live" ]]; then
-  live_mode="yes"
-  shift
+mode_count=0
+while [[ $# -gt 0 ]]; do
+  case "${1}" in
+    --stub-evidence)
+      stub_evidence="yes"
+      mode_count=$((mode_count + 1))
+      shift
+      ;;
+    --live)
+      live_mode="yes"
+      mode_count=$((mode_count + 1))
+      shift
+      ;;
+    -*)
+      usage
+      exit 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ "${mode_count}" -ne 1 ]]; then
+  usage
+  echo "choose exactly one mode: --live or --stub-evidence" >&2
+  exit 2
 fi
 
 if [[ $# -gt 2 ]]; then

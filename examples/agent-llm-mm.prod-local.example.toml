@@ -3,6 +3,9 @@
 # Use this for real local data that you intend to keep, inspect, or back up.
 # Keep formal data, manual test data, and demo data in separate database_url
 # files so smoke runs or demos cannot pollute the formal local database.
+# This config template is not live evidence. For openai-compatible provider
+# preflight evidence, run:
+#   ./scripts/provider-live-certification-run.sh --live [config_path] [evidence_root]
 
 transport = "stdio"
 database_url = "sqlite:///absolute/path/to/formal-local/agent-llm-mm.sqlite"

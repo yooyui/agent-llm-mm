@@ -13,6 +13,7 @@ fn main() -> Result<()> {
     let mut config_path = None;
     let mut evidence_root = None;
     let mut stub_evidence = false;
+    let mut live = false;
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -25,10 +26,18 @@ fn main() -> Result<()> {
             "--evidence-root" => {
                 evidence_root = Some(next_path_value(&mut args, "--evidence-root")?)
             }
-            "--live" => {}
+            "--live" => live = true,
             "--stub-evidence" => stub_evidence = true,
             _ => return Err(anyhow!("unknown argument: {arg}")),
         }
+    }
+    if live && stub_evidence {
+        return Err(anyhow!(
+            "choose exactly one mode: --live or --stub-evidence"
+        ));
+    }
+    if !live && !stub_evidence {
+        return Err(anyhow!("missing mode; pass --live or --stub-evidence"));
     }
 
     let config = if let Some(path) = config_path {
@@ -54,7 +63,7 @@ fn main() -> Result<()> {
 
 fn print_usage() {
     eprintln!(
-        "usage: provider_live_certification_run (--live | --stub-evidence) [--config-path <path>] [--evidence-root <path>]\n\nLive provider certification is rejected until real network checks are implemented. Use --stub-evidence only for explicit stub/simulated evidence."
+        "usage: provider_live_certification_run (--live | --stub-evidence) [--config-path <path>] [--evidence-root <path>]\n\n--live calls the configured provider endpoint and writes bounded, redacted evidence. --stub-evidence writes explicit stub/simulated evidence that does not satisfy live certification."
     );
 }
 

@@ -17,7 +17,7 @@
 - 适用场景：可启动本地 MCP 子进程的 AI 客户端集成、研究型 demo、工程验证
 - 当前状态：MVP release gate 已通过，适合以“已验证本地 MVP，进入正式产品化路线”对外说明；正式产品能力仍按产品化 gate 分阶段推进
 - 最近本地验证与产品化 gate 入口：`2026-06-08`
-  - `cargo test -- --list --format terse` 当前枚举 395 个测试；新增 `non_mvp_product_tracks`、`local_alpha_external_evidence`、`provider_live_certification` 和 `packaging_archive` 覆盖非 MVP 产品化 read-only / preflight / evidence 校验切片
+  - `cargo test -- --list --format terse` 当前枚举 400 个测试；新增 `non_mvp_product_tracks`、`local_alpha_external_evidence`、`provider_live_certification` 和 `packaging_archive` 覆盖非 MVP 产品化 read-only / preflight / evidence 校验切片
   - `doctor` 预检返回 `status = ok`
   - `status-sync-check` 已加入本地只读文档漂移检查，用于对齐当前测试总数声明，并阻断已勾选计划项与 reality gate 状态不一致的完成声明
   - Local Alpha product smoke 已有 staging / promote 证据刷新入口；具体候选是否 fresh 仍以当前 evidence root 的 summary 为准
@@ -26,7 +26,7 @@
   - Local Alpha evidence summary 已加入本地只读 gate 状态汇总入口；它会把本地 first-run simulation 与真实 fresh-machine evidence 分成独立 gate，不运行 product smoke、不启动服务、不上传文件、不认证 Local Alpha 完成；当前缺真实 fresh-machine、Windows runtime parity 和人工 release decision 时仍保持 `in_progress`
   - Product readiness checker 已加入候选级本地门禁汇总，会把真实 fresh-machine、Windows parity、release decision、release engineering、remote/team、安全/auth、daemon writes 和产品措辞 gate 缺口保持为 blocked
   - Release evidence index 已加入候选级本地只读索引，可把 Local Alpha evidence summary 与 product readiness gates 合并为 present / missing / not_verified / blocked 的机器可读 JSON/Markdown；它不生成缺失证据、不批准发布、不上传文件、不启动服务
-  - Provider certification preflight 已加入本地只读 provider 配置/证据预检，会保留 OpenRouter / OpenAI-compatible live certification 为 blocked，且输出中不序列化 API key、URL userinfo、path secret 或 query secret
+  - Provider certification preflight 已加入本地只读 provider 配置/证据预检；显式 `--live` runner 可生成 bounded live evidence，preflight 只有在 config 与四类 live evidence 同时满足时才会显示 `live_certified = true`，且输出中不序列化 API key、URL userinfo、path secret、query secret、model id 或 provider payload
   - Packaging preflight 已加入候选级本地只读打包预检，会区分 source-only release soak artifacts 与真实 binary archive / installer / service manager / auto-updater 证据，并在缺失、占位或不完整时保持 blocked
   - Local release soak runner 已加入本地 release evidence 入口；它生成 candidate-specific evidence directory、`compatibility-matrix.json` 和 `release-boundaries.json`，并对发布证据日志做路径形状化和敏感标记扫描；它不生成 Windows runner、真实 fresh-machine、remote/team、daemon writes 或发布认证证据
   - SQLite backup / restore 本地脚本门禁已覆盖备份恢复 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份和拒绝 `..` restore target
@@ -134,10 +134,11 @@
   - 不生成缺失 evidence、不运行 smoke、不启动服务、不上传文件、不写 release decision，也不认证 Local Alpha / Beta / GA
 - provider certification preflight
   - 提供本地只读 provider certification 预检：`./scripts/provider-certification-check.sh [config_path] [evidence_root] [output_dir]`
-  - 校验当前 provider config shape，并列出 live decision path、live self-revision path、provider error handling、redaction review 等 live certification 缺口
+  - 校验当前 provider config shape，并列出 live decision path、live self-revision path、provider error handling、redaction review 等 live evidence preflight 缺口
   - 输出会形状化 provider base URL，并把 URL path 内容整体脱敏；live evidence 文件必须是非空 JSON，且 `provider`、`status = "passed"`、对应 `evidence_kind`、`mode = "live"`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = "passed"` 和带显式 `exit_code = 0` 的成功 command evidence 同时满足才算 present；stub/simulated evidence 会保持 invalid，不会让 `live_certified = true`
-  - 显式 stub runner `./scripts/provider-live-certification-run.sh --stub-evidence [config_path] [evidence_root]` 只生成本地模拟证据并默认标记 `local_only = true`；省略 `--stub-evidence` 的 live mode 会拒绝执行，直到真实 live checks 实现
-  - 该能力不序列化 API key、URL userinfo、path secret 或 query secret，不调用 provider endpoint，也不代表 OpenRouter / OpenAI-compatible live certified
+  - 显式 live evidence runner `./scripts/provider-live-certification-run.sh --live [config_path] [evidence_root]` 只生成 provider preflight 可读取的 evidence files：配置示例本身不是 live evidence，必须显式运行该 runner 才能产生 live preflight evidence；它可以证明本次配置下的 endpoint reachability、decision probe、self-revision parse probe、错误处理和 redaction review provenance，但不证明 provider 输出质量、稳定性、SLA、provider gateway、模型能力、Local Alpha / Beta / GA、production-ready 或 release approval
+  - 显式 stub runner `./scripts/provider-live-certification-run.sh --stub-evidence [config_path] [evidence_root]` 只生成本地模拟证据并默认标记 `local_only = true`；stub/simulated evidence 不能让 `live_certified = true`
+  - 该能力不序列化 API key、URL userinfo、path secret、query secret、model id、request body、response body 或 provider-native payload；即便 preflight 输出 `live_certified = true`，含义也仅限“config preflight 通过且四类 live evidence present”，不代表 OpenRouter / OpenAI-compatible provider 质量认证、provider gateway、Local Alpha / Beta / GA / production-ready 或 release approval
 - packaging preflight
   - 提供候选级本地只读 packaging 预检：`./scripts/packaging-preflight-check.sh <release-candidate> [evidence_root] [output_dir]`
   - 区分 source-only release soak artifacts 与真实 binary archive / installer / service manager / auto-updater evidence
@@ -228,7 +229,7 @@
   - 已保留 provider 枚举与 provider-specific config 结构
   - 当前内建 `mock`、`openai-compatible` 与 `openrouter`
   - `doctor.provider_matrix` 会把 `mock`、`openai-compatible`、`openrouter` 标为 `supported` / configurable；`azure-openai` 与 `local` 仍为 `planned-only` 且不可配置，并输出缺失的 config parser、doctor diagnostics、model adapter、error handling、redaction 和 MCP stdio tests
-  - OpenRouter 的当前支持范围是 OpenAI-compatible `/chat/completions` transport 的本地 stub 验证，不是 live-provider certification
+  - OpenRouter 的当前支持范围是 OpenAI-compatible `/chat/completions` transport；显式 `--live` runner 只生成 provider preflight evidence，不证明 provider 输出质量、provider gateway、SLA 或产品发布状态
 - `self_snapshot`
   - 当前只有统一 `SnapshotBudget`
   - 主要对 evidence 数量做截断
@@ -252,7 +253,7 @@
 - richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / inclusive recency window / limit 的窄化查询；只读 relation projection 已有首片，但独立 evidence kind、weighting 和完整 ranking engine 仍未实现）
 - richer evidence weighting / full ranking engine
 - `identity_core` / `commitments` 的 richer schema、版本化修订与更细策略
-- 更多 provider 类型（如 Azure / 本地模型；OpenRouter live-provider certification 仍未做）
+- 更多 provider 类型（如 Azure / 本地模型；provider 质量认证、SLA / gateway 认证仍未做）
 - 更完整的多层 memory 体系
 - 持续后台自治运行、独立 daemon 调度或完整 self-governing agent 行为
 

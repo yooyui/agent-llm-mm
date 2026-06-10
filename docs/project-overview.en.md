@@ -21,8 +21,8 @@
 - `decide_with_snapshot` can now use an `openai-compatible` or OpenRouter provider, but its output contract is still a minimal action string
 - There is no remote HTTP transport
 - There is no richer evidence lookup / weight / relation yet
-- Azure and local-model providers are not implemented yet; OpenRouter is limited to local OpenAI-compatible transport verification, not live-provider certification
-- The release evidence index, provider certification preflight, packaging preflight, and richer memory semantics projection are local read-only / preflight capabilities; they do not create missing evidence, certify live providers, build installers, or complete the broader multi-layer memory model
+- Azure and local-model providers are not implemented yet; OpenRouter uses the OpenAI-compatible transport, and the explicit live runner only generates provider preflight evidence, not provider quality, SLA, or gateway certification
+- The release evidence index, provider certification preflight, packaging preflight, and richer memory semantics projection are local read-only / preflight capabilities; they do not create missing product evidence, certify provider quality, build installers, or complete the broader multi-layer memory model
 
 ## Best Fit
 

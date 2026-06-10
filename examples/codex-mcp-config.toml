@@ -7,6 +7,9 @@
 # For OpenRouter, copy examples/agent-llm-mm.openrouter.example.toml to a local
 # config file, set AGENT_LLM_MM_OPENROUTER_API_KEY in your shell or Codex env,
 # and point AGENT_LLM_MM_CONFIG below at that local OpenRouter config.
+# This MCP config snippet is not live evidence; run
+# ./scripts/provider-live-certification-run.sh --live [config_path] [evidence_root]
+# when you need bounded provider preflight evidence.
 
 # macOS native shell entrypoint:
 [mcp_servers.agent-llm-mm]

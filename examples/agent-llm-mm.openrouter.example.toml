@@ -1,8 +1,13 @@
 # OpenRouter local profile.
 #
 # This uses the OpenRouter adapter through the OpenAI-compatible chat
-# completions transport. It is a local configuration template only; it is not
-# live-provider certification and must not contain a real API key in git.
+# completions transport. It is a local configuration template only; copying it
+# is not live evidence and does not set live_certified=true. To generate
+# bounded provider preflight evidence, run:
+#   ./scripts/provider-live-certification-run.sh --live [config_path] [evidence_root]
+# A passing preflight is not provider quality, SLA/gateway, release, or
+# production-readiness certification. This file must not contain a real API key
+# in git.
 # Before running doctor/serve with this profile, set:
 #   AGENT_LLM_MM_OPENROUTER_API_KEY
 

@@ -55,7 +55,7 @@
 - `product_completion_read_models`: 15 passed
 - `product_readiness`: 15 passed
 - `provider_config`: 18 passed
-- `provider_live_certification`: 7 passed
+- `provider_live_certification`: 12 passed
 - `release_decision`: 5 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_backup_restore`: 6 passed
@@ -63,7 +63,7 @@
 - `status_sync`: 11 passed
 - `support_bundle`: 35 passed
 
-合计：395 个测试通过。
+合计：400 个测试通过。
 
 ---
 
@@ -131,7 +131,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
     bash -n scripts/provider-certification-check.sh
     bash -n scripts/packaging-preflight-check.sh
     ```
-    这些 preflight 只读取本地 evidence/config shape，不调用 provider endpoint、不生成 installer、不上传文件、不认证 live provider、Local Alpha、Beta、GA 或 production-ready；provider live evidence 需要非空 JSON、匹配 provider、`status = "passed"`、expected `evidence_kind`、`mode = "live"`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = "passed"` 和带显式 `exit_code = 0` 的成功 command evidence；packaging archive evidence 需要预期 archive 全部存在、非空、可解析为对应 `.tar.gz` / `.zip` archive，并与 manifest 的 name / size / SHA-256 匹配
+    这些 preflight 只读取本地 evidence/config shape；provider `--live` runner 只生成 provider preflight evidence files，用于记录本次配置下的 endpoint reachability、decision probe、self-revision parse probe、错误处理和 redaction review provenance；它不生成 installer、不上传文件、不认证 provider 质量、provider gateway、Local Alpha、Beta、GA、production-ready 或 release approval；provider live evidence 需要非空 JSON、匹配 provider、`status = "passed"`、expected `evidence_kind`、`mode = "live"`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = "passed"` 和带显式 `exit_code = 0` 的成功 command evidence；packaging archive evidence 需要预期 archive 全部存在、非空、可解析为对应 `.tar.gz` / `.zip` archive，并与 manifest 的 name / size / SHA-256 匹配
 
 如果当前机器没有 `pwsh`，PowerShell runtime 行为测试会跳过；这种情况下只代表 Rust 测试覆盖了 PowerShell 脚本文本契约和 no-clobber 静态断言，Windows runner 或 Windows 实机验证仍需单独记录。
 
@@ -667,7 +667,7 @@ cargo test --test first_run_bootstrap_smoke -v
 
 ---
 
-### 6.14 Provider live certification evidence runner
+### 6.14 Provider live preflight evidence runner
 
 如果改动涉及 provider certification preflight、live evidence schema、provider URL / credential redaction，或显式 provider evidence runner，需要补跑：
 
@@ -679,7 +679,9 @@ cargo test --test non_mvp_product_tracks provider_certification -v
 
 通过标准：
 
-- 省略 `--stub-evidence` 或显式传入 `--live` 的 live mode 必须失败并返回 live-not-implemented 错误，不能伪装成 live check，也不能把 `--live` 当作 config path
+- 配置示例本身不是 live evidence；需要 live preflight evidence 时必须显式运行 runner
+- 显式传入 `--live` 时，runner 只可生成 bounded live evidence files，不可输出 provider-native payload 或声明 provider 质量、SLA、provider gateway、Local Alpha、Beta、GA、production-ready、production readiness 或 release approval
+- 省略或同时传入 `--live` / `--stub-evidence` 必须被拒绝，不能伪装成通过的 live check，也不能把第二个 mode flag 当作 config path
 - `--stub-evidence` 只生成 stub/simulated evidence，文件标记 `local_only = true`，且 preflight 仍保持 `live_certified = false`
 - live evidence 只有同时满足 provider、`status = passed`、expected `evidence_kind`、`mode = live`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = passed`，以及 `name = provider-live-certification`、`command = scripts/provider-live-certification-run.sh --live` 或 `command = ./scripts/provider-live-certification-run.sh --live`、显式 `exit_code = 0` 的成功 command evidence 才算 present；即便 live evidence complete，config preflight 失败时 `live_certified` 仍必须 blocked
 - 输出不得包含 API key、URL userinfo、URL path 内容、query secret、model id、request body 或 response body

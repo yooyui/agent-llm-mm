@@ -78,7 +78,7 @@
 ### 1. `decide_with_snapshot`
 
 - gate 是真的
-- 已可走 `openai-compatible` 或 OpenRouter provider；OpenRouter 当前只表示本地 stub 验证的 OpenAI-compatible `/chat/completions` transport，不是 live-provider certification
+- 已可走 `openai-compatible` 或 OpenRouter provider；配置示例和本地 stub 不是 live evidence，显式 `--live` runner 只生成 bounded live preflight evidence，不是 provider 质量、SLA 或 gateway 认证
 - 返回契约仍是最小动作字符串
 
 因此不应把它写成“完整 AI 决策引擎”。

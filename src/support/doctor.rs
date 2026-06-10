@@ -810,7 +810,7 @@ fn system_phase_coverage() -> Vec<SystemPhaseCoverage> {
             ["provider_matrix"],
             [
                 "Azure OpenAI and local providers remain planned-only",
-                "OpenRouter live-provider certification is not implemented",
+                "live provider evidence remains preflight-only and does not certify provider quality",
                 "provider gateway behavior is not implemented",
             ],
             [

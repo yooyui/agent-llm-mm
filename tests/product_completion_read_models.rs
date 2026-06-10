@@ -700,7 +700,7 @@ async fn doctor_exposes_read_only_system_layer_report_with_architecture_blockers
         "real fresh-machine evidence",
         "Windows runtime parity",
         "human release decision",
-        "OpenRouter live-provider certification",
+        "live provider evidence remains preflight-only",
         "provider gateway behavior",
         "daemon-triggered writes",
         "remote write admin",

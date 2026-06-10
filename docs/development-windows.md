@@ -46,7 +46,7 @@ Copy-Item .\examples\agent-llm-mm.dev.example.toml .\agent-llm-mm.local.toml
 
 - `examples/agent-llm-mm.dev.example.toml`: 本地开发和手工测试，默认 `provider = "mock"`，dashboard disabled。
 - `examples/agent-llm-mm.prod-local.example.toml`: 正式本地数据，dashboard 只监听 `127.0.0.1`，daemon disabled；复制后必须替换 `database_url` 和 provider 占位值。
-- `examples/agent-llm-mm.openrouter.example.toml`: OpenRouter 本地配置模板；默认通过 `api_key_env = "AGENT_LLM_MM_OPENROUTER_API_KEY"` 读取本机环境变量，通过 OpenAI-compatible `/chat/completions` transport 使用，不代表真实 live-provider certification。
+- `examples/agent-llm-mm.openrouter.example.toml`: OpenRouter 本地配置模板；默认通过 `api_key_env = "AGENT_LLM_MM_OPENROUTER_API_KEY"` 读取本机环境变量，通过 OpenAI-compatible `/chat/completions` transport 使用；配置示例本身不是 live evidence，必须显式运行 `provider-live-certification-run.sh --live` 才能生成 bounded live preflight evidence。
 - `examples/agent-llm-mm.demo.example.toml`: self-revision demo runner 专用，通常不要手工复制为日常配置。
 
 `examples/agent-llm-mm.example.toml` 只是通用入口说明，不再承载所有用途。然后编辑 `agent-llm-mm.local.toml`：
@@ -118,6 +118,7 @@ pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 如果判断 Local Product Alpha / product alpha 口径，还必须改用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)；普通 `doctor` 通过不等于 Local Alpha 完成。
 当前 macOS 本机验证环境没有 `pwsh`，所以 PowerShell `bootstrap-local` 行为需要 Windows runner 或 Windows 实机补充 runtime parity 证据；Rust bootstrap 测试仍保留脚本文本契约和 no-clobber 静态断言。
 当前 release soak runner 是 bash 脚本：`./scripts/release-soak-local.sh <candidate-name> [config_path]`。在 Windows 上请从 Git Bash、WSL 或等价 bash 环境运行；它只生成本机候选证据，不替代 Windows runner parity、真实 fresh-machine、安装包或发布认证证据。
+当前 provider certification preflight / live evidence runner 也是 bash 脚本：`./scripts/provider-certification-check.sh [config_path] [evidence_root] [output_dir]` 和 `./scripts/provider-live-certification-run.sh --live [config_path] [evidence_root]`。在 Windows 上请从 Git Bash、WSL 或等价 bash 环境运行；配置示例本身不是 live evidence，必须显式运行 `--live` runner 才能产生 preflight 可读取的 live evidence。`--live` runner 只写 provider preflight evidence files，记录本次配置下的 endpoint reachability、decision probe、self-revision parse probe、错误处理和 redaction review provenance；即便 preflight 显示 `live_certified = true`，也只表示 config preflight 通过且四类 live evidence present，不证明 provider 输出质量、SLA、provider gateway、Local Alpha、Beta、GA、production-ready、production readiness 或 release approval。`--stub-evidence` 只生成本地模拟证据，不能让 `live_certified = true`。
 
 ## 7.1 本地接入排障
 

@@ -173,7 +173,7 @@
 - [examples/agent-llm-mm.demo.example.toml](../examples/agent-llm-mm.demo.example.toml)
   - self-revision demo runner 使用的本地 deterministic provider 配置样例
 - [examples/agent-llm-mm.openrouter.example.toml](../examples/agent-llm-mm.openrouter.example.toml)
-  - OpenRouter 本地配置样例；通过 OpenAI-compatible `/chat/completions` transport 使用，不代表真实 live-provider certification
+  - OpenRouter 本地配置样例；通过 OpenAI-compatible `/chat/completions` transport 使用；配置示例本身不是 live evidence，显式 `--live` runner 才能生成 bounded live preflight evidence
 
 ## 7. 原始资料与历史快照
 

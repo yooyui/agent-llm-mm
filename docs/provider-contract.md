@@ -152,7 +152,10 @@ If the new provider adds provider-specific parsing or transport behavior, add pr
 
 - This checklist does not add Azure OpenAI, local gateway, or any other future provider.
 - The provider matrix does not make `azure-openai`, `local`, or any other future provider configurable or runnable.
-- OpenRouter support is limited to the OpenAI-compatible chat completions transport verified against local stubs; it is not live-provider certification.
+- OpenRouter support is limited to the OpenAI-compatible chat completions transport.
+  Config examples or local stub verification are not live evidence; users must run
+  the explicit live runner before the provider preflight can count live evidence
+  or set the narrow `live_certified = true` flag.
 - Provider certification preflight remains local and read-only. A live evidence
   file is only present when provider, `status = passed`, expected
   `evidence_kind`, `mode = live`, non-empty `generated_at`,
@@ -167,5 +170,18 @@ If the new provider adds provider-specific parsing or transport behavior, add pr
   those live metadata/provenance fields must stay invalid. Complete live
   evidence still must not set `live_certified = true` unless config preflight
   also passes.
+- Provider certification summary may report redacted provider config shape such
+  as base URL host shape, timeout, and credential-configured boolean, but model
+  ids are serialized only as `<redacted-model>`.
+- `scripts/provider-live-certification-run.sh --live` is a bounded evidence
+  generator for the preflight above. It may call the configured provider only
+  to record endpoint reachability, a decision probe, a self-revision parse
+  probe, error-handling provenance, and redaction-review provenance. It must
+  not serialize API keys, URL userinfo, URL path content, query values, model
+  ids, request bodies, response bodies, or provider-native payloads. A passing
+  run may satisfy the bounded preflight evidence slots, but it is not provider
+  quality certification, SLA or gateway certification, Local Alpha approval,
+  Beta, GA, production-ready, release approval, production readiness, or proof
+  that model decisions/self-revisions are useful.
 - This checklist does not turn the project into a remote provider service or production credential manager.
 - This checklist does not change the MCP tool contract, dashboard boundary, or automatic self-revision runtime hooks.
