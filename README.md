@@ -1,41 +1,33 @@
 # MCP Memory Ledger
 
-Evidence-gated memory and self-revision for local AI agents.
+面向本地 AI Agent 的证据门控记忆与自我修订层。
 
-MCP Memory Ledger is a local-first Rust MCP `stdio` memory demo for AI clients. It uses SQLite persistence, provider-driven model loading, `openai-compatible` / OpenRouter adapters, and a trigger-ledger-backed automatic self-revision MVP.
+MCP Memory Ledger 是一个本地优先的 Rust MCP `stdio` 记忆服务 demo，面向可启动本地 MCP 子进程的 AI 客户端。它使用 SQLite 持久化交互与证据历史，支持配置驱动的 provider 加载、`openai-compatible` / OpenRouter 接入，以及基于 trigger ledger 的自动自我修订 MVP。
 
-It is designed for developers exploring local agent memory, auditable self-revision, MCP integrations, and evidence-gated AI client behavior. It is not a production-grade autonomous agent platform yet.
+这个项目适合用于探索本地 Agent 记忆、可审计自我修订、MCP 集成和证据门控的 AI 客户端行为。它还不是生产级自治 Agent 平台，公开说明应继续保持 MVP / 技术 demo 边界。
 
-Compatibility note: the current Rust crate, binary, scripts, config examples, and some historical docs still use the technical identifier `agent_llm_mm` / `agent-llm-mm`. Treat MCP Memory Ledger as the project name and `agent_llm_mm` as the current implementation package name.
+兼容说明：当前 Rust crate、二进制、脚本、配置样例和部分历史文档仍使用技术标识 `agent_llm_mm` / `agent-llm-mm`。对外项目名统一使用 MCP Memory Ledger，`agent_llm_mm` 仅作为当前实现层包名保留。
 
-## Quick Links
+## 快速入口
 
-- [Positioning and SEO/GEO guide](docs/positioning.md)
-- [FAQ](docs/faq.md)
-- [GitHub rename guide](docs/github-rename-guide.md)
-- [项目说明（中文）](docs/project-overview.zh-CN.md)
-- [Project Overview (English)](docs/project-overview.en.md)
-- [プロジェクト概要（日本語）](docs/project-overview.ja.md)
+- [项目定位与搜索优化口径](docs/positioning.md)
+- [常见问题](docs/faq.md)
+- [GitHub 改名说明](docs/github-rename-guide.md)
+- [中文项目说明](docs/project-overview.zh-CN.md)
+- [英文项目说明](docs/project-overview.en.md)
+- [日文项目说明](docs/project-overview.ja.md)
 
-## Why It Exists
+## 为什么做这个
 
-Most agent memory systems focus on storing and retrieving context. MCP Memory Ledger focuses on a narrower problem: how a local AI agent can revise durable claims with explicit evidence, bounded triggers, inspectable diagnostics, and conservative safety gates.
+多数 Agent 记忆系统会优先解决“存储与检索上下文”。MCP Memory Ledger 聚焦一个更窄的问题：本地 AI Agent 如何在明确证据、受限触发器、可检查诊断和保守安全门禁之下修订持久化 claim。
 
-Use it when you want to experiment with:
+适合用它实验：
 
-- Local MCP memory for AI clients
-- SQLite-backed interaction and evidence history
-- Self snapshots and governed self-revision
-- Evidence-gated memory updates instead of opaque prompt-only memory
-- Local-first release gates, provider preflight checks, and support bundle boundaries
-
-## SEO / GEO Summary
-
-- Project name: MCP Memory Ledger
-- Current implementation package: `agent_llm_mm`
-- Repository slug: `mcp-memory-ledger`
-- Short description: Local-first MCP memory layer for AI agents with SQLite persistence and evidence-gated self-revision.
-- Suggested GitHub topics: `mcp`, `model-context-protocol`, `agent-memory`, `ai-agents`, `llm-memory`, `self-revision`, `local-first`, `sqlite`, `rust`, `openai-compatible`
+- 面向 AI 客户端的本地 MCP 记忆
+- SQLite 支撑的交互与证据历史
+- 自我快照与受治理的自我修订
+- 证据门控的记忆更新，而不是仅靠 prompt 的黑盒记忆
+- 本地优先的发布门禁、provider 预检和支持包边界
 
 ## 项目介绍
 
@@ -63,13 +55,13 @@ Use it when you want to experiment with:
 - [当前实现状态](docs/project-status.md)
 - [进度追踪对照表](docs/progress-tracker.md)
 - [发布准备评估](docs/release-readiness.md)
-- [Release Gate Runbook](docs/release-gate.md)
-- [Local Product Alpha PRD](docs/product/prd-local-alpha.md)
+- [发布门禁运行手册](docs/release-gate.md)
+- [Local Product Alpha 产品需求说明](docs/product/prd-local-alpha.md)
 - [Local Alpha 数据生命周期](docs/product/data-lifecycle.md)
 - [产品化二次跟进现实 Gate](docs/product/follow-up-reality-gates.md)
-- [Structured Decision Protocol](docs/product/structured-decision-protocol.md)
-- [Provider Readiness Checklist](docs/provider-contract.md)
-- [Release Engineering](docs/product/release-engineering.md)
+- [结构化决策协议](docs/product/structured-decision-protocol.md)
+- [Provider 就绪检查清单](docs/provider-contract.md)
+- [发布工程说明](docs/product/release-engineering.md)
 - [正式产品化路线图](docs/superpowers/plans/2026-05-09-productization-roadmap.md)
 - [正式产品化 12 项后续工作规划](docs/superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
 - [远程 / 团队模式边界](docs/product/remote-team-mode-boundary.md)
@@ -345,14 +337,14 @@ Use it when you want to experiment with:
 - [进度追踪对照表](docs/progress-tracker.md)
 - [未来路线图](docs/roadmap.md)
 - [发布准备评估](docs/release-readiness.md)
-- [Release Gate Runbook](docs/release-gate.md)
-- [Local Product Alpha PRD](docs/product/prd-local-alpha.md)
+- [发布门禁运行手册](docs/release-gate.md)
+- [Local Product Alpha 产品需求说明](docs/product/prd-local-alpha.md)
 - [Local Alpha 数据生命周期](docs/product/data-lifecycle.md)
 - [产品化二次跟进现实 Gate](docs/product/follow-up-reality-gates.md)
-- [Release Engineering](docs/product/release-engineering.md)
+- [发布工程说明](docs/product/release-engineering.md)
 - [远程 / 团队模式边界](docs/product/remote-team-mode-boundary.md)
 - [多层 Memory 路线图](docs/product/memory-layering-roadmap.md)
-- [Physics-Informed Architecture Design](docs/superpowers/specs/2026-05-28-physics-informed-architecture-design.md)
+- [Physics-Informed 架构设计](docs/superpowers/specs/2026-05-28-physics-informed-architecture-design.md)
 - [正式产品化 12 项后续工作规划](docs/superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
 - [协作说明](CONTRIBUTING.md)
 - [macOS 开发与接入指南](docs/development-macos.md)
@@ -362,13 +354,13 @@ Use it when you want to experiment with:
 
 - [本机 MCP 接入说明](docs/local-mcp-integration-2026-03-26.md)
 - [测试指南](docs/testing-guide-2026-03-24.md)
-- [Release Gate Runbook](docs/release-gate.md)
-- [Release Engineering](docs/product/release-engineering.md)
+- [发布门禁运行手册](docs/release-gate.md)
+- [发布工程说明](docs/product/release-engineering.md)
 - [Local Alpha 数据生命周期](docs/product/data-lifecycle.md)
 - [远程 / 团队模式边界](docs/product/remote-team-mode-boundary.md)
 - [本地与远程威胁模型](docs/security/threat-model-local-and-remote.md)
-- [Self-Revision Demo Guide](docs/self-revision-demo-guide-2026-04-24.md)
-- [Self-Revision Demo Report](docs/reports/self-revision-demo-2026-04-24.md)
+- [Self-Revision demo 指南](docs/self-revision-demo-guide-2026-04-24.md)
+- [Self-Revision demo 报告](docs/reports/self-revision-demo-2026-04-24.md)
 - [Codex MCP 配置样例](examples/codex-mcp-config.toml)
 - [Provider 配置样例](examples/agent-llm-mm.example.toml)
 - [OpenRouter 配置样例](examples/agent-llm-mm.openrouter.example.toml)
@@ -394,12 +386,12 @@ Use it when you want to experiment with:
 - `decide_with_snapshot` 已可走真实 provider，但当前仍是最小动作协议，不建议把它表述成完整决策引擎。
 - 当前 automatic self-revision 是带 ledger、证据门槛和慢更新约束的 MVP；它仍然是本地 `stdio` memory demo，不是完整自治代理系统。
 
-## Acknowledgements
+## 致谢
 
-This repository was developed through iterative implementation and discussion with OpenAI Codex. Thanks to OpenAI for the tooling and research ecosystem that made this workflow possible.
+本仓库是在与 OpenAI Codex 的多轮讨论、实现、复核和文档整理中逐步完成的。感谢 OpenAI 提供的工具和研究生态，让这种协作式开发流程成为可能。
 
-## License
+## 许可证
 
-This repository is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+本仓库采用 Apache License 2.0，详见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。
 
 Copyright 2026 yooyui
