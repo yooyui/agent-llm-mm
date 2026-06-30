@@ -1,21 +1,28 @@
 # 文档总览
 
-本文件用于把当前仓库里的文档分成两层：
+本页整理 MCP Memory Ledger 的主要文档入口，方便按使用目的快速找到对应材料：
 
-- 稳定入口文档：适合放到 GitHub 给协作者快速理解当前项目
-- 原始资料与历史快照：保留研究过程、实现复核和阶段性判断
+- 首页、快速开始与当前状态
+- 本地接入、验证、发布和产品边界
+- 设计记录、历史资料和后续路线图
 
 ## 1. 一句话说明
 
 `agent_llm_mm` 是一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载、`openai-compatible` / OpenRouter 模型接入，以及 trigger-ledger-backed automatic self-revision MVP。
 
-## 2. 多语言项目说明
+## 2. 多语言首页
+
+- [English README](../README.md)
+- [中文 README](README.zh-CN.md)
+- [日本語 README](README.ja.md)
+
+GitHub 默认首页使用英文；中文和日文通过顶部语言入口切换，避免首页多语言混排。
+
+补充项目说明：
 
 - [project-overview.zh-CN.md](project-overview.zh-CN.md)
 - [project-overview.en.md](project-overview.en.md)
 - [project-overview.ja.md](project-overview.ja.md)
-
-这些文件适合先快速理解项目，再决定是否深入到状态、路线图和实现细节。
 
 ## 3. 项目介绍与状态入口
 
@@ -175,16 +182,16 @@
 - [examples/agent-llm-mm.openrouter.example.toml](../examples/agent-llm-mm.openrouter.example.toml)
   - OpenRouter 本地配置样例；通过 OpenAI-compatible `/chat/completions` transport 使用；配置示例本身不是 live evidence，显式 `--live` runner 才能生成 bounded live preflight evidence
 
-## 7. 原始资料与历史快照
+## 7. 设计记录与历史资料
 
-### 原始讨论资料
+### 早期讨论记录
 
 - [llm-agent-memory-self-dialogue-2026-03-23.zh-CN.md](llm-agent-memory-self-dialogue-2026-03-23.zh-CN.md)
   - 原始讨论的整理稿 / 提炼稿
 - [llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md](llm-agent-memory-self-dialogue-raw-log-2026-03-23.zh-CN.md)
   - 逐轮原始日志，保留上下文和表达顺序
 
-### 历史实现复核
+### 早期状态记录
 
 - [current-work-2026-03-24.md](current-work-2026-03-24.md)
   - 较早阶段的实现状态快照
