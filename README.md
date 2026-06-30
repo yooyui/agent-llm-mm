@@ -1,14 +1,41 @@
-# agent_llm_mm
+# MCP Memory Ledger
 
-## 一句话说明
+Evidence-gated memory and self-revision for local AI agents.
 
-一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载、`openai-compatible` / OpenRouter 模型接入，以及 trigger-ledger-backed automatic self-revision MVP。
+MCP Memory Ledger is a local-first Rust MCP `stdio` memory demo for AI clients. It uses SQLite persistence, provider-driven model loading, `openai-compatible` / OpenRouter adapters, and a trigger-ledger-backed automatic self-revision MVP.
 
-## 主多语言文档
+It is designed for developers exploring local agent memory, auditable self-revision, MCP integrations, and evidence-gated AI client behavior. It is not a production-grade autonomous agent platform yet.
 
+Compatibility note: the current Rust crate, binary, scripts, config examples, and some historical docs still use the technical identifier `agent_llm_mm` / `agent-llm-mm`. Treat MCP Memory Ledger as the project name and `agent_llm_mm` as the current implementation package name.
+
+## Quick Links
+
+- [Positioning and SEO/GEO guide](docs/positioning.md)
+- [FAQ](docs/faq.md)
+- [GitHub rename guide](docs/github-rename-guide.md)
 - [项目说明（中文）](docs/project-overview.zh-CN.md)
 - [Project Overview (English)](docs/project-overview.en.md)
 - [プロジェクト概要（日本語）](docs/project-overview.ja.md)
+
+## Why It Exists
+
+Most agent memory systems focus on storing and retrieving context. MCP Memory Ledger focuses on a narrower problem: how a local AI agent can revise durable claims with explicit evidence, bounded triggers, inspectable diagnostics, and conservative safety gates.
+
+Use it when you want to experiment with:
+
+- Local MCP memory for AI clients
+- SQLite-backed interaction and evidence history
+- Self snapshots and governed self-revision
+- Evidence-gated memory updates instead of opaque prompt-only memory
+- Local-first release gates, provider preflight checks, and support bundle boundaries
+
+## SEO / GEO Summary
+
+- Project name: MCP Memory Ledger
+- Current implementation package: `agent_llm_mm`
+- Repository slug: `mcp-memory-ledger`
+- Short description: Local-first MCP memory layer for AI agents with SQLite persistence and evidence-gated self-revision.
+- Suggested GitHub topics: `mcp`, `model-context-protocol`, `agent-memory`, `ai-agents`, `llm-memory`, `self-revision`, `local-first`, `sqlite`, `rust`, `openai-compatible`
 
 ## 项目介绍
 

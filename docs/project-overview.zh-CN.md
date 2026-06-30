@@ -1,8 +1,10 @@
-# 项目说明
+# MCP Memory Ledger 项目说明
 
 ## 简述
 
-`agent_llm_mm` 是一个 Rust 编写的本机 MCP `stdio` 服务，用于验证 AI 客户端里的长期记忆 / 自我快照 / 反思修订最小闭环。当前版本以 SQLite 为持久化基础，更适合作为技术 demo、集成验证仓库和研究型原型，而不是完整产品。
+MCP Memory Ledger 是一个 Rust 编写的本机 MCP `stdio` memory demo，用于验证 AI 客户端里的长期记忆 / 自我快照 / 反思修订最小闭环。当前版本以 SQLite 为持久化基础，更适合作为技术 demo、集成验证仓库和研究型原型，而不是完整产品。
+
+兼容说明：当前 Rust crate、二进制、脚本、配置样例和部分历史文档仍使用技术标识 `agent_llm_mm` / `agent-llm-mm`。对外项目名统一使用 MCP Memory Ledger。
 
 ## 当前范围
 

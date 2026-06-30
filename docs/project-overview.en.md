@@ -1,8 +1,10 @@
-# Project Overview
+# MCP Memory Ledger Project Overview
 
 ## Summary
 
-`agent_llm_mm` is a Rust-based local MCP `stdio` server that validates a minimal loop for long-term memory, self-snapshot construction, and reflection. The current version uses SQLite for persistence and is best described as a technical demo, integration prototype, or research-oriented MVP rather than a complete product.
+MCP Memory Ledger is a Rust-based local MCP `stdio` memory demo that validates a minimal loop for long-term memory, self-snapshot construction, and reflection. The current version uses SQLite for persistence and is best described as a technical demo, integration prototype, or research-oriented MVP rather than a complete product.
+
+Compatibility note: the current Rust crate, binary, scripts, configuration examples, and some historical docs still use the technical identifier `agent_llm_mm` / `agent-llm-mm`. Use MCP Memory Ledger as the public project name.
 
 ## Current Scope
 
