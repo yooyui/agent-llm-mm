@@ -41,7 +41,7 @@ Compatibility note: the current Rust crate, binary, scripts, configuration examp
 
 As of `2026-06-08`:
 
-- `cargo test -- --list --format terse` currently enumerates 395 tests
+- `cargo test -- --list --format terse` currently enumerates 400 tests
 - `doctor` returns `status = ok`
 
 ## Acknowledgement

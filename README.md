@@ -13,7 +13,7 @@ The current project is best understood as a technical MVP for local agent memory
 - **Local MCP memory service**: exposes `ingest_interaction`, `build_self_snapshot`, `decide_with_snapshot`, and `run_reflection` over MCP `stdio`.
 - **SQLite persistence**: stores events, claims, evidence, reflection audits, trigger ledger entries, and operation logs.
 - **Evidence-gated self-revision**: claim, identity, and commitment updates must be backed by explicit evidence and governance rules. `run_reflection` remains the only durable write path for identity, commitment, and reflection changes.
-- **Observable local diagnostics**: includes a read-only dashboard, `doctor` preflight checks, operation-log lookup, and a redacted support-bundle generator.
+- **Observable local diagnostics**: includes a read-only HTTP surface, operation-log lookup, and a redacted support-bundle generator. The current `doctor` runtime check can create, migrate, and seed the configured SQLite database, so it must not be treated as a no-write inspection until the planned command split lands.
 - **Provider integration**: supports `mock`, `openai-compatible`, and OpenRouter configuration paths. Provider secrets should stay in private local config or environment variables.
 - **Local release gates**: includes read-only checks for local alpha evidence, provider preflight, packaging preflight, and release evidence summaries. These scripts prove current boundaries; they do not publish or certify a release.
 
@@ -95,20 +95,25 @@ Implemented:
 
 Partially implemented:
 
+- `build_self_snapshot` is not yet a trustworthy namespace-scoped read model: it aggregates store-wide claims, event references, and episode references, then applies a budget.
 - `decide_with_snapshot` still uses an action-string contract and is not a full decision engine.
+- The decision gate checks caller-provided commitments and the requested action; it does not yet bind to a server-created snapshot or re-check the provider-selected action.
 - Episodes are currently lightweight projections, not a complete autobiographical memory model.
+- Evidence relation, episode summary, and memory-layer projections are not yet unified behind a runtime memory read interface.
 - Provider live evidence proves configuration and connectivity only. It does not prove model quality, SLA, or production readiness.
 - Local alpha gates still depend on external evidence such as a real fresh-machine run, Windows parity, and a human release decision.
 
 Not implemented:
 
 - Full memory layering
+- User-facing scoped memory search, record lookup, provenance history, and audited correction tools
 - Richer evidence ranking / weighting
+- Versioned transactional schema migrations and a no-write doctor mode
 - Production-grade remote, team, or multi-tenant mode
 - Daemon write capabilities and autonomous background operation
 - Installers, service managers, auto-updaters, and release certification
 
-See [project status](docs/project-status.md) and [roadmap](docs/roadmap.md) for the complete implementation state.
+See [project status](docs/project-status.md), the [roadmap](docs/roadmap.md), and the [active 2026-07-10 project plan](docs/plans/2026-07-10-product-replan.md) for the current implementation boundary and execution order.
 
 ## Documentation
 
@@ -122,11 +127,12 @@ See [project status](docs/project-status.md) and [roadmap](docs/roadmap.md) for 
 - [Release gate runbook](docs/release-gate.md)
 - [Local Alpha PRD](docs/product/prd-local-alpha.md)
 - [Provider contract](docs/provider-contract.md)
-- [Document map](docs/document-map.md)
+- [Active project plan](docs/plans/2026-07-10-product-replan.md)
+- [Document map (Chinese)](docs/document-map.md)
 
 ## Verification
 
-As of `2026-06-08`, `cargo test` passes with 400 tests.
+As of `2026-07-10`, the full `cargo test` run passes and the test list contains 400 tests.
 
 Common local checks:
 

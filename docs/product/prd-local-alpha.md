@@ -2,9 +2,11 @@
 
 ## 1. 产品定位
 
-`agent_llm_mm` 的 Local Product Alpha 是 validated local MVP 之后的第一阶段产品化目标。
+MCP Memory Ledger 的 Local Product Alpha 是 validated local MVP 之后的第一阶段产品化目标。`agent_llm_mm` 只是当前 Rust crate、binary 和配置兼容标识。
 
 当前仓库的 MVP release gate 已经通过，项目可以表述为“已验证本地 MVP，进入正式产品化路线”。但 Local Product Alpha 仍需按本 PRD 和后续 product alpha gate 完成；在该 gate 通过前，不能声明 GA、生产级完整自治、远程团队服务或完整 self-governance agent。
+
+自 `2026-07-10` 起，具体执行顺序以 [全新项目规划](../plans/2026-07-10-product-replan.md) 为准：先完成 Truth and Safety 与 Trustworthy Recall，再进入本 PRD 的真实 Local Alpha evidence gate。
 
 Local Product Alpha 的目标是让一个真实本机用户能够安装、配置、运行、检查、备份并排查这个本地 MCP `stdio` memory 服务，同时继续保持 `run_reflection` 作为 identity / commitments 的唯一 durable write path。
 

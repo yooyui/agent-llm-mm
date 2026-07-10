@@ -1,4 +1,4 @@
-# Self-Agent MCP 测试指南（2026-03-24，按 2026-06-08 fresh 验证更新）
+# Self-Agent MCP 测试指南（2026-03-24，按 2026-07-10 fresh 验证更新）
 
 ## 1. 目标
 
@@ -28,7 +28,7 @@
 
 ## 2. 当前测试基线
 
-截至 `2026-06-08`，`cargo test -- --list --format terse` 当前枚举测试摘要如下：
+截至 `2026-07-10`，完整 `cargo test` 已通过，测试清单摘要如下：
 
 - `lib unit tests`: 9 passed
 - `application_use_cases`: 25 passed
@@ -45,17 +45,17 @@
 - `evidence_query_dto`: 4 passed
 - `failure_modes`: 36 passed
 - `first_run_bootstrap_smoke`: 4 passed
-- `local_alpha_external_evidence`: 7 passed
+- `local_alpha_external_evidence`: 8 passed
 - `local_alpha_release_evidence`: 20 passed
 - `mcp_stdio`: 46 passed
 - `non_mvp_product_tracks`: 8 passed
 - `openai_compatible_model`: 11 passed
 - `operation_log`: 9 passed
-- `packaging_archive`: 7 passed
+- `packaging_archive`: 11 passed
 - `product_completion_read_models`: 15 passed
 - `product_readiness`: 15 passed
 - `provider_config`: 18 passed
-- `provider_live_certification`: 12 passed
+- `provider_live_certification`: 15 passed
 - `release_decision`: 5 passed
 - `self_revision_demo_runner`: 2 passed
 - `sqlite_backup_restore`: 6 passed
@@ -64,6 +64,11 @@
 - `support_bundle`: 35 passed
 
 合计：400 个测试通过。
+
+当前静态检查基线并非全绿：在现用 toolchain 下，
+`cargo clippy --all-targets --all-features -- -D warnings` 会在
+`tests/provider_live_certification.rs:925` 触发
+`clippy::collapsible_if`。在该 warning 修复前，不得把候选版本描述为通过完整质量门禁。
 
 ---
 

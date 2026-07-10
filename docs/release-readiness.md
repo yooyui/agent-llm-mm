@@ -1,14 +1,14 @@
-# 发布准备评估
+# 下一候选版本准备评估
 
 ## 结论
 
-当前 demo 可以发布到 GitHub，但建议定位为：
+仓库已经公开。当前分支下一候选版本仍只能按以下口径评估：
 
 - 技术 demo
 - research-oriented MVP
 - local MCP integration prototype
 
-发布前执行口径见 [Release Gate](release-gate.md)。该 gate 只覆盖本机 Rust MCP `stdio` technical demo / MVP 的最低发布核验，不代表 production autonomy、remote administration、multi-tenant deployment 或 background daemon readiness。
+下一次 tag / candidate 前的执行口径见 [Release Gate](release-gate.md)。该 gate 只覆盖本机 Rust MCP `stdio` technical demo / MVP 的最低核验，不代表 Local Alpha、production autonomy、remote administration、multi-tenant deployment 或 background daemon readiness。
 
 产品化阶段的发布工程规则见 [Release Engineering](product/release-engineering.md)。第一阶段 release artifact 采用 source-only tag 或同等保守的源码形态；不要把它描述为安装包、托管服务、Beta、GA 或 production-ready 交付。
 
@@ -18,9 +18,9 @@
 - 完整 self-agent memory system
 - 已接入真实模型的成熟决策引擎
 
-## 公开仓库附加说明
+## 公开仓库口径
 
-如果本仓库以公开仓库形式发布，当前这套文档口径是成立的：
+当前公开仓库应继续维持以下口径：
 
 - 它明确承认这是一个 MVP / demo
 - 它没有把最小 provider 集成包装成完整产品能力
@@ -33,7 +33,7 @@
 - 当前边界
 - 开发方法
 
-## 为什么现在可以发布
+## 为什么当前 source-only snapshot 可以继续公开
 
 ### 1. 工程闭环已经存在
 
@@ -56,10 +56,12 @@
 
 ### 3. 自动化验证已经存在
 
-截至 `2026-06-08` 的本地验证结果：
+当前可确认的验证基线：
 
-- `cargo test -- --list --format terse` 当前枚举 395 个测试
-- `doctor` 返回 `status = ok`
+- `2026-07-10` 完整 `cargo test` 通过，测试清单枚举 400 个测试
+- `./scripts/status-sync-check.sh` 通过，文档总数声明与当前测试清单一致
+- 完整 Clippy 门禁尚未通过：`tests/provider_live_certification.rs:925` 触发 `clippy::collapsible_if`，因此下一候选版本的静态质量 gate 仍保持 open
+- 历史记录中 `doctor` 返回 `status = ok`，但当前实现会 create / migrate / seed 配置的 SQLite；它不是 no-write inspection
 - `cargo test --test non_mvp_product_tracks -v` 覆盖 release evidence index、provider certification preflight、packaging preflight 和 richer memory semantics projection 的本地只读 / preflight 边界
 
 ### 4. 当前边界已经能被文档清楚说明
@@ -77,7 +79,8 @@
 
 ### 1. `decide_with_snapshot`
 
-- gate 是真的
+- commitment gate 实现存在，但只检查调用方 snapshot 中的 commitments 与 requested action
+- provider-selected action 尚未再次经过同一 gate，因此不能把 envelope 解释为可信策略批准
 - 已可走 `openai-compatible` 或 OpenRouter provider；配置示例和本地 stub 不是 live evidence，显式 `--live` runner 只生成 bounded live preflight evidence，不是 provider 质量、SLA 或 gateway 认证
 - 返回契约仍是最小动作字符串
 

@@ -8,7 +8,7 @@
 
 ## 1. 一句话说明
 
-`agent_llm_mm` 是一个面向 AI 客户端的本地 Rust MCP `stdio` memory demo，支持 SQLite 持久化、配置文件驱动的 provider 加载、`openai-compatible` / OpenRouter 模型接入，以及 trigger-ledger-backed automatic self-revision MVP。
+MCP Memory Ledger 是一个面向本机 AI 客户端的 Rust MCP `stdio` memory MVP，支持 SQLite 持久化、配置文件驱动的 provider 加载、`openai-compatible` / OpenRouter 模型接入，以及受限的 evidence-gated self-revision。`agent_llm_mm` 只保留为当前技术兼容标识。
 
 ## 2. 多语言首页
 
@@ -34,10 +34,14 @@ GitHub 默认首页使用英文；中文和日文通过顶部语言入口切换�
   - Windows 环境准备、配置、预检、启动和验证
 - [project-status.md](project-status.md)
   - 当前实现边界、已实现 / 部分实现 / 未实现，重点包含当前 4 条 MCP-wired automatic path、structured diagnostics、dashboard 只读观测面板，以及 `run_reflection` durable write path 的保守范围
+- [plans/2026-07-10-product-replan.md](plans/2026-07-10-product-replan.md)
+  - 当前唯一 active execution plan；把项目重新收束为 Truth and Safety、Trustworthy Recall、Local Product Alpha、Retrieval Quality 和 optional Remote/Autonomy 五个阶段
+- [plans/README.md](plans/README.md)
+  - 计划索引、文档权威层级、historical / superseded 列表和后续更新规则
 - [self-revision-demo-guide-2026-04-24.md](self-revision-demo-guide-2026-04-24.md)
   - 零外网依赖的一键 self-revision demo package 运行指南与 artifact 说明
 - [progress-tracker.md](progress-tracker.md)
-  - 把“目标态 / 当前状态 / 当前证据 / 剩余缺口 / 建议下一步”压成一张持续更新的进度追踪对照表
+  - 2026-05-09 起的历史进度快照；不再作为当前任务总表
 - [release-readiness.md](release-readiness.md)
   - 当前 demo 是否适合发布到 GitHub
 - [release-gate.md](release-gate.md)
@@ -71,13 +75,13 @@ GitHub 默认首页使用英文；中文和日文通过顶部语言入口切换�
 - [provider-contract.md](provider-contract.md)
   - 新增 provider 前的就绪清单，覆盖当前 read-only provider matrix、OpenRouter 本地 adapter 切片、planned-only missing implementation checklist、配置校验、`doctor` 脱敏、错误处理、解析契约和现有测试映射；planned-only provider 不能当作可配置能力
 - [roadmap.md](roadmap.md)
-  - 近期 / 中期 / 后期规划，明确哪些是 MVP 延伸，哪些不在近期承诺内
+  - 当前 Now / Next / Later 摘要，具体执行以 2026-07-10 active plan 为准
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
-  - MVP release gate 之后的正式产品化路线图，按 local alpha、durable observability、controlled beta、remote/team mode 和 GA readiness 分阶段推进
+  - historical / superseded：MVP release gate 之后的早期产品化路线
 - [2026-05-09-local-product-alpha-development-tasks.md](superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md)
-  - 正式产品化第一轮 Local Product Alpha 的开发任务列表，包含 PRD、release gate、配置 profile、smoke、数据安全、观测和 daemon gate
+  - historical / superseded：早期 Local Product Alpha 开发任务列表
 - [2026-05-16-formal-product-readiness-12-workstreams.md](superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
-  - 把当前 12 项待完善产品化工作拆成可执行 workstream，覆盖 Local Alpha gate、安装配置、runtime coverage、daemon、可观测性、decision protocol、evidence 语义、数据生命周期、provider、安全远程、发布工程和多层 memory 方向
+  - historical / superseded：12 项产品化 workstream 的阶段执行记录
 - [../NOTICE](../NOTICE)
   - 项目版权、独立项目声明，以及 dashboard 生成图物料的归属说明
 
@@ -89,8 +93,8 @@ GitHub 默认首页使用英文；中文和日文通过顶部语言入口切换�
   - 公开协作入口、验证要求与文档更新预期
 - [project-status.md](project-status.md)
   - 当前实现边界、已实现 / 部分实现 / 未实现
-- [progress-tracker.md](progress-tracker.md)
-  - 适合直接用来跟踪后续开发任务推进
+- [plans/2026-07-10-product-replan.md](plans/2026-07-10-product-replan.md)
+  - 当前唯一 active plan；确认当前里程碑、证据门和停止条件
 - [release-readiness.md](release-readiness.md)
   - 当前 demo 是否适合发布到 GitHub
 - [release-gate.md](release-gate.md)
@@ -120,13 +124,13 @@ GitHub 默认首页使用英文；中文和日文通过顶部语言入口切换�
 - [product/memory-layering-roadmap.md](product/memory-layering-roadmap.md)
   - 任何 richer episode、semantic memory、procedural memory、slow variables 或 self-model 设计前阅读，确认它们仍是后续方向
 - [roadmap.md](roadmap.md)
-  - 近期 / 中期 / 后期规划
+  - Now / Next / Later 路线摘要
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
-  - 正式产品化阶段规划
+  - historical / superseded 产品化阶段规划
 - [2026-05-09-local-product-alpha-development-tasks.md](superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md)
-  - Local Product Alpha 开发执行清单
+  - historical / superseded Local Product Alpha 执行清单
 - [2026-05-16-formal-product-readiness-12-workstreams.md](superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
-  - 当前 12 项待完善工作的执行规划，适合继续拆给 subagent 或作为后续本地提交批次的任务总表
+  - historical / superseded 12-workstream 记录
 
 ## 5. 发布物料
 
@@ -202,6 +206,8 @@ GitHub 默认首页使用英文；中文和日文通过顶部语言入口切换�
 
 ### 阶段规划
 
+- [2026-07-10-product-replan.md](plans/2026-07-10-product-replan.md)
+  - 当前唯一 active plan；其他阶段规划均不得覆盖它的任务顺序和停止条件
 - [2026-03-27-plan.md](2026-03-27-plan.md)
   - 某一轮阶段计划，不等于当前稳定路线图
 - [2026-04-19-self-agent-memory-self-revision-mvp.md](superpowers/plans/2026-04-19-self-agent-memory-self-revision-mvp.md)
@@ -215,13 +221,15 @@ GitHub 默认首页使用英文；中文和日文通过顶部语言入口切换�
 - [2026-04-19-self-agent-memory-self-revision-mvp-design.md](superpowers/specs/2026-04-19-self-agent-memory-self-revision-mvp-design.md)
   - 基于原始逐轮日志与再次确认问答整合出的 self-revision MVP 设计初稿
 - [2026-05-09-productization-roadmap.md](superpowers/plans/2026-05-09-productization-roadmap.md)
-  - MVP 之后的正式产品化路线图，当前下一阶段开发应优先参考
+  - historical / superseded：MVP 之后的早期产品化路线图
 - [2026-05-09-local-product-alpha-development-tasks.md](superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md)
-  - 正式产品化第一轮任务列表，适合拆给 subagent 或按 milestone 执行
+  - historical / superseded：正式产品化第一轮任务列表
 - [2026-05-16-formal-product-readiness-12-workstreams.md](superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md)
-  - 12 项后续完善工作的正式产品化执行规划，连接 Local Alpha gate、Beta、remote/team 和 GA readiness 前置工作
+  - historical / superseded：12 项后续完善工作的阶段记录
 - [2026-05-24-p1-p2-p3-product-completion-plan.md](superpowers/plans/2026-05-24-p1-p2-p3-product-completion-plan.md)
-  - 本轮 P1/P2/P3 后续实现计划；把 product readiness、release decision、status sync、decision/evidence/episode/provider、remote/team/security、memory projection 和 wording guard 拆成可验证切片
+  - historical / superseded：P1/P2/P3 实现与验证切片记录
+- [2026-06-08-non-mvp-product-completion.md](superpowers/plans/2026-06-08-non-mvp-product-completion.md)
+  - historical / superseded：non-MVP preflight / projection 切片记录
 - [2026-05-24-p1-p2-p3-user-request-record.md](plans/2026-05-24-p1-p2-p3-user-request-record.md)
   - 本轮用户原始请求和执行边界的本地保存记录，用于后续追溯“按顺序做 P1/P2/P3”和 MVP / technical demo 口径约束
 - [product/data-lifecycle.md](product/data-lifecycle.md)
@@ -245,5 +253,5 @@ GitHub 默认首页使用英文；中文和日文通过顶部语言入口切换�
 - 如果你想确认 runtime hooks、diagnostics 和 durable write path：读 `project-status.md`，再读 `local-mcp-integration-2026-03-26.md`
 - 如果你要接入新 provider：先读 `provider-contract.md`，再按 `testing-guide-2026-03-24.md` 的 provider 验证顺序执行
 - 如果你想接入或开发：先进入对应平台文档，再读 `local-mcp-integration-2026-03-26.md`、`testing-guide-2026-03-24.md` 与 `release-gate.md`
-- 如果你要把项目推进成正式产品：先读 `superpowers/plans/2026-05-09-productization-roadmap.md`，再读 `product/prd-local-alpha.md` 确认 Local Product Alpha 的 scope、non-goals 和 exit gate，然后读 `product/release-gate-local-alpha.md` 确认产品 alpha gate；执行前先用 `product/follow-up-reality-gates.md` 区分已实现、模拟证据和 planning gate，第一轮按 `superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md` 执行，后续 12 项完善工作按 `superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md` 拆分推进
+- 如果你要继续推进项目：先读 `plans/2026-07-10-product-replan.md`，只领取当前 M0 的一个最小切片；再用 `project-status.md` 与 `product/follow-up-reality-gates.md` 核对当前代码事实和证据。旧 productization / P1-P2-P3 plans 只用于追溯
 - 如果你想追溯设计来源：最后读原始讨论资料和历史快照

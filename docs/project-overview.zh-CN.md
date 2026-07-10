@@ -41,7 +41,7 @@ MCP Memory Ledger 是一个 Rust 编写的本机 MCP `stdio` memory demo，用�
 
 截至 `2026-06-08`：
 
-- `cargo test -- --list --format terse` 当前枚举 395 个测试
+- `cargo test -- --list --format terse` 当前枚举 400 个测试
 - `doctor` 返回 `status = ok`
 
 ## 致谢

@@ -1,10 +1,28 @@
 # 当前实现状态
 
+## 2026-07-10 事实校准
+
+当前状态必须与新的 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；新的路线已经确定，但 M0 代码实现、Local Alpha、Beta、GA 和 production-ready 均未开始或未通过对应 gate。
+
+本次代码级审计确认了以下必须优先公开的边界：
+
+- `build_self_snapshot` 当前没有 namespace / owner scope 输入，会读取全库 active claims、event references 和 episode references；SQLite event references 还是旧序读取后再按 budget 截断。因此“namespace 已持久化”不等于“snapshot 已完成 namespace 隔离”。
+- automatic self-revision 的 trigger candidate 可以按部分 namespace 收窄，但 revision snapshot 没有携带 candidate evidence manifest 或 scope，不能把 trigger window 的收窄直接理解为最终模型上下文已隔离。
+- `decide_with_snapshot` 使用调用方提供的 snapshot，只对 requested action 做一次字面量 commitment gate；provider-selected action 尚未复检。它只返回 action、不执行 action，但不能被描述为可信策略执行器。
+- cross-episode identity support 当前没有 claim → evidence → episode 的真实 join，不能作为成熟的跨 episode 治理语义。
+- `doctor` 会进入 runtime bootstrap，可能创建目录/数据库、建表、迁移、seed baseline commitment 并补默认 identity。报告中的只读 projection 不代表 `doctor` 执行链无写入。
+- legacy SQLite 表重建缺 schema version、migration ledger 和显式事务恢复门；正式数据迁移前必须先补备份、故障注入、readback 和 rollback。
+- dashboard HTTP 路由无认证，配置可以绑定非 loopback host；在强制 loopback 或 auth 落地前，它只能描述为本地调试界面，不能描述为已验证的安全本机边界。
+- evidence relation、episode summary、memory layer 和 richer semantics projection 主要是 read-only 定义与测试切片，尚未形成统一 MCP / application runtime read path。
+- 当前没有 `.github/workflows`、真实 binary package、fresh-machine / Windows 完整证据或正式 release approval。
+
+新的优先级是：`Truth and Safety -> Trustworthy Recall -> Local Product Alpha -> Retrieval Quality -> optional Remote/Autonomy`。旧 productization、P1/P2/P3 和 non-MVP plans 保留为历史记录，不再决定下一步。
+
 ## 项目定位
 
 当前仓库更准确的定位是：
 
-“一个面向本机 AI 客户端的 trigger-ledger-backed self-agent memory MVP / technical demo”
+“MCP Memory Ledger 的 local-first memory MVP / technical demo，包含受限的 evidence-gated self-revision 实验能力”
 
 它已经完成了工程闭环、本机接入闭环，以及受治理的 automatic self-revision MVP；但还没有完成原始设计里更完整的“自我机制”产品语义，也不能对外包装成完整自治系统。
 
@@ -266,18 +284,13 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-06-08`，本分支需要 fresh 运行：
+截至 `2026-07-10`，本轮规划与事实校准 fresh 运行了：
 
 - `cargo fmt --check`
 - `git diff --check`
-- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo test --test status_sync -v`
+- `./scripts/status-sync-check.sh`
 - `cargo test`
-- `cargo test --test non_mvp_product_tracks -v`
-- `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor` 或 `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor-cargo.sqlite cargo run --quiet --bin agent_llm_mm -- doctor`
-- `cargo test --test demo_openai_compatible_stub --test self_revision_demo_runner --test openai_compatible_model --test mcp_stdio -v`
-- `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/latest`
-- `./scripts/product-smoke-local.sh`
-- `./scripts/generate-support-bundle.sh target/support-bundles/local-alpha-gate`
 
 结果：
 
@@ -296,17 +309,17 @@ Implementation notes:
 - `evidence_query_dto`: 4
 - `failure_modes`: 36
 - `first_run_bootstrap_smoke`: 4
-- `local_alpha_external_evidence`: 7
+- `local_alpha_external_evidence`: 8
 - `local_alpha_release_evidence`: 20
 - `mcp_stdio`: 46
 - `non_mvp_product_tracks`: 8
 - `openai_compatible_model`: 11
 - `operation_log`: 9
-- `packaging_archive`: 7
+- `packaging_archive`: 11
 - `product_completion_read_models`: 15
 - `product_readiness`: 15
 - `provider_config`: 18
-- `provider_live_certification`: 12
+- `provider_live_certification`: 15
 - `release_decision`: 5
 - `self_revision_demo_runner`: 2
 - `sqlite_backup_restore`: 6
@@ -314,6 +327,10 @@ Implementation notes:
 - `status_sync`: 11
 - `support_bundle`: 35
 - 合计：400 个测试通过
+- `cargo clippy --all-targets --all-features -- -D warnings` 当前未通过：`tests/provider_live_certification.rs:925` 触发 `clippy::collapsible_if`；该既有代码问题进入 M0，未在本次规划任务中顺手修改
+
+以下 product smoke、doctor、support bundle 和 release evidence 结果沿用此前记录，本轮规划任务没有重新生成对应工件：
+
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`
