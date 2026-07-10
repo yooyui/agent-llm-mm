@@ -2,17 +2,17 @@
 
 本页只保留当前仍有执行或使用价值的入口。历史 specs、旧计划、阶段快照和发布记录不再与当前主线并列展示，统一见[历史归档](archive.md)。
 
-## 1. 从哪里开始
+## 1. 五分钟理解项目
 
-按以下顺序阅读即可理解项目：
+主线说明只由以下五个入口组成，按顺序阅读即可理解项目：
 
-1. [项目起点与主线原则](origin-and-principles.md)：为什么做、哪些原则不能丢、什么功能不应进入主线。
-2. [README](../README.md)：项目能力、快速开始和当前边界。
+1. [README](../README.md)：项目是什么、能做什么、如何启动以及当前边界。
+2. [项目起点与主线原则](origin-and-principles.md)：为什么做、哪些原则不能丢、什么功能不应进入主线。
 3. [当前实现状态](project-status.md)：implemented / partial / unimplemented 的事实。
 4. [Now / Next / Later 路线图](roadmap.md)：阶段顺序。
 5. [唯一 active plan](plans/2026-07-10-product-replan.md)：当前任务、证据门与停止条件。
 
-不要从历史计划中的 checkbox 领取任务。
+README 负责公共入口，起点与原则负责方向约束，状态负责当前事实，路线图负责阶段顺序，active plan 负责任务执行。需要判断完成证据时，再查阅 [reality gates](product/follow-up-reality-gates.md)。不要从历史计划中的 checkbox 领取任务。
 
 ## 2. 项目身份与公共入口
 
@@ -32,11 +32,11 @@
 - [macOS 开发说明](development-macos.md)
 - [Windows 开发说明](development-windows.md)
 - [本机 MCP 接入](local-mcp-integration-2026-03-26.md)
-- [测试指南](testing-guide-2026-03-24.md)
+- [测试指南](testing-guide-2026-03-24.md)：`fast` / `core` / `full` 分层命令和按改动类型选择验证范围。
 - [Provider contract](provider-contract.md)
 - [Self-revision demo guide](self-revision-demo-guide-2026-04-24.md)
 
-默认工作流仍是本地 MCP `stdio`。开发、测试和正式数据应使用不同的显式 `database_url`。
+这些文件是按需使用的操作手册，不负责定义项目定位或当前任务。默认工作流仍是本地 MCP `stdio`。开发、测试和正式数据应使用不同的显式 `database_url`。
 
 ## 4. 当前数据与能力边界
 
@@ -71,7 +71,7 @@
 
 发布、provider 和 packaging preflight 是辅助门禁，不是项目北极星，也不能替代 scoped recall、provenance 或 correction 闭环。
 
-## 6. 计划与证据权威
+## 6. 文档职责与证据权威
 
 | 文档 | 回答的问题 |
 | --- | --- |

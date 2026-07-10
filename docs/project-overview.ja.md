@@ -39,9 +39,10 @@ MCP Memory Ledger は、長期記憶・自己スナップショット・反省�
 
 ## 現在の検証状態
 
-`2026-06-08` 時点で：
+`2026-07-10` 時点で：
 
-- `cargo test -- --list --format terse` は現在 400 tests を列挙します
+- tests は `fast` / `core` / `full` の 3 tiers に分かれ、default core は release tooling を build しません
+- `release-tools` feature は release evidence、packaging、provider certification の検証を保持します
 - `doctor` は `status = ok` を返します
 
 ## 謝辞

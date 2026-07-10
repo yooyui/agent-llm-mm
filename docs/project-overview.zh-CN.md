@@ -39,9 +39,10 @@ MCP Memory Ledger 是一个 Rust 编写的本机 MCP `stdio` memory demo，用�
 
 ## 当前验证状态
 
-截至 `2026-06-08`：
+截至 `2026-07-10`：
 
-- `cargo test -- --list --format terse` 当前枚举 400 个测试
+- 测试分为 `fast` / `core` / `full` 三级；默认 core 不编译发布工具链
+- `release-tools` feature 保留完整发布证据、打包与 provider certification 验证
 - `doctor` 返回 `status = ok`
 
 ## 致谢

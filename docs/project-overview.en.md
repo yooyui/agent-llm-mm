@@ -39,9 +39,10 @@ Compatibility note: the current Rust crate, binary, scripts, configuration examp
 
 ## Verification Status
 
-As of `2026-06-08`:
+As of `2026-07-10`:
 
-- `cargo test -- --list --format terse` currently enumerates 400 tests
+- tests are split into `fast`, `core`, and `full` tiers; default core checks do not compile release tooling
+- the `release-tools` feature retains release-evidence, packaging, and provider-certification verification
 - `doctor` returns `status = ok`
 
 ## Acknowledgement

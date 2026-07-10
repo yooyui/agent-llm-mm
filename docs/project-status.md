@@ -6,7 +6,7 @@
 
 本次仓库整理采用“当前主线 + 本地历史分支”结构：
 
-- 当前工作分支：`codex/project-mainline-reset-2026-07-10`；
+- 主线整理基线：`1f7390d`；当前工作以实际 checkout 的本地分支为准，不在状态文档中固化临时分支名；
 - 整理前完整归档：`codex/archive/pre-mainline-reset-2026-07-10@48f6eca`；
 - 当前文档树由 74 个文件收束为 36 个；40 份历史/实验文档从当前分支移出但可精确恢复；
 - 历史 specs、旧 plans、阶段快照、原始逐轮日志和旧 release records 已从当前文档树移出；
@@ -17,7 +17,7 @@
 
 ## 2026-07-10 事实校准
 
-当前状态必须与新的 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；新的路线已经确定，但 M0 代码实现、Local Alpha、Beta、GA 和 production-ready 均未开始或未通过对应 gate。
+当前状态必须与新的 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2–M0.5 的产品行为实现尚未开始，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
 
 本次代码级审计确认了以下必须优先公开的边界：
 
@@ -213,7 +213,7 @@ Implementation notes:
 
 - Product readiness checker 已提供候选级本地只读门禁汇总，会把真实 fresh-machine、Windows parity、release decision、remote/team、安全/auth、daemon writes 和产品措辞缺口保持为 blocked
 - Release decision artifact 生成器已能写 source-only decision 模板，并在 evidence summary 仍为 `in_progress` 时拒绝 approved 决策
-- `status-sync-check` 已从测试总数漂移扩展到 plan/reality gate 矛盾检测；勾选完成的计划项如果对应 reality gate 仍是 `implemented-unmerged` / `partial` / `simulation-only` / `planning-gate` / `blocked claim` / `not-implemented` 会失败
+- `status-sync-check` 已收敛为轻量 plan/reality gate 矛盾检测；勾选完成的计划项如果没有对应 reality row、对应状态仍不完整，或 active plan 根本没有可检查的完成态 checkbox，都会 fail closed；它不再为了核对精确测试总数编译整套测试
 - Support bundle manifest 已增加非 manifest 文件的 SHA-256 integrity 列表；daemon observe-only diagnostics 已输出 write/remote blockers
 - `decide_with_snapshot` response envelope 已升级为 `protocol_version = 2`，新增 `decision_id`、requested/selected action、bounded local confidence metadata、policy checks 和 non-claims，同时保留旧 `blocked` / `decision` 字段
 - Evidence relation read model 已能只读展示 trigger window 内 selected evidence、available-not-selected rows、rejected count、relation status、window rank、rejection reason、bounded binary selection weight 和 no-widening policy；`doctor.system_layer_report.evidence_relation_contract` 同步公开 v2 contract、read-only/no-widening/binary-weight policy、allowed status、selected/unselected weight、rejection reason 和 additive v2 字段；它不拉取 trigger window 外证据，也不是完整 ranking / scoring engine
@@ -299,50 +299,27 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-07-10`，本轮规划与事实校准 fresh 运行了：
+截至 `2026-07-10`，测试与工具链已完成分层减重，fresh 运行入口为：
 
 - `cargo fmt --check`
 - `git diff --check`
+- `cargo check`
+- `./scripts/test-tier.sh fast`
+- `./scripts/test-tier.sh core`
+- `./scripts/test-tier.sh full`
 - `cargo test --test status_sync -v`
 - `./scripts/status-sync-check.sh`
-- `cargo test`
-
-结果：
-
-- `lib unit tests`: 9
-- `application_use_cases`: 25
-- `bootstrap`: 24
-- `daemon_config`: 12
-- `dashboard_config`: 4
-- `dashboard_http`: 7
-- `dashboard_projection`: 2
-- `dashboard_recorder`: 2
-- `decision_flow`: 2
-- `demo_openai_compatible_stub`: 1
-- `domain_invariants`: 4
-- `domain_snapshot`: 6
-- `evidence_query_dto`: 4
-- `failure_modes`: 36
-- `first_run_bootstrap_smoke`: 4
-- `local_alpha_external_evidence`: 8
-- `local_alpha_release_evidence`: 20
-- `mcp_stdio`: 46
-- `non_mvp_product_tracks`: 8
-- `openai_compatible_model`: 11
-- `operation_log`: 9
-- `packaging_archive`: 11
-- `product_completion_read_models`: 15
-- `product_readiness`: 15
-- `provider_config`: 18
-- `provider_live_certification`: 15
-- `release_decision`: 5
-- `self_revision_demo_runner`: 2
-- `sqlite_backup_restore`: 6
-- `sqlite_store`: 23
-- `status_sync`: 11
-- `support_bundle`: 35
-- 合计：400 个测试通过
 - `cargo clippy --all-targets --all-features -- -D warnings` 通过，当前静态质量基线无 warning
+
+结果与边界：
+
+- `fast` 只跑 lib 与 decision/domain/evidence 核心契约，服务短反馈；
+- `core` 使用默认 features，覆盖默认运行时、SQLite、MCP、dashboard、doctor 与 support bundle；
+- `full` 使用 `--all-features`，保留 Local Alpha evidence、release decision、product readiness、provider certification 与 packaging 的完整验证；
+- 默认 Cargo 目标从 13 个二进制 / 31 个集成测试目标收敛为 5 个二进制 / 24 个集成测试目标；完整目标没有删除；
+- 13 个无内部单元测试的 bin target 不再生成空 test harness；依赖实际二进制的 MCP、demo、Local Alpha 与 provider runner E2E 仍通过；
+- `status-sync-check` 不再编译并枚举整套测试，只检查非空的 active-plan 完成态 / reality gate 对齐与根目录 SQLite fixture；
+- 文档不再复制易漂移的测试总数和 suite count。
 
 以下 product smoke、doctor、support bundle 和 release evidence 结果沿用此前记录，本轮规划任务没有重新生成对应工件：
 

@@ -109,10 +109,15 @@ transport = "stdio"
 ```powershell
 cargo fmt --check
 git diff --check
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --all-targets -- -D warnings
 cargo test
 pwsh -File .\scripts\agent-llm-mm.ps1 doctor
 ```
+
+涉及发布证据、打包或 provider certification 工具时，再运行
+`cargo clippy --all-targets --all-features -- -D warnings` 和
+`cargo test --all-features`。`scripts/test-tier.sh` 是 bash 入口；Windows 原生
+PowerShell 环境使用上面的等价 Cargo 命令。
 
 发布前请按 [Release Gate](release-gate.md) 跑完整 gate；本节只是 Windows 日常验证入口。Release gate 中的 `./scripts/agent-llm-mm.sh doctor` 在 Windows 上对应 `pwsh -File .\scripts\agent-llm-mm.ps1 doctor`。
 如果判断 Local Product Alpha / product alpha 口径，还必须改用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)；普通 `doctor` 通过不等于 Local Alpha 完成。

@@ -106,31 +106,47 @@ See [project status](docs/project-status.md), the [roadmap](docs/roadmap.md), an
 
 ## Documentation
 
-- [Project origin and mainline principles](docs/origin-and-principles.md)
-- [Positioning](docs/positioning.md)
-- [Current implementation status](docs/project-status.md)
-- [Now / Next / Later roadmap](docs/roadmap.md)
-- [Active project plan](docs/plans/2026-07-10-product-replan.md)
+### Understand the project
+
+1. [Project origin and mainline principles](docs/origin-and-principles.md)
+2. [Positioning](docs/positioning.md)
+3. [Current implementation status](docs/project-status.md)
+4. [Now / Next / Later roadmap](docs/roadmap.md)
+5. [Active project plan](docs/plans/2026-07-10-product-replan.md)
+
+The active plan is the only current execution queue. Historical checklists are
+preserved for traceability, but they do not define current work.
+
+### Build and verify
+
 - [macOS development guide](docs/development-macos.md)
 - [Windows development guide](docs/development-windows.md)
 - [Local MCP integration guide](docs/local-mcp-integration-2026-03-26.md)
 - [Testing guide](docs/testing-guide-2026-03-24.md)
+
+### Reference and history
+
 - [Complete document map](docs/document-map.md)
 - [Historical archive](docs/archive.md)
 
 ## Verification
 
-As of `2026-07-10`, the full `cargo test` run passes and the test list contains 400 tests.
+Tests are split into `fast`, `core`, and `full` tiers. Release evidence, packaging,
+and provider-certification tooling is opt-in through the `release-tools` feature.
 
 Common local checks:
 
 ```zsh
-cargo test
+./scripts/test-tier.sh fast
+./scripts/test-tier.sh core
+./scripts/status-sync-check.sh
 ./scripts/agent-llm-mm.sh doctor
 git diff --check
 ```
 
-For provider, dashboard, release-evidence, or support-bundle changes, follow the relevant layered checks in the [testing guide](docs/testing-guide-2026-03-24.md).
+Use `./scripts/test-tier.sh full` for release-tool changes and final full-feature
+verification. For provider, dashboard, release-evidence, or support-bundle changes,
+follow the relevant layered checks in the [testing guide](docs/testing-guide-2026-03-24.md).
 
 ## Naming
 

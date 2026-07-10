@@ -112,31 +112,45 @@ Complete implementation status is tracked in [project status](project-status.md)
 
 ## Documentation
 
-- [Positioning](positioning.md)
-- [FAQ](faq.md)
-- [Project overview: English](project-overview.en.md)
-- [Project overview: Simplified Chinese](project-overview.zh-CN.md)
-- [Project overview: Japanese](project-overview.ja.md)
-- [Testing guide](testing-guide-2026-03-24.md)
-- [Release readiness](release-readiness.md)
-- [Release gate runbook](release-gate.md)
-- [Local Alpha PRD](product/prd-local-alpha.md)
-- [Provider contract](provider-contract.md)
-- [Document map](document-map.md)
+### プロジェクトを理解する
+
+1. [プロジェクトの起点と mainline 原則](origin-and-principles.md)
+2. [Positioning](positioning.md)
+3. [現在の実装状況](project-status.md)
+4. [Now / Next / Later roadmap](roadmap.md)
+5. [現在の active plan](plans/2026-07-10-product-replan.md)
+
+active plan が現在唯一の実行キューです。過去の plan は追跡用に保持しますが、
+現在の作業は定義しません。
+
+### 開発と検証
+
+- [macOS 開発ガイド](development-macos.md)
+- [Windows 開発ガイド](development-windows.md)
+- [ローカル MCP integration ガイド](local-mcp-integration-2026-03-26.md)
+- [テストガイド](testing-guide-2026-03-24.md)
+
+### リファレンスと履歴
+
+- [ドキュメントマップ](document-map.md)
+- [履歴 archive](archive.md)
 
 ## Verification
 
-As of `2026-06-08`, `cargo test` passes with 400 tests.
+テストは `fast`、`core`、`full` の 3 tier に分かれています。release evidence、
+packaging、provider certification の tools は非 default の `release-tools` feature を使います。
 
 Common local checks:
 
 ```zsh
-cargo test
+./scripts/test-tier.sh fast
+./scripts/test-tier.sh core
+./scripts/status-sync-check.sh
 ./scripts/agent-llm-mm.sh doctor
 git diff --check
 ```
 
-For provider, dashboard, release-evidence, or support-bundle changes, follow the relevant layered checks in the [testing guide](testing-guide-2026-03-24.md).
+provider、dashboard、release evidence、support bundle を変更した場合は、[テストガイド](testing-guide-2026-03-24.md)に従って該当する層を検証してください。
 
 ## Naming
 

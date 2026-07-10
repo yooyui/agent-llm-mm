@@ -1,8 +1,9 @@
 # MCP Memory Ledger 全新项目规划
 
-状态：`active / M0.1 complete / M0.2 ready`
+状态：`active / M0.1.1 complete / M0.2 ready`
 规划日期：`2026-07-10`
-代码基线：`dev-work@6fcbb5f`
+规划输入基线：`dev-work@6fcbb5f`
+主线整理基线：`1f7390d`
 写入边界：本轮只完成仓库主线收束、状态同步和质量基线修复；不代表产品能力或发布 gate 已通过。
 
 ## 1. 总体决策
@@ -35,7 +36,7 @@ MCP Memory Ledger 已经拥有可运行的 Rust + SQLite + MCP `stdio` 核心、
 - ingest 与 reflection 具备事务边界；`run_reflection` 是当前 identity / commitments 的唯一 durable write path。
 - mock、OpenAI-compatible 和 OpenRouter provider 路径存在。
 - 本地 dashboard、support bundle、backup / restore、release preflight 和多类状态报告存在。
-- 当前测试列表枚举 400 项；本轮完整 `cargo test` 已在 `2026-07-10` 串行通过。
+- 测试已分为 `fast` / `core` / `full` 三级；发布证据、打包与 provider certification 工具由非默认 `release-tools` feature 承载。
 
 ### 2.2 直接阻断 Local Alpha 的事实
 
@@ -148,6 +149,8 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 
 ### M0.1 统一事实入口和仓库卫生
 
+- [x] **M0.1 Mainline and repository hygiene**
+
 - 已完成（2026-07-10）：把 status-sync 的 active plan 指针从旧 P1/P2/P3 文件迁到本计划。
 - 已完成（2026-07-10）：确认测试不依赖后，移除被跟踪的根目录 SQLite fixture，并增加精确忽略规则。
 - 已完成（2026-07-10）：让 `status-sync-check` 阻断根目录 SQLite fixture 回流。
@@ -156,6 +159,19 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 证据门：tracked worktree 不含意外数据库；文档只有一个 active plan；status sync 读取本计划并阻断 fixture 回流。
 
 本机安全后续不属于仓库完成状态：私有配置文件保持 ignored / untracked；其中的非占位 provider credential 应由用户单独轮换。若后续要增加 tracked-file secret scanner，应作为独立安全切片设计，避免扫描或输出本机私有配置内容。
+
+### M0.1.1 测试与工具链减重
+
+- [x] **M0.1.1 Test and toolchain slimming**
+
+- 已完成（2026-07-10）：增加 `scripts/test-tier.sh`，固定 `fast` / `core` / `full` 三级入口。
+- 已完成（2026-07-10）：把 Local Alpha evidence、release decision、product readiness、provider certification 和 packaging 模块、二进制与测试移入非默认 `release-tools` feature；资产仍由 `full` 层完整覆盖。
+- 已完成（2026-07-10）：把 richer memory semantics projection 的核心用例从发布测试迁回默认 `product_completion_read_models` 回归。
+- 已完成（2026-07-10）：关闭 13 个无内部单元测试的 bin test harness；真实二进制 E2E 仍由集成测试覆盖。
+- 已完成（2026-07-10）：把 `status-sync-check` 收敛为纯 active plan / reality gate 检查，同时保留 wrapper 的根目录 SQLite fixture 门；没有完成态 checkbox 时 fail closed，不再通过编译整套测试来核对精确数量。
+- 已完成（2026-07-10）：移除 README、状态文档和测试指南中的精确测试总数 / suite count 复制口径。
+
+证据门：默认 `cargo check`、`fast`、`core`、`status-sync` 通过；`full` 与 all-feature Clippy 证明归档到非默认 feature 的测试和工具仍可用。
 
 ### M0.2 Scoped Snapshot v2
 
@@ -360,7 +376,7 @@ M2 退出指标：
 - scope 泄漏、数据丢失或迁移不可恢复；
 - 需要破坏现有 MCP schema，但没有兼容层和迁移说明；
 - doctor / smoke / release 命令可能接触未确认的正式数据库；
-- 测试数量或状态文档与当前分支不一致；
+- 测试层级命令失效，或 active plan / reality gate 状态与当前分支不一致；
 - 只读 projection 被当成 runtime capability；
 - 需要远程监听、auth、第三方发布或凭据变更，但未获得单独授权；
 - external evidence 缺失却准备声明 Local Alpha、Beta、GA 或 production-ready。
@@ -385,7 +401,8 @@ M2 退出指标：
 - 建立新的产品主线、里程碑、证据门和停止条件；
 - 建立本地主线整理分支与完整历史归档分支；当前文档树从 74 个文件收束到 36 个，40 份历史/实验文档仍可精确恢复；
 - status-sync 已改读本计划，根目录误提交 SQLite 文件已移除并增加回流门禁；
-- 串行通过 `cargo fmt --check`、`git diff --check`、status-sync 定向检查、完整 Clippy 和完整 `cargo test`；测试清单为 400 项；
+- 测试与工具链已分为 `fast` / `core` / `full`；发布工具链退出默认构建但保留 full-feature 验证；status-sync 不再触发整套测试编译；
+- 串行通过 `cargo fmt --check`、`git diff --check`、`cargo check`、三级测试、status-sync 和完整 all-feature Clippy；
 - 未修改产品行为、未发布、未推送、未运行远程或 live-provider 操作。
 
 尚未开始：M0.2–M0.5 的产品行为实现。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。

@@ -72,10 +72,11 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 - 存在后台 daemon / 定时自治进程
 - 所有 MCP 请求都会自动反思
 
-截至 `2026-06-08`，fresh 验证还包括：
+截至 `2026-07-10`，验证入口已减重为：
 
-- `cargo test -- --list --format terse` 当前枚举 400 个测试
-- 其中 `application_use_cases` 25、`failure_modes` 36、`mcp_stdio` 46、`sqlite_store` 23、`dashboard_http` 7、`daemon_config` 12、`support_bundle` 35、`provider_config` 18、`status_sync` 11、`local_alpha_release_evidence` 20、`product_completion_read_models` 15、`product_readiness` 15、`release_decision` 5、`non_mvp_product_tracks` 8
+- `./scripts/test-tier.sh fast` 用于主线短反馈；`./scripts/test-tier.sh core` 覆盖默认运行时
+- `./scripts/test-tier.sh full` 启用 `release-tools`，保留完整发布证据、打包与 provider certification 验证
+- `./scripts/status-sync-check.sh` 只检查 active plan / reality gate 和仓库 fixture，不再编译整套测试清单
 - self-revision demo package wrapper 可生成本地 artifact report
 - `release-soak-local.sh` 已提供本地 release evidence runner，可记录 candidate-specific doctor / dashboard HTTP / product smoke / first-run simulation / support bundle / evidence summary、compatibility matrix 和 release boundary 证据；它不生成 Windows runner、真实 fresh-machine、remote/team、上传、tag、安装包或发布认证证据
 - `product-readiness-check.sh` 已提供本地候选 readiness gate，能够把 release decision、release engineering、真实 fresh-machine、Windows parity、remote/team、安全/auth 和产品措辞缺口保持为 blocked

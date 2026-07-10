@@ -26,47 +26,30 @@
 
 ---
 
-## 2. 当前测试基线
+## 2. 当前测试分层
 
-截至 `2026-07-10`，完整 `cargo test` 已通过，测试清单摘要如下：
+测试数量不再作为文档状态源。固定入口按反馈成本分为三级：
 
-- `lib unit tests`: 9 passed
-- `application_use_cases`: 25 passed
-- `bootstrap`: 24 passed
-- `daemon_config`: 12 passed
-- `dashboard_config`: 4 passed
-- `dashboard_http`: 7 passed
-- `dashboard_projection`: 2 passed
-- `dashboard_recorder`: 2 passed
-- `decision_flow`: 2 passed
-- `demo_openai_compatible_stub`: 1 passed
-- `domain_invariants`: 4 passed
-- `domain_snapshot`: 6 passed
-- `evidence_query_dto`: 4 passed
-- `failure_modes`: 36 passed
-- `first_run_bootstrap_smoke`: 4 passed
-- `local_alpha_external_evidence`: 8 passed
-- `local_alpha_release_evidence`: 20 passed
-- `mcp_stdio`: 46 passed
-- `non_mvp_product_tracks`: 8 passed
-- `openai_compatible_model`: 11 passed
-- `operation_log`: 9 passed
-- `packaging_archive`: 11 passed
-- `product_completion_read_models`: 15 passed
-- `product_readiness`: 15 passed
-- `provider_config`: 18 passed
-- `provider_live_certification`: 15 passed
-- `release_decision`: 5 passed
-- `self_revision_demo_runner`: 2 passed
-- `sqlite_backup_restore`: 6 passed
-- `sqlite_store`: 23 passed
-- `status_sync`: 11 passed
-- `support_bundle`: 35 passed
+| 层级 | 命令 | 使用场景 | feature 边界 |
+| --- | --- | --- | --- |
+| `fast` | `./scripts/test-tier.sh fast` | 日常逻辑修改后的短反馈 | 只跑 lib 与 decision/domain/evidence 核心契约 |
+| `core` | `./scripts/test-tier.sh core` | 默认运行时、SQLite、MCP、dashboard、doctor、support bundle 回归 | 默认 features，不编译发布工具链 |
+| `full` | `./scripts/test-tier.sh full` | 发布工具变更、合并前或 release gate | 等价于 `cargo test --all-features`，包含 `release-tools` |
 
-合计：400 个测试通过。
+`release-tools` 包含 Local Alpha evidence、release decision、product readiness、
+provider certification 和 packaging 相关模块、二进制与测试；这些资产没有删除，
+只是退出默认开发循环。测试文件增长时不再把精确总数复制到 README / 状态文档。
 
-当前静态检查基线已恢复全绿：`2026-07-10` 串行执行
-`cargo clippy --all-targets --all-features -- -D warnings` 通过。
+所有 13 个 bin target 都没有内部单元测试，因此关闭了 Cargo 的空 bin test harness；
+需要真实进程的 E2E 仍通过 `CARGO_BIN_EXE_*` 启动实际二进制并保留在对应集成测试中。
+
+静态检查同样分层：日常使用
+`cargo clippy --all-targets -- -D warnings`；涉及 `release-tools` 或最终全功能验证时
+使用 `cargo clippy --all-targets --all-features -- -D warnings`。
+
+`./scripts/status-sync-check.sh` 只读取 active plan 与 reality gates，不编译整套测试；
+它要求至少存在一项完成态 checkbox，并在缺少匹配 reality row 或对应状态未完成时失败，
+避免零项解析被误报为同步成功。
 
 ---
 
@@ -108,28 +91,31 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 
 1. `cargo fmt --check`
 2. `git diff --check`
-3. `cargo clippy --all-targets --all-features -- -D warnings`
-4. `cargo test`
-5. `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor`
-6. `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor-cargo.sqlite cargo run --quiet --bin agent_llm_mm -- doctor`
-7. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
-8. 如果改动涉及 demo package，先用 timestamped / scratch output 跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)`；如果要按 Local Alpha 发布口径复核 `latest` 证据链，使用下一条 product smoke
-9. 如果改动涉及 Local Alpha product smoke gate、启动包装脚本或本地产品化证据链，在 repo root 补跑 `./scripts/product-smoke-local.sh [config_path]`；如果当前目录不是 repo root，使用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh`，并在需要配置文件时传入绝对 config path
-10. 如果改动涉及 bootstrap wrapper，确认脚本契约仍是 `[serve|doctor|bootstrap-local] [config_path]`，unsupported mode 返回 exit code `2`，`bootstrap-local` 不覆盖已有配置、不生成 secret、不运行 `doctor` 或 `serve`，相对目标路径按仓库根目录解析，输出的下一步命令能处理含空格路径，并补跑 `cargo test --test bootstrap -v`
-11. 如果改动涉及 first-run bootstrap smoke、本地首启证据或 `bootstrap-local -> doctor` 产品化路径，补跑 `bash -n scripts/first-run-bootstrap-smoke-local.sh` 和 `cargo test --test first_run_bootstrap_smoke -v`
-12. 如果改动涉及 Local Alpha evidence summary、发布证据汇总或 gate status 输出，补跑 `bash -n scripts/local-alpha-evidence-summary.sh`、`cargo test --test local_alpha_release_evidence -v`，并用 `cargo run --quiet --bin local_alpha_evidence_summary -- --evidence-root .` spot-check JSON 输出；该 summary 只是本地只读 gate 状态汇总，不是自动认证
-13. 如果改动涉及 Local Alpha release-gate refresh 或本机 gate 证据刷新流程，补跑 `bash -n scripts/local-alpha-release-gate-refresh.sh`、`cargo test --test local_alpha_release_evidence -v`，并按需执行 `./scripts/local-alpha-release-gate-refresh.sh [config_path]`；该 refresh 只产生本机可复现证据，不生成真实 fresh-machine、Windows runner、remote/team 或发布决策证据
-14. 如果改动涉及 release engineering、release evidence directory、soak evidence 或候选发布说明，补跑 `bash -n scripts/release-soak-local.sh`、`cargo test --test local_alpha_release_evidence release_soak -v`，并按需执行 `./scripts/release-soak-local.sh <candidate-name> [config_path]`；该 soak 只生成本地 release evidence，不生成真实 fresh-machine、Windows runner、remote/team、上传、tag、安装包或发布认证证据
-15. 如果改动涉及 SQLite 备份、恢复、schema migration 前置检查或 data lifecycle gate，补跑以下命令：
+3. `./scripts/test-tier.sh fast`
+4. `cargo clippy --all-targets -- -D warnings`
+5. `./scripts/test-tier.sh core`
+6. `./scripts/status-sync-check.sh`
+7. `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor`
+8. `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor-cargo.sqlite cargo run --quiet --bin agent_llm_mm -- doctor`
+9. 涉及发布工具链或最终 full gate 时，再运行 `cargo clippy --all-targets --all-features -- -D warnings` 和 `./scripts/test-tier.sh full`
+10. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
+11. 如果改动涉及 demo package，先用 timestamped / scratch output 跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)`；如果要按 Local Alpha 发布口径复核 `latest` 证据链，使用下一条 product smoke
+12. 如果改动涉及 Local Alpha product smoke gate、启动包装脚本或本地产品化证据链，在 repo root 补跑 `./scripts/product-smoke-local.sh [config_path]`；如果当前目录不是 repo root，使用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh`，并在需要配置文件时传入绝对 config path
+13. 如果改动涉及 bootstrap wrapper，确认脚本契约仍是 `[serve|doctor|bootstrap-local] [config_path]`，unsupported mode 返回 exit code `2`，`bootstrap-local` 不覆盖已有配置、不生成 secret、不运行 `doctor` 或 `serve`，相对目标路径按仓库根目录解析，输出的下一步命令能处理含空格路径，并补跑 `cargo test --test bootstrap -v`
+14. 如果改动涉及 first-run bootstrap smoke、本地首启证据或 `bootstrap-local -> doctor` 产品化路径，补跑 `bash -n scripts/first-run-bootstrap-smoke-local.sh` 和 `cargo test --test first_run_bootstrap_smoke -v`
+15. 如果改动涉及 Local Alpha evidence summary、发布证据汇总或 gate status 输出，补跑 `bash -n scripts/local-alpha-evidence-summary.sh`、`cargo test --features release-tools --test local_alpha_release_evidence -v`，并用 `cargo run --quiet --features release-tools --bin local_alpha_evidence_summary -- --evidence-root .` spot-check JSON 输出；该 summary 只是本地只读 gate 状态汇总，不是自动认证
+16. 如果改动涉及 Local Alpha release-gate refresh 或本机 gate 证据刷新流程，补跑 `bash -n scripts/local-alpha-release-gate-refresh.sh`、`cargo test --features release-tools --test local_alpha_release_evidence -v`，并按需执行 `./scripts/local-alpha-release-gate-refresh.sh [config_path]`；该 refresh 只产生本机可复现证据，不生成真实 fresh-machine、Windows runner、remote/team 或发布决策证据
+17. 如果改动涉及 release engineering、release evidence directory、soak evidence 或候选发布说明，补跑 `bash -n scripts/release-soak-local.sh`、`cargo test --features release-tools --test local_alpha_release_evidence release_soak -v`，并按需执行 `./scripts/release-soak-local.sh <candidate-name> [config_path]`；该 soak 只生成本地 release evidence，不生成真实 fresh-machine、Windows runner、remote/team、上传、tag、安装包或发布认证证据
+18. 如果改动涉及 SQLite 备份、恢复、schema migration 前置检查或 data lifecycle gate，补跑以下命令：
     ```bash
     bash -n scripts/backup-sqlite.sh
     bash -n scripts/restore-sqlite.sh
     cargo test --test sqlite_backup_restore -v
     ```
-16. 如果改动涉及 product readiness、release decision artifact、产品措辞 gate、remote/team inventory/security gates、evidence relation、episode projection、layered memory projection 或 `doctor.system_layer_report`，补跑 `cargo test --test product_readiness -v`、`cargo test --test release_decision -v`、`cargo test --test product_completion_read_models -v`、`cargo test --test provider_config -v` 和 `./scripts/product-readiness-check.sh <candidate-name>` 的本地预检；这些检查只能核验本地门禁、doctor 只读架构层报告、runtime / declared-test-contract dependency-rule evidence、physics-informed non-claim / wording guard 和只读投影，不生成真实 fresh-machine、Windows runner、remote/team 产品模式、GA 或发布认证证据
-17. 如果改动涉及 release evidence index、provider certification preflight、packaging preflight 或 richer memory semantics projection，补跑以下命令，并按需执行对应脚本：
+19. 如果改动涉及 product readiness、release decision artifact、产品措辞 gate、remote/team inventory/security gates、evidence relation、episode projection、layered memory projection 或 `doctor.system_layer_report`，补跑 `cargo test --features release-tools --test product_readiness -v`、`cargo test --features release-tools --test release_decision -v`、`cargo test --test product_completion_read_models -v`、`cargo test --test provider_config -v` 和 `./scripts/product-readiness-check.sh <candidate-name>` 的本地预检；这些检查只能核验本地门禁、doctor 只读架构层报告、runtime / declared-test-contract dependency-rule evidence、physics-informed non-claim / wording guard 和只读投影，不生成真实 fresh-machine、Windows runner、remote/team 产品模式、GA 或发布认证证据
+20. 如果改动涉及 release evidence index、provider certification preflight 或 packaging preflight，补跑以下命令，并按需执行对应脚本：
     ```bash
-    cargo test --test non_mvp_product_tracks -v
+    cargo test --features release-tools --test non_mvp_product_tracks -v
     bash -n scripts/release-evidence-index.sh
     bash -n scripts/provider-certification-check.sh
     bash -n scripts/packaging-preflight-check.sh
@@ -177,10 +163,10 @@ cargo clippy --all-targets --all-features -- -D warnings
 - 命令退出码为 `0`
 - 没有 warning
 
-### 5.4 全量测试
+### 5.4 全功能测试
 
 ```zsh
-cargo test
+./scripts/test-tier.sh full
 ```
 
 重点覆盖：
@@ -191,6 +177,7 @@ cargo test
 - MCP `stdio` E2E
 - failure modes
 - 启动与配置基线
+- release evidence、provider certification 与 packaging 工具
 
 通过标准：
 
@@ -676,8 +663,8 @@ cargo test --test first_run_bootstrap_smoke -v
 
 ```zsh
 bash -n scripts/provider-live-certification-run.sh
-cargo test --test provider_live_certification -v
-cargo test --test non_mvp_product_tracks provider_certification -v
+cargo test --features release-tools --test provider_live_certification -v
+cargo test --features release-tools --test non_mvp_product_tracks provider_certification -v
 ```
 
 通过标准：
@@ -697,8 +684,8 @@ cargo test --test non_mvp_product_tracks provider_certification -v
 
 ```zsh
 bash -n scripts/packaging-archive-evidence.sh
-cargo test --test packaging_archive -v
-cargo test --test non_mvp_product_tracks packaging_preflight -v
+cargo test --features release-tools --test packaging_archive -v
+cargo test --features release-tools --test non_mvp_product_tracks packaging_preflight -v
 ```
 
 通过标准：
@@ -716,7 +703,7 @@ cargo test --test non_mvp_product_tracks packaging_preflight -v
 
 ```zsh
 bash -n scripts/release-soak-local.sh
-cargo test --test local_alpha_release_evidence release_soak -v
+cargo test --features release-tools --test local_alpha_release_evidence release_soak -v
 ./scripts/release-soak-local.sh local-alpha-YYYYMMDD.1-rc.1
 ```
 
@@ -1122,7 +1109,7 @@ git diff --check
 
 ```zsh
 bash -n scripts/release-soak-local.sh
-cargo test --test local_alpha_release_evidence release_soak -v
+cargo test --features release-tools --test local_alpha_release_evidence release_soak -v
 rm -rf target/reports/releases/manual-local-soak
 ./scripts/release-soak-local.sh manual-local-soak
 test -s target/reports/releases/manual-local-soak/release-soak-summary.md
@@ -1192,9 +1179,10 @@ cargo test --test mcp_stdio
 ```zsh
 cargo fmt --check
 git diff --check
-cargo clippy --all-targets --all-features -- -D warnings
+./scripts/test-tier.sh fast
+cargo clippy --all-targets -- -D warnings
 ./scripts/status-sync-check.sh
-cargo test
+./scripts/test-tier.sh core
 AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor
 ```
 
@@ -1204,21 +1192,22 @@ demo / MVP 发布前核验不使用这段简表作为最终依据；请按 [Rele
 
 ## 11. 当前结论
 
-截至 `2026-07-10`，推荐把下面六条当作普通提交前基线；demo / MVP 发布前仍以 [Release Gate](release-gate.md) 为准；Local Alpha / product alpha 发布前以 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 为准：
+截至 `2026-07-10`，推荐把下面七条当作普通提交前基线；demo / MVP 发布前仍以 [Release Gate](release-gate.md) 为准；Local Alpha / product alpha 发布前以 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 为准：
 
 ```zsh
 cargo fmt --check
 git diff --check
-cargo clippy --all-targets --all-features -- -D warnings
+./scripts/test-tier.sh fast
+cargo clippy --all-targets -- -D warnings
 ./scripts/status-sync-check.sh
-cargo test
+./scripts/test-tier.sh core
 AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor
 ```
 
-如果这六条都通过，说明当前工作树至少满足：
+如果这七条都通过，说明当前工作树至少满足：
 
 - 编码规范通过
 - 编译与静态检查通过
-- 当前 active plan、测试总数声明和 suite count 同步，且根目录没有误回流的 `not-a-sqlite-url` SQLite 文件
+- 当前 active plan 与 reality gate 同步，且根目录没有误回流的 `not-a-sqlite-url` SQLite 文件
 - `namespace`、SQLite migration、MCP `stdio`、reflection 闭环和 automatic self-revision MVP 基线都可继续追加定向验证
 - 本机运行时 bootstrap 正常

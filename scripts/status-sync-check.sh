@@ -10,4 +10,14 @@ if [[ -e "${REPO_ROOT}/not-a-sqlite-url" ]]; then
 fi
 
 cd "${REPO_ROOT}"
-cargo run --quiet --bin status_sync_check
+
+checker_source="${REPO_ROOT}/src/bin/status_sync_check.rs"
+status_source="${REPO_ROOT}/src/support/status_sync.rs"
+checker_binary="${REPO_ROOT}/target/tools/status-sync-check"
+
+if [[ ! -x "${checker_binary}" || "${checker_source}" -nt "${checker_binary}" || "${status_source}" -nt "${checker_binary}" ]]; then
+  mkdir -p "$(dirname "${checker_binary}")"
+  rustc --edition=2024 "${checker_source}" -o "${checker_binary}"
+fi
+
+exec "${checker_binary}"

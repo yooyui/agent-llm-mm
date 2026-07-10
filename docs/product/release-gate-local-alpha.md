@@ -14,7 +14,7 @@ Run the same baseline commands from a clean, reviewable working tree:
 cargo fmt --check
 git diff --check
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test
+./scripts/test-tier.sh full
 ./scripts/agent-llm-mm.sh doctor
 ```
 
@@ -22,7 +22,7 @@ Expected evidence:
 
 - formatting and whitespace checks exit with code `0`
 - `cargo clippy` exits with code `0` and no warnings
-- `cargo test` exits with code `0`
+- `./scripts/test-tier.sh full` exits with code `0`
 - `doctor` reports `status = ok`
 - `doctor` continues to report `self_revision_write_path = run_reflection`
 - `doctor` does not expose provider secrets
@@ -379,9 +379,9 @@ Required boundary:
 Recommended verification when the evidence summary changes:
 
 ```bash
-cargo test --test local_alpha_release_evidence -v
+cargo test --features release-tools --test local_alpha_release_evidence -v
 bash -n scripts/local-alpha-evidence-summary.sh
-cargo run --quiet --bin local_alpha_evidence_summary -- --evidence-root .
+cargo run --quiet --features release-tools --bin local_alpha_evidence_summary -- --evidence-root .
 ```
 
 The summary may be attached to release notes or review packets as a gate status
@@ -419,7 +419,7 @@ Recommended verification when the refresh script changes:
 
 ```bash
 bash -n scripts/local-alpha-release-gate-refresh.sh
-cargo test --test local_alpha_release_evidence -v
+cargo test --features release-tools --test local_alpha_release_evidence -v
 ```
 
 ## Local Release Soak Evidence
@@ -475,7 +475,7 @@ Recommended verification when the release soak runner changes:
 
 ```bash
 bash -n scripts/release-soak-local.sh
-cargo test --test local_alpha_release_evidence release_soak -v
+cargo test --features release-tools --test local_alpha_release_evidence release_soak -v
 ```
 
 ## Correlation ID Gate

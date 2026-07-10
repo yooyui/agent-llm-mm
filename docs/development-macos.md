@@ -149,10 +149,16 @@ transport = "stdio"
 ```zsh
 cargo fmt --check
 git diff --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test
+cargo clippy --all-targets -- -D warnings
+./scripts/test-tier.sh fast
+./scripts/test-tier.sh core
+./scripts/status-sync-check.sh
 ./scripts/agent-llm-mm.sh doctor
 ```
+
+涉及发布证据、打包或 provider certification 工具时，再运行
+`cargo clippy --all-targets --all-features -- -D warnings` 和
+`./scripts/test-tier.sh full`。`release-tools` 不进入默认运行时构建。
 
 发布前请按 [Release Gate](release-gate.md) 跑完整 gate；本节只是 macOS 日常验证入口。
 如果判断 Local Product Alpha / product alpha 口径，还必须改用 [Local Alpha Release Gate](product/release-gate-local-alpha.md)；普通 `doctor` 通过不等于 Local Alpha 完成。

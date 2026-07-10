@@ -34,7 +34,7 @@
 - `run_reflection` 受治理的 durable write path；
 - mock、OpenAI-compatible、OpenRouter 配置路径；
 - 本地 dashboard、doctor、support bundle、backup / restore 和 release preflight；
-- 当前测试列表枚举 400 项。
+- 测试已分为 `fast` / `core` / `full` 三级；发布证据、打包和 provider certification 工具由非默认 `release-tools` feature 承载。
 
 当前不能视为完整产品能力：
 

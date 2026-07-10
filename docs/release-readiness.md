@@ -58,11 +58,11 @@
 
 当前可确认的验证基线：
 
-- `2026-07-10` 完整 `cargo test` 通过，测试清单枚举 400 个测试
-- `./scripts/status-sync-check.sh` 通过，文档总数声明与当前测试清单一致
+- `2026-07-10` 已建立 `fast` / `core` / `full` 三级验证；发布前使用 `./scripts/test-tier.sh full`
+- `./scripts/status-sync-check.sh` 通过，active plan 与 reality gate 一致且根目录 SQLite fixture 未回流
 - `cargo clippy --all-targets --all-features -- -D warnings` 通过，当前静态质量基线无 warning
 - 历史记录中 `doctor` 返回 `status = ok`，但当前实现会 create / migrate / seed 配置的 SQLite；它不是 no-write inspection
-- `cargo test --test non_mvp_product_tracks -v` 覆盖 release evidence index、provider certification preflight、packaging preflight 和 richer memory semantics projection 的本地只读 / preflight 边界
+- `cargo test --features release-tools --test non_mvp_product_tracks -v` 覆盖 release evidence index、provider certification preflight 和 packaging preflight 的本地只读 / preflight 边界；richer memory semantics projection 保留在默认 `product_completion_read_models` 核心回归中
 
 ### 4. 当前边界已经能被文档清楚说明
 
@@ -112,7 +112,7 @@ SQLite 落盘已经可用，默认路径语义也已收口为“本机用户共�
 - 按 [Release Gate](release-gate.md) 跑完整发布 gate（minimum gate、self-revision 证据 gate、dashboard gate），并单独记录 sandbox-only failure 与代码失败的区别
 - 按 [Release Engineering](product/release-engineering.md) 记录 release evidence directory、version naming、changelog、compatibility matrix、soak 证据和 deprecation 状态
 - 若候选变更涉及 runtime、persistence、dashboard、daemon、provider 或 MCP 行为，运行 `./scripts/release-soak-local.sh <candidate-name> [config_path]` 生成本机候选证据；该脚本不生成真实 fresh-machine、Windows runner、remote/team、安装包、tag 或发布认证证据
-- 若候选变更涉及 release evidence、provider certification、packaging 或 richer memory semantics，运行 `./scripts/release-evidence-index.sh <candidate-name>`、`./scripts/provider-certification-check.sh [config_path]`、`./scripts/packaging-preflight-check.sh <candidate-name>` 和 `cargo test --test non_mvp_product_tracks -v`；如果已有候选 archive，再运行 `./scripts/packaging-archive-evidence.sh <candidate-name>` 生成 checksum manifest 后重跑 packaging preflight；这些 preflight 只读取本地 evidence/config shape，不认证 live provider、不创建安装包、不上传文件；stub/simulated provider evidence、provider evidence 占位文件、URL path secret、零字节或部分 packaging archive、缺失 checksum manifest 或 manifest mismatch 都不能被当作通过证据
+- 若候选变更涉及 release evidence、provider certification 或 packaging，运行 `./scripts/release-evidence-index.sh <candidate-name>`、`./scripts/provider-certification-check.sh [config_path]`、`./scripts/packaging-preflight-check.sh <candidate-name>` 和 `cargo test --features release-tools --test non_mvp_product_tracks -v`；如果已有候选 archive，再运行 `./scripts/packaging-archive-evidence.sh <candidate-name>` 生成 checksum manifest 后重跑 packaging preflight；这些 preflight 只读取本地 evidence/config shape，不认证 live provider、不创建安装包、不上传文件；stub/simulated provider evidence、provider evidence 占位文件、URL path secret、零字节或部分 packaging archive、缺失 checksum manifest 或 manifest mismatch 都不能被当作通过证据
 - 确认 README、状态文档、路线图、三语说明都已更新
 - 确认接入命令与验证命令可以直接复制使用
 - 确认对“已实现 / 部分实现 / 未实现”的边界没有过度承诺

@@ -1,3 +1,7 @@
+#[cfg(feature = "release-tools")]
+use agent_llm_mm::support::product_wording::{
+    ClaimGateState, ProductClaimGuardInput, check_product_claims,
+};
 use agent_llm_mm::{
     domain::{
         episode_projection::{
@@ -5,15 +9,15 @@ use agent_llm_mm::{
         },
         evidence_relation::{EvidenceRelationInput, build_evidence_relation_report},
         memory_layer_projection::{MemoryLayerProjectionInput, build_memory_layer_projection},
+        memory_semantics_projection::{
+            MemorySemanticsProjectionInput, build_memory_semantics_projection,
+        },
         snapshot::SelfSnapshot,
     },
     run_doctor,
-    support::{
-        product_wording::{ClaimGateState, ProductClaimGuardInput, check_product_claims},
-        remote_team::{
-            RemoteTeamCapabilityState, remote_team_capability_inventory,
-            remote_team_security_gate_report,
-        },
+    support::remote_team::{
+        RemoteTeamCapabilityState, remote_team_capability_inventory,
+        remote_team_security_gate_report,
     },
 };
 use tempfile::tempdir;
@@ -794,6 +798,32 @@ fn memory_layer_projection_is_read_only_and_keeps_self_model_durable_writes_bloc
 }
 
 #[test]
+fn memory_semantics_projection_reports_richer_semantics_without_new_durable_writes() {
+    let projection = build_memory_semantics_projection(MemorySemanticsProjectionInput {
+        evidence_relation_count: 3,
+        episode_summary_count: 2,
+        semantic_claim_count: 4,
+        procedural_memory_count: 0,
+        self_model_write_migration_present: false,
+    });
+
+    assert!(projection.read_only);
+    assert!(!projection.writes_performed);
+    assert_eq!(projection.durable_self_model_write_path, "run_reflection");
+    assert_semantic_capability(&projection, "evidence_relations", "partial");
+    assert_semantic_capability(&projection, "episode_summaries", "partial");
+    assert_semantic_capability(&projection, "procedural_memory", "not_implemented");
+    assert_semantic_capability(&projection, "durable_self_model_writes", "blocked");
+    assert!(
+        projection
+            .non_claims
+            .iter()
+            .any(|claim| claim.contains("not full ranking engine"))
+    );
+}
+
+#[cfg(feature = "release-tools")]
+#[test]
 fn product_wording_guard_blocks_overstated_claims_without_matching_gates() {
     let report = check_product_claims(ProductClaimGuardInput {
         text: "Agent LLM MM is GA, production-ready, supports remote team service, and has complete self-governance.".to_string(),
@@ -826,4 +856,23 @@ fn product_wording_guard_blocks_overstated_claims_without_matching_gates() {
             .iter()
             .any(|violation| violation.claim == "complete_self_governance")
     );
+}
+
+fn assert_semantic_capability(
+    projection: &agent_llm_mm::domain::memory_semantics_projection::MemorySemanticsProjection,
+    capability: &str,
+    status: &str,
+) {
+    let entry = projection
+        .capabilities
+        .iter()
+        .find(|entry| entry.capability == capability)
+        .unwrap_or_else(|| {
+            panic!(
+                "missing semantic capability {capability}; capabilities={:?}",
+                projection.capabilities
+            )
+        });
+    assert_eq!(entry.status, status);
+    assert!(!entry.writes_allowed);
 }

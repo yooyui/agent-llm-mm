@@ -112,26 +112,39 @@ pwsh -File .\scripts\agent-llm-mm.ps1 serve
 
 ## 文档
 
-- [项目定位](positioning.md)
-- [常见问题](faq.md)
-- [英文项目说明](project-overview.en.md)
-- [中文项目说明](project-overview.zh-CN.md)
-- [日文项目说明](project-overview.ja.md)
+### 理解项目
+
+1. [项目起点与主线原则](origin-and-principles.md)
+2. [项目定位](positioning.md)
+3. [当前实现状态](project-status.md)
+4. [Now / Next / Later 路线图](roadmap.md)
+5. [当前 active plan](plans/2026-07-10-product-replan.md)
+
+当前 active plan 是唯一任务入口；历史计划只用于追溯，不再定义当前工作。
+
+### 开发与验证
+
+- [macOS 开发说明](development-macos.md)
+- [Windows 开发说明](development-windows.md)
+- [本机 MCP 接入](local-mcp-integration-2026-03-26.md)
 - [测试指南](testing-guide-2026-03-24.md)
-- [发布准备评估](release-readiness.md)
-- [发布门禁运行手册](release-gate.md)
-- [本地 Alpha 产品需求说明](product/prd-local-alpha.md)
-- [Provider 就绪检查清单](provider-contract.md)
+
+### 参考与历史
+
 - [文档总览](document-map.md)
+- [历史归档](archive.md)
 
 ## 验证
 
-截至 `2026-06-08`，`cargo test` 全量通过，共 400 个测试。
+测试分为 `fast`、`core`、`full` 三级；发布证据、打包和 provider certification
+工具由非默认 `release-tools` feature 承载。
 
 常用本地检查：
 
 ```zsh
-cargo test
+./scripts/test-tier.sh fast
+./scripts/test-tier.sh core
+./scripts/status-sync-check.sh
 ./scripts/agent-llm-mm.sh doctor
 git diff --check
 ```
