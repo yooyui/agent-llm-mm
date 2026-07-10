@@ -7,8 +7,9 @@ evidence, and product wording all line up.
 
 Current baseline:
 
-- current branch: `dev-work`, carrying the reviewed `codex/physics-layer-report`
-  implementation commits
+- consolidation branch: `codex/project-mainline-reset-2026-07-10`, based on
+  `dev-work@6fcbb5f`; the pre-consolidation tree is preserved at
+  `codex/archive/pre-mainline-reset-2026-07-10@48f6eca`
 - carried implementation: P1/P2/P3 follow-up slices plus the read-only
   physics-informed architecture report, product wording guards, and indexed
   planning spec in the current branch
@@ -180,9 +181,7 @@ declarations in:
 - `docs/testing-guide-2026-03-24.md`
 - `docs/local-mcp-integration-2026-03-26.md`
 - `docs/project-status.md`
-- `docs/progress-tracker.md`
 - `docs/product/follow-up-reality-gates.md`
-- `docs/superpowers/specs/2026-05-28-physics-informed-architecture-design.md`
 - `docs/project-overview.zh-CN.md`
 - `docs/project-overview.en.md`
 - `docs/project-overview.ja.md`
@@ -190,14 +189,17 @@ declarations in:
 
 Current branch `cargo test` total declaration: 400 tests.
 
-It also reads
-`docs/superpowers/plans/2026-05-24-p1-p2-p3-product-completion-plan.md` and
-this document, then fails if a checked plan item has no matching reality-gate
+It also reads the current active plan,
+`docs/plans/2026-07-10-product-replan.md`, and this document, then fails if a
+checked plan item has no matching reality-gate
 row or if the matching row is still `implemented-unmerged`, `partial`,
 `simulation-only`, `planning-gate`, `blocked claim`, or `not-implemented`.
 
-This check protects the documented cargo-test total and the current
-P1/P2/P3 plan-to-reality status alignment from drifting. It does not certify
+This check protects the documented cargo-test total and the current active-plan
+to reality status alignment from drifting. It does not certify
 Local Alpha, does not turn simulation evidence into real fresh-machine
 evidence, does not prove Windows runner parity, and does not change the
 `run_reflection` durable write-path boundary.
+
+The wrapper also rejects an unexpected root-level `not-a-sqlite-url` artifact,
+so the archived SQLite fixture cannot silently re-enter the current tree.

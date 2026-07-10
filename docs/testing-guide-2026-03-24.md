@@ -65,10 +65,8 @@
 
 合计：400 个测试通过。
 
-当前静态检查基线并非全绿：在现用 toolchain 下，
-`cargo clippy --all-targets --all-features -- -D warnings` 会在
-`tests/provider_live_certification.rs:925` 触发
-`clippy::collapsible_if`。在该 warning 修复前，不得把候选版本描述为通过完整质量门禁。
+当前静态检查基线已恢复全绿：`2026-07-10` 串行执行
+`cargo clippy --all-targets --all-features -- -D warnings` 通过。
 
 ---
 
@@ -1142,7 +1140,7 @@ git diff --check
 ### 改 daemon observe-only gate
 
 ```zsh
-rg -n 'observe-only|run_reflection|forbidden|daemon|remote listener' docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/roadmap.md docs/progress-tracker.md
+rg -n 'observe-only|run_reflection|forbidden|daemon|remote listener' docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/roadmap.md docs/project-status.md
 cargo test --test daemon_config -v
 git diff --check
 ```
@@ -1155,7 +1153,7 @@ git diff --check
 cargo test --test daemon_config -v
 cargo test --test operation_log -v
 AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor
-rg -n 'daemon_observe_only|observe-only|writes_allowed|remote_listener_enabled|operation_log' README.md docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/project-status.md docs/progress-tracker.md
+rg -n 'daemon_observe_only|observe-only|writes_allowed|remote_listener_enabled|operation_log' README.md docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/project-status.md
 git diff --check
 ```
 
@@ -1195,6 +1193,7 @@ cargo test --test mcp_stdio
 cargo fmt --check
 git diff --check
 cargo clippy --all-targets --all-features -- -D warnings
+./scripts/status-sync-check.sh
 cargo test
 AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor
 ```
@@ -1205,19 +1204,21 @@ demo / MVP 发布前核验不使用这段简表作为最终依据；请按 [Rele
 
 ## 11. 当前结论
 
-截至 `2026-05-14`，推荐把下面五条当作普通提交前基线；demo / MVP 发布前仍以 [Release Gate](release-gate.md) 为准；Local Alpha / product alpha 发布前以 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 为准：
+截至 `2026-07-10`，推荐把下面六条当作普通提交前基线；demo / MVP 发布前仍以 [Release Gate](release-gate.md) 为准；Local Alpha / product alpha 发布前以 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 为准：
 
 ```zsh
 cargo fmt --check
 git diff --check
 cargo clippy --all-targets --all-features -- -D warnings
+./scripts/status-sync-check.sh
 cargo test
 AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor
 ```
 
-如果这五条都通过，说明当前工作树至少满足：
+如果这六条都通过，说明当前工作树至少满足：
 
 - 编码规范通过
 - 编译与静态检查通过
+- 当前 active plan、测试总数声明和 suite count 同步，且根目录没有误回流的 `not-a-sqlite-url` SQLite 文件
 - `namespace`、SQLite migration、MCP `stdio`、reflection 闭环和 automatic self-revision MVP 基线都可继续追加定向验证
 - 本机运行时 bootstrap 正常

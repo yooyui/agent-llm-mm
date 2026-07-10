@@ -5,9 +5,7 @@ pub const TEST_TOTAL_DOCUMENTS: &[&str] = &[
     "docs/testing-guide-2026-03-24.md",
     "docs/local-mcp-integration-2026-03-26.md",
     "docs/project-status.md",
-    "docs/progress-tracker.md",
     "docs/product/follow-up-reality-gates.md",
-    "docs/superpowers/specs/2026-05-28-physics-informed-architecture-design.md",
     "docs/project-overview.zh-CN.md",
     "docs/project-overview.en.md",
     "docs/project-overview.ja.md",
@@ -45,8 +43,7 @@ pub const MONITORED_TEST_SUITES: &[&str] = &[
     "support_bundle",
 ];
 
-pub const PLAN_STATUS_DOCUMENT: &str =
-    "docs/superpowers/plans/2026-05-24-p1-p2-p3-product-completion-plan.md";
+pub const PLAN_STATUS_DOCUMENT: &str = "docs/plans/2026-07-10-product-replan.md";
 pub const REALITY_GATES_DOCUMENT: &str = "docs/product/follow-up-reality-gates.md";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -659,7 +656,7 @@ support_bundle_reports_openrouter_config_shape_without_provider_secrets: test
         let contents = "当前分支 `cargo test` 全量通过 `264` 个测试";
 
         assert_eq!(
-            DocumentTestTotal::parse("docs/progress-tracker.md", contents)
+            DocumentTestTotal::parse("docs/project-status.md", contents)
                 .expect("total should parse")
                 .total,
             264

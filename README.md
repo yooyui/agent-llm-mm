@@ -6,6 +6,8 @@ Languages: English | [Simplified Chinese](docs/README.zh-CN.md) | [Japanese](doc
 
 MCP Memory Ledger is a Rust MCP `stdio` memory service for local AI clients. It records interactions, evidence, claims, self snapshots, and reflection audits in SQLite so an agent can use durable memory inside explicit, inspectable boundaries instead of relying only on a single prompt context.
 
+The project grew out of a discussion about information loss, durable memory, and how selected parts of the past can safely constrain future agent behavior. The [origin and mainline principles](docs/origin-and-principles.md) are now the entry point for deciding what belongs in this repository.
+
 The current project is best understood as a technical MVP for local agent memory, MCP integration, SQLite persistence, and governed self-revision. It is not a production autonomous-agent platform. Remote team mode, multi-tenancy, packaged installers, daemon write capabilities, and production security boundaries remain gated roadmap work.
 
 ## Features
@@ -13,9 +15,8 @@ The current project is best understood as a technical MVP for local agent memory
 - **Local MCP memory service**: exposes `ingest_interaction`, `build_self_snapshot`, `decide_with_snapshot`, and `run_reflection` over MCP `stdio`.
 - **SQLite persistence**: stores events, claims, evidence, reflection audits, trigger ledger entries, and operation logs.
 - **Evidence-gated self-revision**: claim, identity, and commitment updates must be backed by explicit evidence and governance rules. `run_reflection` remains the only durable write path for identity, commitment, and reflection changes.
-- **Observable local diagnostics**: includes a read-only HTTP surface, operation-log lookup, and a redacted support-bundle generator. The current `doctor` runtime check can create, migrate, and seed the configured SQLite database, so it must not be treated as a no-write inspection until the planned command split lands.
+- **Bounded local operations**: includes operation-log lookup, backup / restore helpers, and redacted diagnostics. The current `doctor` runtime check can create, migrate, and seed the configured SQLite database, so it must not be treated as a no-write inspection until the planned command split lands.
 - **Provider integration**: supports `mock`, `openai-compatible`, and OpenRouter configuration paths. Provider secrets should stay in private local config or environment variables.
-- **Local release gates**: includes read-only checks for local alpha evidence, provider preflight, packaging preflight, and release evidence summaries. These scripts prove current boundaries; they do not publish or certify a release.
 
 ## Use Cases
 
@@ -23,7 +24,6 @@ The current project is best understood as a technical MVP for local agent memory
 - Study how an agent can update long-term memory through explicit evidence.
 - Validate a minimal loop for self snapshots, reflection, and commitment gates.
 - Use a Rust + SQLite + MCP `stdio` project as an engineering reference.
-- Generate local diagnostic material for provider, config, dashboard, or operation-log issues.
 
 ## Quick Start
 
@@ -71,17 +71,6 @@ Generate a redacted support bundle:
 
 The support bundle contains redacted JSON summaries only. It does not copy the full SQLite database, raw TOML, provider payloads, or raw `.log` files. To export a focused log excerpt or a specific MCP tool call, pass `--log-file` or `--correlation-id` explicitly.
 
-Summarize local alpha gate evidence:
-
-```zsh
-./scripts/local-alpha-evidence-summary.sh \
-  --evidence-root . \
-  --output-json target/reports/local-alpha/evidence-summary.json \
-  --output-md target/reports/local-alpha/evidence-summary.md
-```
-
-This command only reads existing local evidence and writes a summary. It does not create missing evidence or certify local alpha readiness.
-
 ## Current Boundaries
 
 Implemented:
@@ -117,18 +106,17 @@ See [project status](docs/project-status.md), the [roadmap](docs/roadmap.md), an
 
 ## Documentation
 
+- [Project origin and mainline principles](docs/origin-and-principles.md)
 - [Positioning](docs/positioning.md)
-- [FAQ](docs/faq.md)
-- [Project overview: English](docs/project-overview.en.md)
-- [Project overview: Simplified Chinese](docs/project-overview.zh-CN.md)
-- [Project overview: Japanese](docs/project-overview.ja.md)
-- [Testing guide](docs/testing-guide-2026-03-24.md)
-- [Release readiness](docs/release-readiness.md)
-- [Release gate runbook](docs/release-gate.md)
-- [Local Alpha PRD](docs/product/prd-local-alpha.md)
-- [Provider contract](docs/provider-contract.md)
+- [Current implementation status](docs/project-status.md)
+- [Now / Next / Later roadmap](docs/roadmap.md)
 - [Active project plan](docs/plans/2026-07-10-product-replan.md)
-- [Document map (Chinese)](docs/document-map.md)
+- [macOS development guide](docs/development-macos.md)
+- [Windows development guide](docs/development-windows.md)
+- [Local MCP integration guide](docs/local-mcp-integration-2026-03-26.md)
+- [Testing guide](docs/testing-guide-2026-03-24.md)
+- [Complete document map](docs/document-map.md)
+- [Historical archive](docs/archive.md)
 
 ## Verification
 

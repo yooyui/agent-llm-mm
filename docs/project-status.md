@@ -1,5 +1,20 @@
 # 当前实现状态
 
+## 2026-07-10 主线收束
+
+项目现在以[项目起点与主线原则](origin-and-principles.md)作为认知入口，以 `Truth and Safety -> Trustworthy Recall -> Local Product Alpha` 作为当前执行顺序。
+
+本次仓库整理采用“当前主线 + 本地历史分支”结构：
+
+- 当前工作分支：`codex/project-mainline-reset-2026-07-10`；
+- 整理前完整归档：`codex/archive/pre-mainline-reset-2026-07-10@48f6eca`；
+- 当前文档树由 74 个文件收束为 36 个；40 份历史/实验文档从当前分支移出但可精确恢复；
+- 历史 specs、旧 plans、阶段快照、原始逐轮日志和旧 release records 已从当前文档树移出；
+- 原始讨论整理稿、核心 runtime、正式 tests、开发/接入文档继续保留；
+- dashboard、daemon、productization preflight 和 release-evidence 代码本轮没有拆除，只是不再主导首页和路线图；后续必须按依赖闭包单独决策。
+
+归档不代表删除证据；具体查阅与恢复方式见[archive.md](archive.md)。
+
 ## 2026-07-10 事实校准
 
 当前状态必须与新的 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；新的路线已经确定，但 M0 代码实现、Local Alpha、Beta、GA 和 production-ready 均未开始或未通过对应 gate。
@@ -245,7 +260,7 @@ Implementation notes:
 - 当前已经能通过 `run_reflection` 最小更新 `identity_core`
 - 当前已经能通过 `run_reflection` 最小更新 `commitments`
 - 反思审计会记录 supporting evidence 与请求的更新载荷
-- 当前 deeper-update 输入、evidence、baseline commitment 和审计边界已收口到 `docs/superpowers/specs/2026-04-27-reflection-deeper-update-contract.md`
+- 当前 deeper-update 输入、evidence、baseline commitment 和审计边界以 `src/application/run_reflection.rs`、`src/domain/rules/reflection_policy.rs` 及对应测试为当前事实来源；旧设计说明保存在归档分支
 
 但它仍然只是首版收口，不是 richer schema、版本化 slow-variable 层或完整策略系统。
 
@@ -327,7 +342,7 @@ Implementation notes:
 - `status_sync`: 11
 - `support_bundle`: 35
 - 合计：400 个测试通过
-- `cargo clippy --all-targets --all-features -- -D warnings` 当前未通过：`tests/provider_live_certification.rs:925` 触发 `clippy::collapsible_if`；该既有代码问题进入 M0，未在本次规划任务中顺手修改
+- `cargo clippy --all-targets --all-features -- -D warnings` 通过，当前静态质量基线无 warning
 
 以下 product smoke、doctor、support bundle 和 release evidence 结果沿用此前记录，本轮规划任务没有重新生成对应工件：
 

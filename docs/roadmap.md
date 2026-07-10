@@ -9,6 +9,8 @@
 
 把现有 technical MVP 收束成一个可信、可检索、可审计、可恢复的本地 MCP Memory Ledger。
 
+所有路线选择先服从[项目起点与主线原则](origin-and-principles.md)：原始事件保真、高层记忆可追溯、scope 隔离、历史可纠错、反思受治理。不能加强这些原则的能力默认不进入当前主线。
+
 第一产品闭环是：
 
 ```text
@@ -148,10 +150,12 @@ M0 Truth and Safety
 
 ## 文档入口
 
+- 项目起点：[origin-and-principles.md](origin-and-principles.md)
 - 公共定位：[positioning.md](positioning.md)
 - 当前事实：[project-status.md](project-status.md)
 - 唯一 active plan：[2026-07-10-product-replan.md](plans/2026-07-10-product-replan.md)
 - 证据状态：[follow-up-reality-gates.md](product/follow-up-reality-gates.md)
 - 计划索引：[plans/README.md](plans/README.md)
+- 历史归档：[archive.md](archive.md)
 
-2026-05 至 2026-06 的 productization、P1/P2/P3 和 non-MVP plans 均保留为 historical / superseded 记录，不再作为当前下一步来源。
+2026-03 至 2026-06 的历史 specs、execution plans、阶段快照和发布记录已移至 `codex/archive/pre-mainline-reset-2026-07-10`，不再作为当前下一步来源。

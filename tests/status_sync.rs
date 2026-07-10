@@ -1,5 +1,6 @@
 use agent_llm_mm::support::status_sync::{
-    CargoTestList, DocumentTestTotal, RealityGateReport, StatusSyncReport, TEST_TOTAL_DOCUMENTS,
+    CargoTestList, DocumentTestTotal, PLAN_STATUS_DOCUMENT, RealityGateReport, StatusSyncReport,
+    TEST_TOTAL_DOCUMENTS,
 };
 use std::collections::BTreeMap;
 
@@ -30,16 +31,24 @@ gamma_case: test
 }
 
 #[test]
-fn monitored_documents_include_local_mcp_integration_entrypoint() {
+fn monitored_documents_only_use_current_entrypoints() {
     assert!(
         TEST_TOTAL_DOCUMENTS.contains(&"docs/local-mcp-integration-2026-03-26.md"),
         "local MCP integration docs carry fresh verification totals and must be part of drift checks"
     );
-    assert!(
-        TEST_TOTAL_DOCUMENTS
-            .contains(&"docs/superpowers/specs/2026-05-28-physics-informed-architecture-design.md"),
-        "architecture specs with baseline test totals must be part of drift checks"
+    assert_eq!(
+        PLAN_STATUS_DOCUMENT, "docs/plans/2026-07-10-product-replan.md",
+        "status sync must read the only active execution plan"
     );
+    for archived_path in [
+        "docs/progress-tracker.md",
+        "docs/superpowers/specs/2026-05-28-physics-informed-architecture-design.md",
+    ] {
+        assert!(
+            !TEST_TOTAL_DOCUMENTS.contains(&archived_path),
+            "archived document must not remain a current status-sync input: {archived_path}"
+        );
+    }
     for path in [
         "docs/project-overview.zh-CN.md",
         "docs/project-overview.en.md",

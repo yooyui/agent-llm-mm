@@ -120,7 +120,8 @@ Local Product Alpha 后续完整 gate 应在 `docs/product/release-gate-local-al
 ## 10. 文档入口
 
 - 仓库首页：[`README.md`](../../README.md)
+- 项目起点：[`docs/origin-and-principles.md`](../origin-and-principles.md)
 - 文档总览：[`docs/document-map.md`](../document-map.md)
 - 当前实现状态：[`docs/project-status.md`](../project-status.md)
-- 正式产品化路线图：[`docs/superpowers/plans/2026-05-09-productization-roadmap.md`](../superpowers/plans/2026-05-09-productization-roadmap.md)
-- Local Product Alpha 任务列表：[`docs/superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md`](../superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md)
+- 当前路线图：[`docs/roadmap.md`](../roadmap.md)
+- 唯一 active plan：[`docs/plans/2026-07-10-product-replan.md`](../plans/2026-07-10-product-replan.md)

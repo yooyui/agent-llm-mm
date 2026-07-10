@@ -5,7 +5,7 @@
 ## 当前计划
 
 - [2026-07-10-product-replan.md](2026-07-10-product-replan.md)
-  - 状态：`active / planning complete / implementation not started`
+  - 状态：`active / M0.1 complete / M0.2 ready`
   - 目标：把现有 technical MVP 收束为可信、可检索、可审计、可恢复的本地 MCP Memory Ledger
   - 当前里程碑：`M0 Truth and Safety Reset`
 
@@ -13,6 +13,7 @@
 
 | 文档 | 唯一职责 |
 | --- | --- |
+| [`docs/origin-and-principles.md`](../origin-and-principles.md) | 灵感起点、不可丢失的架构原则和新能力准入条件 |
 | [`docs/positioning.md`](../positioning.md) | 公共名称、目标用户和对外口径 |
 | [`docs/project-status.md`](../project-status.md) | 当前分支真实实现状态 |
 | [`docs/roadmap.md`](../roadmap.md) | Now / Next / Later 产品路线 |
@@ -23,16 +24,9 @@
 
 ## 已被取代的计划
 
-以下文件保留为历史设计与执行记录，不再作为下一步任务来源：
+2026-03 至 2026-06 的 specs、execution plans、P1/P2/P3、productization、阶段进度和发布记录已移至本地分支 `codex/archive/pre-mainline-reset-2026-07-10`。完整路径和读取方式见 [`docs/archive.md`](../archive.md)。
 
-- `docs/superpowers/plans/2026-05-09-productization-roadmap.md`
-- `docs/superpowers/plans/2026-05-09-local-product-alpha-development-tasks.md`
-- `docs/superpowers/plans/2026-05-16-formal-product-readiness-12-workstreams.md`
-- `docs/superpowers/plans/2026-05-24-p1-p2-p3-product-completion-plan.md`
-- `docs/superpowers/plans/2026-06-08-non-mvp-product-completion.md`
-- `docs/progress-tracker.md`
-
-这些历史文件中的已完成项、未完成框和阶段名称只描述当时语境。后续任务必须从当前 active plan 领取，并把结果写回当前状态与 reality gate。
+归档文件中的已完成项、未完成框和阶段名称只描述当时语境，不再拥有执行权。后续任务必须从当前 active plan 领取，并把结果写回当前状态与 reality gate。
 
 ## 更新规则
 

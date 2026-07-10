@@ -60,7 +60,7 @@
 
 - `2026-07-10` 完整 `cargo test` 通过，测试清单枚举 400 个测试
 - `./scripts/status-sync-check.sh` 通过，文档总数声明与当前测试清单一致
-- 完整 Clippy 门禁尚未通过：`tests/provider_live_certification.rs:925` 触发 `clippy::collapsible_if`，因此下一候选版本的静态质量 gate 仍保持 open
+- `cargo clippy --all-targets --all-features -- -D warnings` 通过，当前静态质量基线无 warning
 - 历史记录中 `doctor` 返回 `status = ok`，但当前实现会 create / migrate / seed 配置的 SQLite；它不是 no-write inspection
 - `cargo test --test non_mvp_product_tracks -v` 覆盖 release evidence index、provider certification preflight、packaging preflight 和 richer memory semantics projection 的本地只读 / preflight 边界
 

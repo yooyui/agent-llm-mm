@@ -1,9 +1,9 @@
 # MCP Memory Ledger 全新项目规划
 
-状态：`active / planning complete / implementation not started`
+状态：`active / M0.1 complete / M0.2 ready`
 规划日期：`2026-07-10`
 代码基线：`dev-work@6fcbb5f`
-写入边界：本文件只定义后续执行，不代表任何代码能力已经改变或任何发布 gate 已通过。
+写入边界：本轮只完成仓库主线收束、状态同步和质量基线修复；不代表产品能力或发布 gate 已通过。
 
 ## 1. 总体决策
 
@@ -148,13 +148,14 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 
 ### M0.1 统一事实入口和仓库卫生
 
-- [ ] 把 status-sync 的 active plan 指针从旧 P1/P2/P3 文件迁到本计划。
-- [ ] 清理被跟踪的根目录 SQLite fixture；先确认测试不依赖，再以正常提交删除并加入忽略/fixture 规则。
-- [ ] 轮换本机私有配置中的非占位 provider credential；不把值写入日志、文档或提交。
-- [ ] 增加仓库 secret / binary fixture hygiene check。
-- [ ] 保持旧计划为 historical，不删除追溯证据。
+- 已完成（2026-07-10）：把 status-sync 的 active plan 指针从旧 P1/P2/P3 文件迁到本计划。
+- 已完成（2026-07-10）：确认测试不依赖后，移除被跟踪的根目录 SQLite fixture，并增加精确忽略规则。
+- 已完成（2026-07-10）：让 `status-sync-check` 阻断根目录 SQLite fixture 回流。
+- 已完成（2026-07-10）：旧计划、原始日志和阶段记录保存在本地历史分支，不作为当前任务源。
 
-证据门：工作树不含意外数据库或凭据；文档只有一个 active plan；status sync 读取本计划。
+证据门：tracked worktree 不含意外数据库；文档只有一个 active plan；status sync 读取本计划并阻断 fixture 回流。
+
+本机安全后续不属于仓库完成状态：私有配置文件保持 ignored / untracked；其中的非占位 provider credential 应由用户单独轮换。若后续要增加 tracked-file secret scanner，应作为独立安全切片设计，避免扫描或输出本机私有配置内容。
 
 ### M0.2 Scoped Snapshot v2
 
@@ -191,7 +192,7 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 
 - [ ] 无认证阶段拒绝 dashboard 非 loopback host。
 - [ ] 修正 CLI tracing 初始化，使 stderr 日志与 MCP stdout 保持隔离。
-- [ ] 修复当前 toolchain 在 `tests/provider_live_certification.rs` 报出的 `clippy::collapsible_if`，恢复零 warning 基线。
+- 已完成（2026-07-10）：修复测试辅助代码的 `clippy::collapsible_if`，恢复当前 toolchain 的零 warning 基线。
 - [ ] 增加 GitHub Actions：format、clippy、tests、status sync；先覆盖 macOS / Linux，Windows 进入 M2 完整 parity gate。
 - [ ] 固定 Rust toolchain / MSRV 决策。
 - [ ] 对 `rmcp 0.5` 到当前官方 SDK 做独立兼容 spike，只提交迁移清单、破坏面和测试矩阵；不得顺带引入 remote/tasks/OAuth。
@@ -373,8 +374,8 @@ M2 退出指标：
 | `docs/roadmap.md` | 只写 Now / Next / Later 摘要 |
 | 本文件 | 唯一 active execution plan |
 | `docs/product/follow-up-reality-gates.md` | 证据状态与阻断项 |
-| `docs/progress-tracker.md` | 2026-05-09 历史快照，不再是任务总表 |
-| 2026-05/06 多份 productization plans | historical / superseded，保留追溯 |
+| `codex/archive/pre-mainline-reset-2026-07-10` | 保存旧 progress tracker、历史 specs/plans、阶段快照和 release records |
+| [archive.md](../archive.md) | 当前分支的归档索引、查阅方式与精确恢复方法 |
 
 ## 16. 当前进度与下一步
 
@@ -382,10 +383,11 @@ M2 退出指标：
 
 - 2026-07-10 只读审计了代码架构、运行时能力、文档口径、测试清单和发布链；
 - 建立新的产品主线、里程碑、证据门和停止条件；
-- 串行通过 `cargo fmt --check`、`git diff --check`、status-sync 定向检查和完整 `cargo test`；测试清单为 400 项；
-- `cargo clippy --all-targets --all-features -- -D warnings` 尚未通过：当前 toolchain 在 `tests/provider_live_certification.rs:925` 报 `clippy::collapsible_if`；本次规划边界内未修改产品代码；
-- 未修改业务代码、未发布、未推送、未运行远程或 live-provider 操作。
+- 建立本地主线整理分支与完整历史归档分支；当前文档树从 74 个文件收束到 36 个，40 份历史/实验文档仍可精确恢复；
+- status-sync 已改读本计划，根目录误提交 SQLite 文件已移除并增加回流门禁；
+- 串行通过 `cargo fmt --check`、`git diff --check`、status-sync 定向检查、完整 Clippy 和完整 `cargo test`；测试清单为 400 项；
+- 未修改产品行为、未发布、未推送、未运行远程或 live-provider 操作。
 
-尚未开始：M0 的任何代码实现。
+尚未开始：M0.2–M0.5 的产品行为实现。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
 
-下一最小动作：领取 **M0.1 统一事实入口和仓库卫生**，先更新 status-sync 的 active plan 契约并为 P0 四类风险建立失败测试；不要同时开始 M1 接口开发。
+下一最小工程动作：为 **M0.2 Scoped Snapshot v2** 先建立跨 namespace / owner 的失败测试和最小 `MemoryScope` 契约；在失败证据冻结前不要开始 M1 接口开发。
