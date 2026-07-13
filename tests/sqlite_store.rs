@@ -1,17 +1,20 @@
 use agent_llm_mm::{
+    application::build_self_snapshot::{BuildSelfSnapshotInput, execute as build_self_snapshot},
     domain::{
         claim::ClaimDraft,
-        event::Event,
+        event::{Event, EventReference, MAX_EVIDENCE_MANIFEST_ITEMS},
         identity_core::IdentityCore,
         reflection::Reflection,
         self_revision::TriggerType,
-        types::{EventKind, Mode, Namespace, Owner},
+        snapshot::{SnapshotBudget, SnapshotTimeWindow},
+        types::{EventKind, MemoryScope, Mode, Namespace, Owner},
     },
     error::AppError,
     ports::{
-        ClaimStatus, ClaimStore, CommitmentStore, EventStore, EvidenceQuery, IdentityStore,
-        IngestTransactionRunner, ReflectionTransactionRunner, StoredClaim, StoredEvent,
-        StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
+        ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
+        IdentityStore, IngestTransactionRunner, ReflectionTransactionRunner, StoredClaim,
+        StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        TriggerLedgerStore,
     },
 };
 use chrono::{DateTime, Utc};
@@ -153,6 +156,538 @@ async fn sqlite_query_evidence_event_ids_filters_by_namespace_before_limit() {
             "evt-project-a-newest".to_string(),
             "evt-project-a-new".to_string()
         ]
+    );
+}
+
+#[tokio::test]
+async fn sqlite_snapshot_queries_do_not_leak_across_owner_or_namespace() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    context
+        .store
+        .save_identity(IdentityCore::new(vec!["identity:self=test".to_string()]))
+        .await
+        .unwrap();
+    let cases = [
+        ("self", Owner::Self_, Namespace::self_()),
+        ("world", Owner::World, Namespace::world()),
+        ("project-a", Owner::World, Namespace::for_project("a")),
+        ("project-b", Owner::World, Namespace::for_project("b")),
+        ("user-alice", Owner::User, Namespace::for_user("alice")),
+        ("user-bob", Owner::User, Namespace::for_user("bob")),
+    ];
+
+    for (offset, (label, owner, namespace)) in cases.iter().enumerate() {
+        let event_id = format!("evt-{label}");
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.clone(),
+                now + chrono::Duration::seconds(offset as i64),
+                Event::new_with_namespace(
+                    *owner,
+                    namespace.clone(),
+                    EventKind::Observation,
+                    *label,
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                format!("claim-{label}"),
+                ClaimDraft::new_with_namespace(
+                    *owner,
+                    namespace.clone(),
+                    format!("subject-{label}"),
+                    "is",
+                    "scoped",
+                    Mode::Observed,
+                ),
+                ClaimStatus::Active,
+            ))
+            .await
+            .unwrap();
+        context
+            .store
+            .record_event_in_episode(format!("episode:{label}"), event_id)
+            .await
+            .unwrap();
+    }
+
+    for (label, _owner, namespace) in cases {
+        let snapshot = build_self_snapshot(
+            &context.store,
+            BuildSelfSnapshotInput {
+                scope: MemoryScope::for_namespace(namespace.clone()),
+                evidence_manifest: None,
+                time_window: SnapshotTimeWindow::unbounded(),
+                budget: SnapshotBudget::new(10),
+            },
+        )
+        .await
+        .unwrap()
+        .snapshot;
+
+        assert_eq!(snapshot.evidence, vec![format!("event:evt-{label}")]);
+        assert_eq!(snapshot.episodes, vec![format!("episode:{label}")]);
+        assert_eq!(
+            snapshot.claims,
+            vec![format!("{}:subject-{label} is scoped", namespace.as_str())]
+        );
+    }
+}
+
+#[tokio::test]
+async fn sqlite_snapshot_manifest_intersects_scope_without_widening() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    context
+        .store
+        .save_identity(IdentityCore::new(vec!["identity:self=test".to_string()]))
+        .await
+        .unwrap();
+
+    let unscoped_manifest = [EventReference::parse("evt-project-a").unwrap()];
+    let error = context
+        .store
+        .list_event_references_in_scope(&MemoryScope::legacy_unscoped(), Some(&unscoped_manifest))
+        .await
+        .expect_err("store callers must not bypass the scoped manifest invariant");
+    assert!(
+        error
+            .to_string()
+            .contains("evidence_manifest requires an explicit namespace")
+    );
+
+    let oversized_manifest =
+        vec![EventReference::parse("evt-project-a").unwrap(); MAX_EVIDENCE_MANIFEST_ITEMS + 1];
+    let error = context
+        .store
+        .list_event_references_in_scope(
+            &MemoryScope::for_namespace(Namespace::for_project("a")),
+            Some(&oversized_manifest),
+        )
+        .await
+        .expect_err("SQLite must reject oversized manifests before building bind parameters");
+    assert!(
+        error
+            .to_string()
+            .contains("evidence_manifest must contain at most 256 entries")
+    );
+
+    for (event_id, namespace, offset) in [
+        ("evt-project-a", Namespace::for_project("a"), 1),
+        ("evt-project-b", Namespace::for_project("b"), 2),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                now + chrono::Duration::seconds(offset),
+                Event::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    EventKind::Observation,
+                    event_id,
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+
+    let scoped = build_self_snapshot(
+        &context.store,
+        BuildSelfSnapshotInput {
+            scope: MemoryScope::for_namespace(Namespace::for_project("a")),
+            evidence_manifest: Some(vec![
+                EventReference::parse("evt-project-a").unwrap(),
+                EventReference::parse("event:evt-project-b").unwrap(),
+            ]),
+            time_window: SnapshotTimeWindow::unbounded(),
+            budget: SnapshotBudget::new(10),
+        },
+    )
+    .await
+    .unwrap()
+    .snapshot;
+    assert_eq!(scoped.evidence, vec!["event:evt-project-a"]);
+
+    let empty_intersection = build_self_snapshot(
+        &context.store,
+        BuildSelfSnapshotInput {
+            scope: MemoryScope::for_namespace(Namespace::for_project("a")),
+            evidence_manifest: Some(vec![EventReference::parse("event:evt-project-b").unwrap()]),
+            time_window: SnapshotTimeWindow::unbounded(),
+            budget: SnapshotBudget::new(10),
+        },
+    )
+    .await
+    .unwrap()
+    .snapshot;
+    assert!(empty_intersection.evidence.is_empty());
+
+    let explicit_empty = build_self_snapshot(
+        &context.store,
+        BuildSelfSnapshotInput {
+            scope: MemoryScope::for_namespace(Namespace::for_project("a")),
+            evidence_manifest: Some(Vec::new()),
+            time_window: SnapshotTimeWindow::unbounded(),
+            budget: SnapshotBudget::new(10),
+        },
+    )
+    .await
+    .unwrap()
+    .snapshot;
+    assert!(explicit_empty.evidence.is_empty());
+}
+
+#[tokio::test]
+async fn sqlite_snapshot_time_window_intersects_scope_manifest_and_orders_real_instants() {
+    let context = test_support::new_sqlite_store().await;
+    context
+        .store
+        .save_identity(IdentityCore::new(vec!["identity:self=test".to_string()]))
+        .await
+        .unwrap();
+
+    for (event_id, namespace, raw_recorded_at) in [
+        (
+            "evt-window-start",
+            Namespace::for_project("a"),
+            "2026-07-11T10:00:00+08:00",
+        ),
+        (
+            "evt-same-early-row",
+            Namespace::for_project("a"),
+            "2026-07-11T03:00:00Z",
+        ),
+        (
+            "evt-same-late-row",
+            Namespace::for_project("a"),
+            "2026-07-11T11:00:00+08:00",
+        ),
+        (
+            "evt-window-end",
+            Namespace::for_project("a"),
+            "2026-07-11T04:00:00+00:00",
+        ),
+        (
+            "evt-after-window",
+            Namespace::for_project("a"),
+            "2026-07-11T05:00:00Z",
+        ),
+        (
+            "evt-sibling-scope",
+            Namespace::for_project("b"),
+            "2026-07-11T03:30:00Z",
+        ),
+        (
+            "evt-not-in-manifest",
+            Namespace::for_project("a"),
+            "2026-07-11T03:30:00Z",
+        ),
+    ] {
+        let recorded_at = DateTime::parse_from_rfc3339(raw_recorded_at)
+            .unwrap()
+            .with_timezone(&Utc);
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                recorded_at,
+                Event::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    EventKind::Observation,
+                    event_id,
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+        sqlx::query("UPDATE events SET recorded_at = ? WHERE event_id = ?")
+            .bind(raw_recorded_at)
+            .bind(event_id)
+            .execute(&context.pool)
+            .await
+            .unwrap();
+    }
+
+    let time_window = SnapshotTimeWindow::new(
+        Some(
+            DateTime::parse_from_rfc3339("2026-07-11T02:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        ),
+        Some(
+            DateTime::parse_from_rfc3339("2026-07-11T04:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        ),
+    )
+    .unwrap();
+    let input = BuildSelfSnapshotInput {
+        scope: MemoryScope::for_namespace(Namespace::for_project("a")),
+        evidence_manifest: Some(
+            [
+                "evt-window-start",
+                "evt-same-early-row",
+                "evt-same-late-row",
+                "evt-window-end",
+                "evt-after-window",
+                "evt-sibling-scope",
+            ]
+            .into_iter()
+            .map(|event_id| EventReference::parse(event_id).unwrap())
+            .collect(),
+        ),
+        time_window,
+        budget: SnapshotBudget::new(20),
+    };
+    let first = build_self_snapshot(&context.store, input.clone())
+        .await
+        .unwrap()
+        .snapshot;
+    let second = build_self_snapshot(&context.store, input)
+        .await
+        .unwrap()
+        .snapshot;
+    let expected = vec![
+        "event:evt-window-end".to_string(),
+        "event:evt-same-late-row".to_string(),
+        "event:evt-same-early-row".to_string(),
+        "event:evt-window-start".to_string(),
+    ];
+    assert_eq!(first.evidence, expected);
+    assert_eq!(second.evidence, expected);
+
+    let empty = build_self_snapshot(
+        &context.store,
+        BuildSelfSnapshotInput {
+            scope: MemoryScope::for_namespace(Namespace::for_project("a")),
+            evidence_manifest: None,
+            time_window: SnapshotTimeWindow::new(
+                Some(
+                    DateTime::parse_from_rfc3339("2026-07-11T06:00:00Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+                None,
+            )
+            .unwrap(),
+            budget: SnapshotBudget::new(20),
+        },
+    )
+    .await
+    .expect("an empty explicit time window must not widen to older evidence")
+    .snapshot;
+    assert!(empty.evidence.is_empty());
+
+    let legacy = build_self_snapshot(
+        &context.store,
+        BuildSelfSnapshotInput {
+            scope: MemoryScope::legacy_unscoped(),
+            evidence_manifest: None,
+            time_window: SnapshotTimeWindow::unbounded(),
+            budget: SnapshotBudget::new(20),
+        },
+    )
+    .await
+    .unwrap()
+    .snapshot;
+    assert_eq!(
+        &legacy.evidence[..4],
+        [
+            "event:evt-after-window",
+            "event:evt-window-end",
+            "event:evt-not-in-manifest",
+            "event:evt-sibling-scope",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn sqlite_snapshot_preserves_submillisecond_time_window_precision() {
+    let context = test_support::new_sqlite_store().await;
+    context
+        .store
+        .save_identity(IdentityCore::new(vec!["identity:self=test".to_string()]))
+        .await
+        .unwrap();
+    let namespace = Namespace::for_project("precision");
+
+    for (event_id, raw_recorded_at) in [
+        ("evt-micro-late", "2026-07-11T11:00:00.000002+08:00"),
+        ("evt-micro-early", "2026-07-11T03:00:00.000001Z"),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                DateTime::parse_from_rfc3339(raw_recorded_at)
+                    .unwrap()
+                    .with_timezone(&Utc),
+                Event::new_with_namespace(
+                    Owner::World,
+                    namespace.clone(),
+                    EventKind::Observation,
+                    event_id,
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+        sqlx::query("UPDATE events SET recorded_at = ? WHERE event_id = ?")
+            .bind(raw_recorded_at)
+            .bind(event_id)
+            .execute(&context.pool)
+            .await
+            .unwrap();
+    }
+
+    let narrow = build_self_snapshot(
+        &context.store,
+        BuildSelfSnapshotInput {
+            scope: MemoryScope::for_namespace(namespace.clone()),
+            evidence_manifest: Some(vec![
+                EventReference::parse("evt-micro-early").unwrap(),
+                EventReference::parse("evt-micro-late").unwrap(),
+            ]),
+            time_window: SnapshotTimeWindow::new(
+                Some(
+                    DateTime::parse_from_rfc3339("2026-07-11T03:00:00.000001500Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+                Some(
+                    DateTime::parse_from_rfc3339("2026-07-11T03:00:00.000002Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+            )
+            .unwrap(),
+            budget: SnapshotBudget::new(10),
+        },
+    )
+    .await
+    .unwrap()
+    .snapshot;
+    assert_eq!(narrow.evidence, vec!["event:evt-micro-late"]);
+
+    let ordered = build_self_snapshot(
+        &context.store,
+        BuildSelfSnapshotInput {
+            scope: MemoryScope::for_namespace(namespace),
+            evidence_manifest: None,
+            time_window: SnapshotTimeWindow::new(
+                Some(
+                    DateTime::parse_from_rfc3339("2026-07-11T03:00:00.000001Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+                Some(
+                    DateTime::parse_from_rfc3339("2026-07-11T03:00:00.000002Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+            )
+            .unwrap(),
+            budget: SnapshotBudget::new(10),
+        },
+    )
+    .await
+    .unwrap()
+    .snapshot;
+    assert_eq!(
+        ordered.evidence,
+        vec!["event:evt-micro-late", "event:evt-micro-early"]
+    );
+}
+
+#[tokio::test]
+async fn sqlite_snapshot_orders_episodes_by_latest_in_window_event_tuple() {
+    let context = test_support::new_sqlite_store().await;
+    context
+        .store
+        .save_identity(IdentityCore::new(vec!["identity:self=test".to_string()]))
+        .await
+        .unwrap();
+    let namespace = Namespace::for_project("episodes");
+
+    for (event_id, timestamp) in [
+        ("evt-a-latest", "2026-07-11T10:05:00Z"),
+        ("evt-b-latest", "2026-07-11T18:05:00+08:00"),
+        ("evt-a-older-but-later-row", "2026-07-11T10:01:00Z"),
+        ("evt-outside", "2026-07-11T10:11:00Z"),
+        ("evt-shared", "2026-07-11T10:04:00Z"),
+        ("evt-micro-out", "2026-07-11T10:00:00.000001Z"),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                DateTime::parse_from_rfc3339(timestamp)
+                    .unwrap()
+                    .with_timezone(&Utc),
+                Event::new_with_namespace(
+                    Owner::World,
+                    namespace.clone(),
+                    EventKind::Observation,
+                    event_id,
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+    for (episode_reference, event_id) in [
+        ("episode:a", "evt-a-latest"),
+        ("episode:a", "evt-a-older-but-later-row"),
+        ("episode:b", "evt-b-latest"),
+        ("episode:outside", "evt-outside"),
+        ("episode:z", "evt-shared"),
+        ("episode:y", "evt-shared"),
+        ("episode:micro-out", "evt-micro-out"),
+    ] {
+        context
+            .store
+            .record_event_in_episode(episode_reference.to_string(), event_id.to_string())
+            .await
+            .unwrap();
+    }
+
+    let snapshot = build_self_snapshot(
+        &context.store,
+        BuildSelfSnapshotInput {
+            scope: MemoryScope::for_namespace(namespace),
+            evidence_manifest: None,
+            time_window: SnapshotTimeWindow::new(
+                Some(
+                    DateTime::parse_from_rfc3339("2026-07-11T10:00:00.000001500Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+                Some(
+                    DateTime::parse_from_rfc3339("2026-07-11T10:10:00Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+            )
+            .unwrap(),
+            budget: SnapshotBudget::new(20),
+        },
+    )
+    .await
+    .unwrap()
+    .snapshot;
+
+    assert_eq!(
+        snapshot.episodes,
+        vec!["episode:b", "episode:a", "episode:y", "episode:z"]
     );
 }
 

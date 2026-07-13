@@ -70,6 +70,27 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
             .is_some(),
         "ingest schema should include event property details: {ingest_schema:?}"
     );
+
+    let snapshot_schema = tools
+        .iter()
+        .find(|tool| tool.name == "build_self_snapshot")
+        .map(|tool| &tool.input_schema)
+        .expect("build_self_snapshot tool schema");
+    let snapshot_properties = snapshot_schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("snapshot schema should expose properties");
+    assert!(snapshot_properties.contains_key("recorded_after"));
+    assert!(snapshot_properties.contains_key("recorded_before"));
+    let snapshot_required = snapshot_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .expect("snapshot schema should expose required fields");
+    assert!(
+        !snapshot_required
+            .iter()
+            .any(|field| { matches!(field.as_str(), Some("recorded_after" | "recorded_before")) })
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1129,7 +1150,8 @@ async fn stdio_tools_share_runtime_state_across_calls() {
             "ingest_interaction",
             json!({
                 "event": {
-                    "owner": "User",
+                    "owner": "World",
+                    "namespace": "project/agent-llm-mm",
                     "kind": "Conversation",
                     "summary": "The user asked for stronger memory."
                 },
@@ -1157,7 +1179,16 @@ async fn stdio_tools_share_runtime_state_across_calls() {
     assert!(!event_id.is_empty());
 
     let snapshot = client
-        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .call_tool(
+            "build_self_snapshot",
+            json!({
+                "budget": 4,
+                "namespace": "project/agent-llm-mm",
+                "evidence_manifest": [event_id, format!("event:{event_id}")],
+                "recorded_after": "2000-01-01T00:00:00Z",
+                "recorded_before": "2100-01-01T00:00:00Z"
+            }),
+        )
         .await
         .unwrap();
     let snapshot = snapshot
@@ -1165,7 +1196,7 @@ async fn stdio_tools_share_runtime_state_across_calls() {
         .and_then(|value| value.get("structuredContent"))
         .and_then(|value| value.get("snapshot"))
         .cloned()
-        .unwrap();
+        .unwrap_or_else(|| panic!("scoped snapshot response missing snapshot: {snapshot:?}"));
 
     let claims = snapshot
         .get("claims")
@@ -1576,6 +1607,101 @@ timeout_ms = 30000
     assert_eq!(stub.request_count().await, 0);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn invalid_snapshot_filters_are_rejected_before_auto_reflection_side_effects() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": r#"{"should_reflect":false,"rationale":"No revision needed.","machine_patch":{}}"#
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_config_and_database(config)
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/agent-llm-mm",
+                    "kind": "Observation",
+                    "summary": "Seed one periodic candidate before validating snapshot inputs."
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:invalid-snapshot-must-not-auto-reflect"
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(ingest.get("error").is_none());
+
+    for invalid_params in [
+        json!({
+                "budget": 4,
+                "evidence_manifest": [],
+                "auto_reflect_namespace": "project/agent-llm-mm"
+        }),
+        json!({
+            "budget": 4,
+            "namespace": "project/agent-llm-mm",
+            "recorded_after": "2026-07-11T04:00:00Z",
+            "recorded_before": "2026-07-11T03:00:00Z",
+            "auto_reflect_namespace": "project/agent-llm-mm"
+        }),
+    ] {
+        let response = client
+            .call_tool("build_self_snapshot", invalid_params)
+            .await
+            .unwrap();
+
+        let error = response
+            .get("error")
+            .expect("invalid snapshot filter should return invalid params");
+        assert_eq!(error.get("code").and_then(Value::as_i64), Some(-32602));
+    }
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let reflection_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflections")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let trigger_ledger_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reflection_trigger_ledger")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(reflection_count, 0);
+    assert_eq!(trigger_ledger_count, 0);
+    assert_eq!(stub.request_count().await, 0);
+}
+
 #[tokio::test]
 async fn conflicting_reflection_over_stdio_removes_claim_from_active_snapshot() {
     let mut client = test_support::spawn_stdio_client().await.unwrap();
@@ -1685,7 +1811,7 @@ async fn fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment() {
         .and_then(|value| value.get("structuredContent"))
         .and_then(|value| value.get("snapshot"))
         .cloned()
-        .unwrap();
+        .unwrap_or_else(|| panic!("scoped snapshot response missing snapshot: {snapshot:?}"));
 
     let commitments = snapshot
         .get("commitments")
@@ -2131,7 +2257,8 @@ timeout_ms = 30000
             "ingest_interaction",
             json!({
                 "event": {
-                    "owner": "User",
+                    "owner": "World",
+                    "namespace": "world",
                     "kind": "Conversation",
                     "summary": "Seed one evidence event before resolving a conflicting commitment update."
                 },
@@ -2143,7 +2270,10 @@ timeout_ms = 30000
         .unwrap();
 
     let snapshot = client
-        .call_tool("build_self_snapshot", json!({ "budget": 4 }))
+        .call_tool(
+            "build_self_snapshot",
+            json!({ "budget": 4, "namespace": "world" }),
+        )
         .await
         .unwrap();
     let snapshot = snapshot
@@ -2160,7 +2290,7 @@ timeout_ms = 30000
                 "task": "resolve a conflicting commitment update",
                 "action": "overwrite_commitment",
                 "snapshot": snapshot,
-                "auto_reflect_namespace": "self",
+                "auto_reflect_namespace": "world",
                 "trigger_hints": ["conflict", "commitment"]
             }),
         )
@@ -2212,7 +2342,7 @@ timeout_ms = 30000
 
     assert_eq!(reflection_count, 1);
     assert_eq!(trigger_ledger_count, 1);
-    assert_eq!(trigger_namespaces, vec!["self".to_string()]);
+    assert_eq!(trigger_namespaces, vec!["world".to_string()]);
     assert_eq!(stub.request_count().await, 2);
 }
 
@@ -2836,7 +2966,7 @@ required = true
 }
 
 #[tokio::test]
-async fn mcp_tool_call_appends_operation_log_with_correlation_id() {
+async fn mcp_tool_calls_append_operation_logs_with_correlation_id_and_snapshot_scope() {
     let (mut client, database_url, _database_dir) =
         test_support::spawn_stdio_client_with_database()
             .await
@@ -2880,6 +3010,40 @@ async fn mcp_tool_call_appends_operation_log_with_correlation_id() {
             .as_deref()
             .is_some_and(|correlation_id| correlation_id.starts_with("mcp-tool-call-")),
         "operation log entry should include generated MCP correlation id"
+    );
+
+    let snapshot = client
+        .call_tool(
+            "build_self_snapshot",
+            json!({
+                "budget": 4,
+                "namespace": "user/default"
+            }),
+        )
+        .await
+        .expect("scoped snapshot response");
+    assert!(
+        snapshot.get("error").is_none(),
+        "scoped snapshot should succeed before operation log assertion: {snapshot:?}"
+    );
+
+    let snapshot_row = sqlx::query(
+        "SELECT namespace, correlation_id FROM operation_log WHERE entrypoint = 'build_self_snapshot' AND status = 'ok' ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("scoped snapshot operation log entry should be written");
+    assert_eq!(
+        snapshot_row
+            .get::<Option<String>, _>("namespace")
+            .as_deref(),
+        Some("user/default")
+    );
+    assert!(
+        snapshot_row
+            .get::<Option<String>, _>("correlation_id")
+            .as_deref()
+            .is_some_and(|correlation_id| correlation_id.starts_with("mcp-tool-call-"))
     );
 }
 
@@ -3198,7 +3362,10 @@ async fn invalid_namespace_is_reported_as_invalid_params_over_stdio() {
 
 #[tokio::test]
 async fn inferred_replacement_reflection_with_evidence_is_accepted_over_stdio() {
-    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
     let _ = client.list_all_tools().await.unwrap();
 
     let mut evidence_event_ids = Vec::new();
@@ -3263,6 +3430,12 @@ async fn inferred_replacement_reflection_with_evidence_is_accepted_over_stdio() 
         .map(|event_id| format!("{event_id}:claim:0"))
         .unwrap();
 
+    let expected_evidence_event_ids = evidence_event_ids.clone();
+    let mixed_evidence_event_ids = vec![
+        format!("event:{}", evidence_event_ids[0]),
+        evidence_event_ids[0].clone(),
+        format!("event:{}", evidence_event_ids[1]),
+    ];
     let reflection = client
         .call_tool(
             "run_reflection",
@@ -3278,7 +3451,7 @@ async fn inferred_replacement_reflection_with_evidence_is_accepted_over_stdio() 
                     "object": "principal_architect",
                     "mode": "Inferred"
                 },
-                "replacement_evidence_event_ids": evidence_event_ids
+                "replacement_evidence_event_ids": mixed_evidence_event_ids
             }),
         )
         .await
@@ -3292,6 +3465,25 @@ async fn inferred_replacement_reflection_with_evidence_is_accepted_over_stdio() 
     assert!(
         replacement_claim_id.is_some_and(|claim_id| claim_id.ends_with(":replacement")),
         "replacement claim id should be present and use the reflection replacement suffix: {reflection:?}"
+    );
+    let reflection_id = reflection
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .and_then(|value| value.get("reflection_id"))
+        .and_then(Value::as_str)
+        .expect("reflection result should expose its audit id");
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let stored_event_ids = sqlx::query_scalar::<_, String>(
+        "SELECT supporting_evidence_event_ids FROM reflections WHERE reflection_id = ?",
+    )
+    .bind(reflection_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<String>>(&stored_event_ids).unwrap(),
+        expected_evidence_event_ids,
+        "MCP raw and canonical references must persist as one ordered raw-id audit list"
     );
 }
 

@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf, str::FromStr};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{
-    Row, Sqlite,
+    QueryBuilder, Row, Sqlite,
     sqlite::{SqliteConnectOptions, SqlitePool},
 };
 
@@ -11,13 +11,14 @@ use crate::{
     domain::{
         claim::ClaimDraft,
         commitment::Commitment,
-        event::Event,
+        event::{Event, EventReference, MAX_EVIDENCE_MANIFEST_ITEMS},
         identity_core::IdentityCore,
         operation_log::{
             ActorKind, OperationLogEntry, OperationLogKind, OperationLogStatus, redact_secrets,
         },
         self_revision::TriggerType,
-        types::{EventKind, Mode, Namespace, Owner},
+        snapshot::SnapshotTimeWindow,
+        types::{EventKind, MemoryScope, Mode, Namespace, Owner},
     },
     error::AppError,
     ports::{
@@ -101,6 +102,28 @@ fn sqlite_file_path(database_url: &str) -> Option<PathBuf> {
     Some(PathBuf::from(path))
 }
 
+fn sqlite_rfc3339_sort_key(column: &str) -> String {
+    format!(
+        "strftime('%Y-%m-%dT%H:%M:%S', \
+         substr({column}, 1, 19) || \
+         CASE WHEN upper(substr({column}, -1)) = 'Z' THEN 'Z' ELSE substr({column}, -6) END) || \
+         '.' || \
+         CASE WHEN substr({column}, 20, 1) = '.' \
+         THEN substr(substr({column}, 21, length({column}) - 20 - \
+              CASE WHEN upper(substr({column}, -1)) = 'Z' THEN 1 ELSE 6 END) || \
+              '000000000', 1, 9) \
+         ELSE '000000000' END"
+    )
+}
+
+fn utc_timestamp_sort_key(timestamp: &DateTime<Utc>) -> String {
+    format!(
+        "{}.{:09}",
+        timestamp.format("%Y-%m-%dT%H:%M:%S"),
+        timestamp.timestamp_subsec_nanos()
+    )
+}
+
 #[cfg(windows)]
 fn normalize_windows_sqlite_path(path: &str) -> String {
     let bytes = path.as_bytes();
@@ -128,6 +151,150 @@ impl EventStore for SqliteStore {
             .into_iter()
             .map(|row| format!("event:{}", row.get::<String, _>("event_id")))
             .collect())
+    }
+
+    async fn list_event_references_in_scope(
+        &self,
+        scope: &MemoryScope,
+        evidence_manifest: Option<&[EventReference]>,
+    ) -> Result<Vec<String>, AppError> {
+        if scope.is_legacy_unscoped() && evidence_manifest.is_none() {
+            return self.list_event_references().await;
+        }
+        self.list_event_references_for_snapshot(
+            scope,
+            evidence_manifest,
+            &SnapshotTimeWindow::unbounded(),
+        )
+        .await
+    }
+
+    async fn list_event_references_for_snapshot(
+        &self,
+        scope: &MemoryScope,
+        evidence_manifest: Option<&[EventReference]>,
+        time_window: &SnapshotTimeWindow,
+    ) -> Result<Vec<String>, AppError> {
+        time_window.validate().map_err(|_| {
+            AppError::InvalidParams(
+                "recorded_after must be less than or equal to recorded_before".to_string(),
+            )
+        })?;
+        if evidence_manifest.is_some_and(|manifest| manifest.len() > MAX_EVIDENCE_MANIFEST_ITEMS) {
+            return Err(AppError::InvalidParams(format!(
+                "evidence_manifest must contain at most {MAX_EVIDENCE_MANIFEST_ITEMS} entries"
+            )));
+        }
+        if evidence_manifest.is_some() && !scope.is_explicitly_scoped() {
+            return Err(AppError::InvalidParams(
+                "evidence_manifest requires an explicit namespace".to_string(),
+            ));
+        }
+        if !time_window.is_unbounded() && !scope.is_explicitly_scoped() {
+            return Err(AppError::InvalidParams(
+                "snapshot time window requires an explicit namespace".to_string(),
+            ));
+        }
+        let Some(manifest) = evidence_manifest else {
+            return self
+                .query_evidence_event_ids_unbounded(EvidenceQuery {
+                    namespace: scope.namespace().cloned(),
+                    owner: scope.owner(),
+                    kind: None,
+                    limit: None,
+                    recorded_after: time_window.recorded_after,
+                    recorded_before: time_window.recorded_before,
+                    event_id_prefix: None,
+                })
+                .await
+                .map(|event_ids| {
+                    event_ids
+                        .into_iter()
+                        .map(|event_id| EventReference::from_event_id(event_id).canonical())
+                        .collect()
+                });
+        };
+        if manifest.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let (Some(owner), Some(namespace)) = (scope.owner(), scope.namespace()) else {
+            return Err(AppError::InvalidParams(
+                "evidence_manifest requires an explicit namespace".to_string(),
+            ));
+        };
+        let mut query = QueryBuilder::<Sqlite>::new("SELECT event_id FROM events WHERE ");
+        let recorded_at_sort_key = sqlite_rfc3339_sort_key("recorded_at");
+        query
+            .push("owner = ")
+            .push_bind(owner_as_str(owner))
+            .push(" AND namespace = ")
+            .push_bind(namespace.as_str());
+        if let Some(recorded_after) = time_window.recorded_after {
+            query
+                .push(" AND ")
+                .push(&recorded_at_sort_key)
+                .push(" >= ")
+                .push_bind(utc_timestamp_sort_key(&recorded_after));
+        }
+        if let Some(recorded_before) = time_window.recorded_before {
+            query
+                .push(" AND ")
+                .push(&recorded_at_sort_key)
+                .push(" <= ")
+                .push_bind(utc_timestamp_sort_key(&recorded_before));
+        }
+        query.push(" AND event_id IN (");
+        let mut separated = query.separated(", ");
+        for reference in manifest {
+            separated.push_bind(reference.event_id());
+        }
+        separated
+            .push_unseparated(") ORDER BY ")
+            .push_unseparated(&recorded_at_sort_key)
+            .push_unseparated(" DESC, rowid DESC");
+
+        let rows = map_sqlite(query.build().fetch_all(&self.pool).await)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| EventReference::from_event_id(row.get::<String, _>("event_id")).canonical())
+            .collect())
+    }
+
+    async fn list_recorded_at_for_snapshot_manifest(
+        &self,
+        scope: &MemoryScope,
+        evidence_manifest: &[EventReference],
+    ) -> Result<Vec<DateTime<Utc>>, AppError> {
+        if evidence_manifest.is_empty() {
+            return Ok(Vec::new());
+        }
+        if evidence_manifest.len() > MAX_EVIDENCE_MANIFEST_ITEMS {
+            return Err(AppError::InvalidParams(format!(
+                "evidence_manifest must contain at most {MAX_EVIDENCE_MANIFEST_ITEMS} entries"
+            )));
+        }
+        let (Some(owner), Some(namespace)) = (scope.owner(), scope.namespace()) else {
+            return Err(AppError::InvalidParams(
+                "evidence_manifest requires an explicit namespace".to_string(),
+            ));
+        };
+        let mut query =
+            QueryBuilder::<Sqlite>::new("SELECT recorded_at FROM events WHERE owner = ");
+        query
+            .push_bind(owner_as_str(owner))
+            .push(" AND namespace = ")
+            .push_bind(namespace.as_str())
+            .push(" AND event_id IN (");
+        let mut separated = query.separated(", ");
+        for reference in evidence_manifest {
+            separated.push_bind(reference.event_id());
+        }
+        separated.push_unseparated(")");
+        map_sqlite(query.build().fetch_all(&self.pool).await)?
+            .into_iter()
+            .map(|row| parse_timestamp(&row.get::<String, _>("recorded_at")))
+            .collect()
     }
 
     async fn query_evidence_event_ids(
@@ -168,30 +335,31 @@ async fn query_evidence_event_ids_with_limit(
     }
 
     let mut sql = String::from("SELECT event_id, recorded_at, owner, kind, summary FROM events");
+    let recorded_at_sort_key = sqlite_rfc3339_sort_key("recorded_at");
     let mut predicates = Vec::new();
 
     if query.namespace.is_some() {
-        predicates.push("namespace = ?");
+        predicates.push("namespace = ?".to_string());
     }
 
     if query.owner.is_some() {
-        predicates.push("owner = ?");
+        predicates.push("owner = ?".to_string());
     }
 
     if query.kind.is_some() {
-        predicates.push("kind = ?");
+        predicates.push("kind = ?".to_string());
     }
 
     if query.recorded_after.is_some() {
-        predicates.push("recorded_at >= ?");
+        predicates.push(format!("{recorded_at_sort_key} >= ?"));
     }
 
     if query.recorded_before.is_some() {
-        predicates.push("recorded_at <= ?");
+        predicates.push(format!("{recorded_at_sort_key} <= ?"));
     }
 
     if query.event_id_prefix.is_some() {
-        predicates.push("event_id LIKE ? || '%'");
+        predicates.push("event_id LIKE ? || '%'".to_string());
     }
 
     if !predicates.is_empty() {
@@ -199,7 +367,9 @@ async fn query_evidence_event_ids_with_limit(
         sql.push_str(&predicates.join(" AND "));
     }
 
-    sql.push_str(" ORDER BY recorded_at DESC, rowid DESC");
+    sql.push_str(" ORDER BY ");
+    sql.push_str(&recorded_at_sort_key);
+    sql.push_str(" DESC, rowid DESC");
     if query.limit.is_some() || default_limit.is_some() {
         sql.push_str(" LIMIT ?");
     }
@@ -220,11 +390,11 @@ async fn query_evidence_event_ids_with_limit(
         }
 
         if let Some(after) = query.recorded_after {
-            query_builder = query_builder.bind(after.to_rfc3339());
+            query_builder = query_builder.bind(utc_timestamp_sort_key(&after));
         }
 
         if let Some(before) = query.recorded_before {
-            query_builder = query_builder.bind(before.to_rfc3339());
+            query_builder = query_builder.bind(utc_timestamp_sort_key(&before));
         }
 
         if let Some(prefix) = query.event_id_prefix {
@@ -280,6 +450,34 @@ impl ClaimStore for SqliteStore {
             .collect()
     }
 
+    async fn list_active_claims_in_scope(
+        &self,
+        scope: &MemoryScope,
+    ) -> Result<Vec<StoredClaim>, AppError> {
+        let (Some(owner), Some(namespace)) = (scope.owner(), scope.namespace()) else {
+            return self.list_active_claims().await;
+        };
+        let rows = map_sqlite(
+            sqlx::query(
+                r#"
+                SELECT claim_id, owner, subject, predicate, object, mode, status, namespace
+                FROM claims
+                WHERE status = ? AND owner = ? AND namespace = ?
+                ORDER BY rowid
+                "#,
+            )
+            .bind(ClaimStatus::Active.as_str())
+            .bind(owner_as_str(owner))
+            .bind(namespace.as_str())
+            .fetch_all(&self.pool)
+            .await,
+        )?;
+
+        rows.into_iter()
+            .map(|row| stored_claim_from_row(&row))
+            .collect()
+    }
+
     async fn update_claim_status(
         &self,
         claim_id: &str,
@@ -312,6 +510,96 @@ impl EpisodeStore for SqliteStore {
             .fetch_all(&self.pool)
             .await,
         )?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| row.get::<String, _>("episode_reference"))
+            .collect())
+    }
+
+    async fn list_episode_references_in_scope(
+        &self,
+        scope: &MemoryScope,
+    ) -> Result<Vec<String>, AppError> {
+        if scope.is_legacy_unscoped() {
+            return self.list_episode_references().await;
+        }
+        self.list_episode_references_for_snapshot(scope, &SnapshotTimeWindow::unbounded())
+            .await
+    }
+
+    async fn list_episode_references_for_snapshot(
+        &self,
+        scope: &MemoryScope,
+        time_window: &SnapshotTimeWindow,
+    ) -> Result<Vec<String>, AppError> {
+        time_window.validate().map_err(|_| {
+            AppError::InvalidParams(
+                "recorded_after must be less than or equal to recorded_before".to_string(),
+            )
+        })?;
+        if !time_window.is_unbounded() && !scope.is_explicitly_scoped() {
+            return Err(AppError::InvalidParams(
+                "snapshot time window requires an explicit namespace".to_string(),
+            ));
+        }
+        let recorded_at_sort_key = sqlite_rfc3339_sort_key("events.recorded_at");
+        let mut query = QueryBuilder::<Sqlite>::new(
+            r#"
+            WITH ranked_episode_events AS (
+                SELECT
+                    episode_events.episode_reference,
+            "#,
+        );
+        query
+            .push(&recorded_at_sort_key)
+            .push(
+                r#" AS recorded_at_sort_key,
+                    events.rowid AS event_rowid,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY episode_events.episode_reference
+                        ORDER BY "#,
+            )
+            .push(&recorded_at_sort_key)
+            .push(
+                r#" DESC, events.rowid DESC, episode_events.rowid DESC
+                    ) AS episode_rank
+                FROM episode_events
+                INNER JOIN events ON events.event_id = episode_events.event_id
+                WHERE 1 = 1
+            "#,
+            );
+        if let (Some(owner), Some(namespace)) = (scope.owner(), scope.namespace()) {
+            query
+                .push(" AND events.owner = ")
+                .push_bind(owner_as_str(owner))
+                .push(" AND events.namespace = ")
+                .push_bind(namespace.as_str());
+        }
+        if let Some(recorded_after) = time_window.recorded_after {
+            query
+                .push(" AND ")
+                .push(&recorded_at_sort_key)
+                .push(" >= ")
+                .push_bind(utc_timestamp_sort_key(&recorded_after));
+        }
+        if let Some(recorded_before) = time_window.recorded_before {
+            query
+                .push(" AND ")
+                .push(&recorded_at_sort_key)
+                .push(" <= ")
+                .push_bind(utc_timestamp_sort_key(&recorded_before));
+        }
+        query.push(
+            r#"
+            )
+            SELECT episode_reference
+            FROM ranked_episode_events
+            WHERE episode_rank = 1
+            ORDER BY recorded_at_sort_key DESC, event_rowid DESC, episode_reference ASC
+            "#,
+        );
+        let rows = map_sqlite(query.build().fetch_all(&self.pool).await)?;
 
         Ok(rows
             .into_iter()

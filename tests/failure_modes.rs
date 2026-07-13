@@ -14,8 +14,8 @@ use agent_llm_mm::{
         identity_core::IdentityCore,
         reflection::Reflection,
         self_revision::TriggerType,
-        snapshot::SnapshotBudget,
-        types::{EventKind, Mode, Namespace, Owner},
+        snapshot::{SnapshotBudget, SnapshotTimeWindow},
+        types::{EventKind, MemoryScope, Mode, Namespace, Owner},
     },
     error::AppError,
     ports::{
@@ -342,7 +342,7 @@ async fn auto_reflection_rejects_identity_patch_without_minimum_support_and_reco
             StoredClaim::new(
                 "claim-supporting-1".to_string(),
                 ClaimDraft::new(
-                    Owner::Self_,
+                    Owner::World,
                     "self.role",
                     "is",
                     "principal_architect",
@@ -361,7 +361,7 @@ async fn auto_reflection_rejects_identity_patch_without_minimum_support_and_reco
     let result = auto_reflect_if_needed::execute(
         &deps,
         AutoReflectInput::for_conflict(
-            Namespace::self_(),
+            Namespace::world(),
             vec!["conflict".to_string(), "identity".to_string()],
         ),
     )
@@ -537,11 +537,13 @@ async fn auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_q
             chrono::DateTime::parse_from_rfc3339("2026-03-23T10:03:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            Event::new(
-                Owner::Self_,
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("agent-llm-mm"),
                 EventKind::Action,
                 "self attempted a conflicting overwrite",
-            ),
+            )
+            .unwrap(),
         ),
         StoredEvent::new(
             "evt-conflict-4".to_string(),
@@ -559,11 +561,13 @@ async fn auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_q
             chrono::DateTime::parse_from_rfc3339("2026-03-23T10:05:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            Event::new(
-                Owner::Self_,
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("agent-llm-mm"),
                 EventKind::Action,
                 "self retried the conflicting overwrite",
-            ),
+            )
+            .unwrap(),
         ),
     ]);
     deps.set_self_revision_proposal(
@@ -584,7 +588,7 @@ async fn auto_reflection_rejects_model_proposed_evidence_ids_that_do_not_match_q
     let result = auto_reflect_if_needed::execute(
         &deps,
         AutoReflectInput::for_conflict(
-            Namespace::self_(),
+            Namespace::world(),
             vec!["conflict".to_string(), "commitment".to_string()],
         ),
     )
@@ -619,22 +623,26 @@ async fn auto_reflection_keeps_explicit_ids_authoritative_when_query_limit_only_
             chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            Event::new(
-                Owner::Self_,
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("agent-llm-mm"),
                 EventKind::Action,
                 "rollback after violating a hard commitment",
-            ),
+            )
+            .unwrap(),
         ),
         StoredEvent::new(
             "evt-failure-2".to_string(),
             chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            Event::new(
-                Owner::Self_,
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("agent-llm-mm"),
                 EventKind::Action,
                 "second rollback after violating the same hard commitment",
-            ),
+            )
+            .unwrap(),
         ),
     ]);
     deps.set_self_revision_proposal(
@@ -698,22 +706,26 @@ async fn auto_reflection_applies_query_limit_within_current_trigger_window_when_
             chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            Event::new(
-                Owner::Self_,
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("agent-llm-mm"),
                 EventKind::Action,
                 "rollback after violating a hard commitment",
-            ),
+            )
+            .unwrap(),
         ),
         StoredEvent::new(
             "evt-failure-2".to_string(),
             chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
-            Event::new(
-                Owner::Self_,
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("agent-llm-mm"),
                 EventKind::Action,
                 "second rollback after violating the same hard commitment",
-            ),
+            )
+            .unwrap(),
         ),
     ]);
     deps.set_self_revision_proposal(
@@ -1332,7 +1344,7 @@ async fn auto_reflection_rejects_proposed_evidence_query_zero_limit_instead_of_m
     let result = auto_reflect_if_needed::execute(
         &deps,
         AutoReflectInput::for_conflict(
-            Namespace::self_(),
+            Namespace::world(),
             vec!["conflict".to_string(), "commitment".to_string()],
         ),
     )
@@ -1420,7 +1432,7 @@ async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger
                 .unwrap()
                 .with_timezone(&Utc),
             Event::new(
-                Owner::Self_,
+                Owner::World,
                 EventKind::Action,
                 "self attempted a conflicting overwrite",
             ),
@@ -1442,7 +1454,7 @@ async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger
                 .unwrap()
                 .with_timezone(&Utc),
             Event::new(
-                Owner::Self_,
+                Owner::World,
                 EventKind::Action,
                 "self retried the conflicting overwrite",
             ),
@@ -1466,7 +1478,7 @@ async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger
     let result = auto_reflect_if_needed::execute(
         &deps,
         AutoReflectInput::for_conflict(
-            Namespace::self_(),
+            Namespace::world(),
             vec!["conflict".to_string(), "commitment".to_string()],
         ),
     )
@@ -1492,11 +1504,73 @@ async fn auto_reflection_intersects_proposed_evidence_query_with_current_trigger
         handled_entry.evidence_window,
         vec![
             "evt-conflict-5".to_string(),
-            "evt-conflict-4".to_string(),
             "evt-conflict-3".to_string(),
             "evt-conflict-2".to_string(),
-            "evt-conflict-1".to_string(),
         ]
+    );
+}
+
+#[tokio::test]
+async fn auto_reflection_normalizes_prefixed_proposal_evidence_ids_before_governance_and_audit() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.seed_events(vec![
+        StoredEvent::new(
+            "evt-prefixed-conflict-1".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:01:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::User,
+                EventKind::Conversation,
+                "user raised a possible commitment conflict",
+            ),
+        ),
+        StoredEvent::new(
+            "evt-prefixed-conflict-2".to_string(),
+            chrono::DateTime::parse_from_rfc3339("2026-03-23T10:02:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "current conflicting observation inside the trigger window",
+            ),
+        ),
+    ]);
+    deps.set_self_revision_proposal(
+        test_support::commitment_only_auto_reflection_proposal_with_policy(
+            vec![
+                "event:evt-prefixed-conflict-2".to_string(),
+                "evt-prefixed-conflict-2".to_string(),
+            ],
+            None,
+        ),
+    );
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::world(),
+            vec!["conflict".to_string(), "commitment".to_string()],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert!(result.triggered);
+    assert_eq!(
+        result.evidence_event_ids,
+        vec!["evt-prefixed-conflict-2".to_string()]
+    );
+    assert_eq!(
+        result.diagnostics.selected_evidence_event_ids,
+        vec!["evt-prefixed-conflict-2".to_string()]
+    );
+    assert_eq!(
+        deps.latest_reflection()
+            .expect("handled auto-reflection should persist audit evidence")
+            .supporting_evidence_event_ids,
+        vec!["evt-prefixed-conflict-2".to_string()]
     );
 }
 
@@ -1651,7 +1725,7 @@ async fn auto_reflection_applies_recency_filters_from_proposed_evidence_query() 
     let result = auto_reflect_if_needed::execute(
         &deps,
         AutoReflectInput::for_conflict(
-            Namespace::self_(),
+            Namespace::world(),
             vec!["conflict".to_string(), "commitment".to_string()],
         ),
     )
@@ -1727,7 +1801,7 @@ async fn auto_reflection_intersects_proposed_event_id_prefix_with_trigger_window
     let result = auto_reflect_if_needed::execute(
         &deps,
         AutoReflectInput::for_conflict(
-            Namespace::self_(),
+            Namespace::world(),
             vec!["conflict".to_string(), "commitment".to_string()],
         ),
     )
@@ -1756,12 +1830,13 @@ async fn auto_reflection_rejected_identity_attempt_does_not_start_cooldown_for_l
         vec![StoredClaim::new(
             "claim-supporting-1".to_string(),
             ClaimDraft::new(
-                Owner::Self_,
+                Owner::World,
                 "self.role",
                 "is",
                 "principal_architect",
                 Mode::Observed,
-            ),
+            )
+            .with_namespace(Namespace::world()),
             ClaimStatus::Active,
         )],
     );
@@ -1769,7 +1844,7 @@ async fn auto_reflection_rejected_identity_attempt_does_not_start_cooldown_for_l
     let first = auto_reflect_if_needed::execute(
         &deps,
         AutoReflectInput::for_conflict(
-            Namespace::self_(),
+            Namespace::world(),
             vec!["conflict".to_string(), "identity".to_string()],
         ),
     )
@@ -1796,23 +1871,25 @@ async fn auto_reflection_rejected_identity_attempt_does_not_start_cooldown_for_l
             StoredClaim::new(
                 "claim-supporting-1".to_string(),
                 ClaimDraft::new(
-                    Owner::Self_,
+                    Owner::World,
                     "self.role",
                     "is",
                     "principal_architect",
                     Mode::Observed,
-                ),
+                )
+                .with_namespace(Namespace::world()),
                 ClaimStatus::Active,
             ),
             StoredClaim::new(
                 "claim-supporting-2".to_string(),
                 ClaimDraft::new(
-                    Owner::Self_,
+                    Owner::World,
                     "self.role",
                     "is",
                     "principal_architect",
                     Mode::Observed,
-                ),
+                )
+                .with_namespace(Namespace::world()),
                 ClaimStatus::Active,
             ),
             StoredClaim::new(
@@ -1823,7 +1900,8 @@ async fn auto_reflection_rejected_identity_attempt_does_not_start_cooldown_for_l
                     "is",
                     "principal_architect",
                     Mode::Observed,
-                ),
+                )
+                .with_namespace(Namespace::world()),
                 ClaimStatus::Active,
             ),
         ],
@@ -1832,7 +1910,7 @@ async fn auto_reflection_rejected_identity_attempt_does_not_start_cooldown_for_l
     let second = auto_reflect_if_needed::execute(
         &deps,
         AutoReflectInput::for_conflict(
-            Namespace::self_(),
+            Namespace::world(),
             vec!["conflict".to_string(), "identity".to_string()],
         ),
     )
@@ -1860,7 +1938,7 @@ async fn auto_reflection_handled_ledger_failure_rolls_back_reflection_updates() 
     let result = auto_reflect_if_needed::execute(
         &deps,
         AutoReflectInput::for_conflict(
-            Namespace::self_(),
+            Namespace::world(),
             vec!["conflict".to_string(), "commitment".to_string()],
         ),
     )
@@ -1887,7 +1965,7 @@ async fn auto_reflection_handled_ledger_failure_rolls_back_reflection_updates() 
     let retry = auto_reflect_if_needed::execute(
         &deps,
         AutoReflectInput::for_conflict(
-            Namespace::self_(),
+            Namespace::world(),
             vec!["conflict".to_string(), "commitment".to_string()],
         ),
     )
@@ -2141,6 +2219,9 @@ mod test_support {
 
     pub fn budgeted_snapshot() -> BuildSelfSnapshotInput {
         BuildSelfSnapshotInput {
+            scope: MemoryScope::legacy_unscoped(),
+            evidence_manifest: None,
+            time_window: SnapshotTimeWindow::unbounded(),
             budget: SnapshotBudget::new(3),
         }
     }
@@ -2438,7 +2519,13 @@ impl FailureModeDeps {
                     ))
                     .unwrap()
                     .with_timezone(&Utc),
-                    Event::new(Owner::Self_, EventKind::Action, summary),
+                    Event::new_with_namespace(
+                        Owner::World,
+                        Namespace::for_project("agent-llm-mm"),
+                        EventKind::Action,
+                        summary,
+                    )
+                    .unwrap(),
                 )
             })
             .collect();
@@ -2481,6 +2568,7 @@ impl FailureModeDeps {
     }
 
     fn seed_periodic_cooldown(&self, trigger_key: &str) {
+        self.seed_project_reflection_event();
         self.state
             .lock()
             .unwrap()
@@ -2509,6 +2597,7 @@ impl FailureModeDeps {
     }
 
     fn seed_periodic_watermark_suppression(&self, trigger_key: &str) {
+        self.seed_project_reflection_event();
         self.state
             .lock()
             .unwrap()
@@ -2624,6 +2713,31 @@ impl EventStore for FailureModeDeps {
             .committed
             .event_references
             .clone())
+    }
+
+    async fn list_recorded_at_for_snapshot_manifest(
+        &self,
+        scope: &MemoryScope,
+        evidence_manifest: &[agent_llm_mm::domain::event::EventReference],
+    ) -> Result<Vec<DateTime<Utc>>, AppError> {
+        let state = self.state.lock().unwrap();
+        Ok(state
+            .committed
+            .events
+            .iter()
+            .filter(|event| {
+                scope
+                    .owner()
+                    .is_none_or(|owner| event.event.owner() == owner)
+                    && scope
+                        .namespace()
+                        .is_none_or(|namespace| event.event.namespace() == namespace)
+                    && evidence_manifest
+                        .iter()
+                        .any(|reference| reference.event_id() == event.event_id)
+            })
+            .map(|event| event.recorded_at)
+            .collect())
     }
 
     async fn query_evidence_event_ids(
@@ -2771,6 +2885,39 @@ impl EpisodeStore for FailureModeDeps {
             .committed
             .episode_references
             .clone())
+    }
+
+    async fn list_episode_references_in_scope(
+        &self,
+        _scope: &MemoryScope,
+    ) -> Result<Vec<String>, AppError> {
+        self.list_episode_references().await
+    }
+
+    async fn list_episode_references_for_snapshot(
+        &self,
+        scope: &MemoryScope,
+        time_window: &SnapshotTimeWindow,
+    ) -> Result<Vec<String>, AppError> {
+        time_window.validate().map_err(AppError::from)?;
+        let state = self.state.lock().unwrap();
+        let has_qualifying_event = state.committed.events.iter().any(|event| {
+            scope
+                .owner()
+                .is_none_or(|owner| event.event.owner() == owner)
+                && scope
+                    .namespace()
+                    .is_none_or(|namespace| event.event.namespace() == namespace)
+                && time_window
+                    .recorded_after
+                    .is_none_or(|after| event.recorded_at >= after)
+                && time_window
+                    .recorded_before
+                    .is_none_or(|before| event.recorded_at <= before)
+        });
+        Ok(has_qualifying_event
+            .then(|| state.committed.episode_references.clone())
+            .unwrap_or_default())
     }
 }
 

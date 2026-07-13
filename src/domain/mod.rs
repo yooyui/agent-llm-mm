@@ -1,8 +1,10 @@
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DomainError {
     InsufficientEvidence,
+    InvalidEventReference,
     InvalidNamespace,
     NamespaceOwnerMismatch,
+    InvalidSnapshotTimeWindow,
 }
 
 pub mod claim;

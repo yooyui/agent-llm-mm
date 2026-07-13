@@ -56,7 +56,7 @@
 工作流：
 
 1. 统一 active plan、状态与证据入口，清理仓库卫生问题。
-2. 建立 `MemoryScope`，让 snapshot 和 auto-reflection 只读取允许的 namespace / trigger window，并使用 recent-first 稳定排序。
+2. 建立 `MemoryScope`，让 snapshot 和 auto-reflection 只读取允许的 namespace / trigger window，并使用 recent-first 稳定排序。第四个切片已使 auto-reflection 从输入 namespace 派生完整 owner/namespace scope，将当前触发候选封为 explicit manifest，并以该 manifest 的最早/最晚记录时间约束 snapshot 与 episode read；空交集不回退历史全量。第五个切片已使 active reflection runtime 的 MCP/application/model proposal evidence 输入接受裸 ID 与 `event:<id>`，按 raw ID 保序去重；明确的 audit/diagnostic `*_event_ids` 保持 raw 兼容 readback。第六个切片将同一规则收口到只读 evidence relation 与 episode summary projection，subset/no-widening、count 与 window rank 都基于规范化 raw ID，JSON readback 不改为前缀形式。第七个切片盘点 offline self-revision demo 后，只将其外部 `timeline.json` baseline 输出改为 canonical `event_reference` 并对畸形 MCP event ID fail closed；snapshot evidence 已是 canonical，stub 的空 `proposed_evidence_event_ids` 和 SQLite artifact 的 `supporting_evidence_event_ids` 保持 raw 兼容。显式 MCP snapshot 的 legacy 无 namespace、无 manifest、无时间窗兼容调用仍保留。repository-wide ID 统一仍为 partial，support bundle 只保留为后续 inventory。
 3. 让 decision 使用服务端可信 policy，同时复检 requested / selected action。
 4. 用 claim → evidence → episode 的真实关系替换全局数量推断。
 5. 拆分 `init`、`migrate`、`doctor --read-only` 与显式 bootstrap。

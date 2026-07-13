@@ -17,12 +17,14 @@
 
 ## 2026-07-10 事实校准
 
-当前状态必须与新的 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2–M0.5 的产品行为实现尚未开始，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
+当前状态必须与新的 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 已完成 scope、explicit evidence manifest、snapshot time window / stable order、scoped auto-reflection、active reflection runtime event-ID 等价性、read-only evidence/episode projection event-ID 等价性、offline demo artifact event reference 七个最小切片，M0.3–M0.5 尚未开始，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
 
 本次代码级审计确认了以下必须优先公开的边界：
 
-- `build_self_snapshot` 当前没有 namespace / owner scope 输入，会读取全库 active claims、event references 和 episode references；SQLite event references 还是旧序读取后再按 budget 截断。因此“namespace 已持久化”不等于“snapshot 已完成 namespace 隔离”。
-- automatic self-revision 的 trigger candidate 可以按部分 namespace 收窄，但 revision snapshot 没有携带 candidate evidence manifest 或 scope，不能把 trigger window 的收窄直接理解为最终模型上下文已隔离。
+- `build_self_snapshot` 已增加 additive `namespace` 输入；server 会从 namespace 唯一推导 owner，并把 scope 贯穿 application、query port 和 SQLite store。`MemoryScope` 的反序列化只接受匹配的 owner + namespace 或全空 legacy 状态，partial / mismatched scope 会被拒绝。显式 scope 下的 active claims、event references 与 episode references 会在查询层按 owner + namespace 收窄；省略 namespace 时仍保留旧 unscoped 行为作为 MCP 兼容层，因此不能把兼容调用描述为已隔离。
+- `build_self_snapshot` 已增加 additive `evidence_manifest`：只要显式提供 manifest（包括空数组）就必须同时显式提供 `namespace`，并在 query construction 前限制为最多 256 项；DTO、application 与 store 三层都会拒绝未完整收窄或超限的 manifest 查询，且 snapshot 参数会在可选 auto-reflection 之前完成校验；裸 event ID 与 `event:<id>` 会先规范化并保序线性去重，再与 server-owned owner/namespace scope 在 SQLite 查询中同时约束。越 scope ID 被排除；显式空 manifest 或空交集返回空 evidence，不会回退为全 scope。tool operation log 使用 snapshot namespace，auto-reflection 诊断保留独立 namespace。
+- `build_self_snapshot` 已增加 additive `recorded_after` / `recorded_before`：任一时间边界都要求显式 `namespace`，使用 inclusive 边界，RFC3339 输入归一到 UTC，倒置窗口由 DTO / application fail closed。SQLite evidence 查询在同一条 SQL 中取 owner/namespace、manifest（如有）与时间窗交集；SQL 将项目 canonical timestamp 与旧库常见 `Z` / offset 文本转换为固定宽度 UTC 秒 + 9 位小数秒排序键，避免 SQLite date function 折叠亚毫秒差异，再以 `rowid DESC` 稳定 tie-break。episode 按窗口内最新合格事件元组排序，避免独立 `MAX(recorded_at)` / `MAX(rowid)` 来自不同事件。显式窗口空交集保持为空；claims 没有 recorded timestamp，因此仍只做 scope filtering。legacy unbounded snapshot 继续兼容，但 snapshot evidence / episode SQLite 读取已统一 recent-first；手工写入且超出项目 canonical / 常见 legacy 形式的畸形时间文本会 fail closed，而不是扩大 bounded 查询。
+- automatic self-revision 已从触发 namespace 派生完整 owner + namespace scope：先冻结 trigger window，再取授权 scope 与 trigger manifest 的交集，并以该受限窗口构建 revision snapshot 与 episode read；无有效交集保持 fail-closed，不回退到历史全量。active reflection runtime 的 MCP/application/model proposal evidence 输入均接受裸 event ID 与 `event:<id>`，以底层 raw ID 保序去重；SQLite 查询、evidence links、reflection audit 与 auto-reflection diagnostics 的明确 `*_event_ids` 兼容字段继续存取 raw ID，reference-shaped 输出才使用 canonical `event:<id>`。
 - `decide_with_snapshot` 使用调用方提供的 snapshot，只对 requested action 做一次字面量 commitment gate；provider-selected action 尚未复检。它只返回 action、不执行 action，但不能被描述为可信策略执行器。
 - cross-episode identity support 当前没有 claim → evidence → episode 的真实 join，不能作为成熟的跨 episode 治理语义。
 - `doctor` 会进入 runtime bootstrap，可能创建目录/数据库、建表、迁移、seed baseline commitment 并补默认 identity。报告中的只读 projection 不代表 `doctor` 执行链无写入。
@@ -88,7 +90,8 @@
 - 显式 `replacement_evidence_event_ids`
 - 一套窄化的结构化 `replacement_evidence_query` 首批能力，支持 namespace / owner / kind / limit 过滤，空查询结果仍返回 `invalid_params`
 - 一条最小可用的 `identity_core` / `commitments` 深层修订路径，并把 supporting evidence 与请求的更新内容写入 reflection 审计记录
-- 缺失 evidence event id 时返回 `invalid_params`
+- `replacement_evidence_event_ids` 同时接受裸 ID 与 `event:<id>`；空白、空 ID 和重复 `event:` 前缀返回 `invalid_params`，显式/query 合并按底层 raw ID 保序去重
+- 缺失 evidence event id 时返回 `invalid_params`；审计 `supporting_evidence_event_ids` 因字段兼容性继续 readback raw IDs
 
 ### 5. 本机接入入口
 
@@ -124,7 +127,7 @@
 - 已新增 `self_revision` 领域契约，包含 trigger type、proposal rationale 和 machine patch 最小结构
 - `ModelPort` 已支持 `propose_self_revision`
 - `mock` 与 `openai-compatible` adapter 已实现最小 proposal 行为
-- proposal 首阶段已支持 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence`；这些字段当前用于收口证据候选与置信度，其中 `proposed_evidence_query` 在 explicit ids 为空时可作为 bounded narrowing hint，对当前 trigger window 做交集收口，并在有交集时按当前窗口内的候选顺序应用 `limit`；project / user scoped conflict 与 periodic trigger window 会先排除 sibling namespace 事件；`recorded_after` / `recorded_before` recency window 已按 inclusive 边界参与过滤；若没有交集，不再绕过 query 改用 full trigger window。explicit ids 非空时，这些 ids 也必须满足 query 在当前 trigger window 内的过滤约束，但不代表 richer widening / ranking engine 已落地
+- proposal 首阶段已支持 `proposed_evidence_event_ids`、`proposed_evidence_query` 与 `confidence`；这些字段当前用于收口证据候选与置信度，其中 `proposed_evidence_query` 在 explicit ids 为空时可作为 bounded narrowing hint，对当前 trigger window 做交集收口，并在有交集时按当前窗口内的候选顺序应用 `limit`；project / user scoped conflict 与 periodic trigger window 会先排除 sibling namespace 事件；`recorded_after` / `recorded_before` recency window 已按 inclusive 边界参与过滤；若没有交集，不再绕过 query 改用 full trigger window。proposal explicit IDs 与 query 结果都用 `EventReference` 解析为 raw ID 后再和冻结 trigger window 比较，裸/前缀表示不会重复或绕过候选边界；explicit ids 非空时，这些 ids 也必须满足 query 在当前 trigger window 内的过滤约束，但不代表 richer widening / ranking engine 已落地
 - 已新增 trigger ledger 持久化，能记录 handled / rejected / suppressed 结果、episode watermark 和 cooldown，并通过 structured diagnostics 暴露 `trigger_type`、`namespace`、`trigger_key`、outcome、rejection / suppression reason、`cooldown_state`、cooldown boundary、evidence window size 与 selected evidence ids
 - 已新增 `auto_reflect_if_needed` 协调器，负责 trigger 判定、proposal 请求、治理校验和写入前收口
 - 当前 MCP-wired automatic path 已谨慎扩到 4 条：`ingest_interaction -> failure`、`ingest_interaction -> conflict`、`decide_with_snapshot -> conflict`、`build_self_snapshot -> periodic`
@@ -216,8 +219,8 @@ Implementation notes:
 - `status-sync-check` 已收敛为轻量 plan/reality gate 矛盾检测；勾选完成的计划项如果没有对应 reality row、对应状态仍不完整，或 active plan 根本没有可检查的完成态 checkbox，都会 fail closed；它不再为了核对精确测试总数编译整套测试
 - Support bundle manifest 已增加非 manifest 文件的 SHA-256 integrity 列表；daemon observe-only diagnostics 已输出 write/remote blockers
 - `decide_with_snapshot` response envelope 已升级为 `protocol_version = 2`，新增 `decision_id`、requested/selected action、bounded local confidence metadata、policy checks 和 non-claims，同时保留旧 `blocked` / `decision` 字段
-- Evidence relation read model 已能只读展示 trigger window 内 selected evidence、available-not-selected rows、rejected count、relation status、window rank、rejection reason、bounded binary selection weight 和 no-widening policy；`doctor.system_layer_report.evidence_relation_contract` 同步公开 v2 contract、read-only/no-widening/binary-weight policy、allowed status、selected/unselected weight、rejection reason 和 additive v2 字段；它不拉取 trigger window 外证据，也不是完整 ranking / scoring engine
-- Episode summary projection 已能以只读 local metadata 表达 objective、outcome、linked evidence ids，不写 identity 或 commitments
+- Evidence relation read model 已能只读展示 trigger window 内 selected evidence、available-not-selected rows、rejected count、relation status、window rank、rejection reason、bounded binary selection weight 和 no-widening policy；trigger window 与 selected `*_event_ids` 同时接受裸 ID / `event:<id>`，先解析为 raw ID、保序去重后执行 subset/no-widening 与 count/rank；JSON `event_id` readback 保持 raw ID。`doctor.system_layer_report.evidence_relation_contract` 同步公开 v2 contract、read-only/no-widening/binary-weight policy、allowed status、selected/unselected weight、rejection reason 和 additive v2 字段；它不拉取 trigger window 外证据，也不是完整 ranking / scoring engine
+- Episode summary projection 已能以只读 local metadata 表达 objective、outcome、linked evidence ids，不写 identity 或 commitments；episode / linked `*_event_ids` 同时接受裸 ID / `event:<id>`，按 raw ID 保序去重后执行 subset 校验与 `event_count`，JSON `linked_evidence_ids` readback 继续保持 raw ID
 - Provider matrix planned-only 行已输出 missing implementation checklist，避免把 future provider 当作可配置 adapter
 - `doctor` 已输出 `remote_team_capability_inventory` 与 `remote_team_security_gates`，所有 remote/team 能力和 security/auth 前置门禁仍默认 blocked，support bundle upload 为 false
 - `doctor.system_layer_report` 已输出只读 architecture layer summary，八层固定为 substrate / signal / memory / policy / control_loop / actuator / interface / release_boundary；报告本身 `writes_performed = false`，actuator 仍只锚定 `run_reflection` 且不新增写授权；`evidence_relation_contract` 将 evidence semantics v2 的 no-widening / bounded binary selection metadata 暴露为 doctor-level 机器可读契约；dependency rules 现在带 `status`、`grants_capability = false` 和逐项 evidence，其中 daemon / remote-write 等当前状态使用 `runtime` evidence，release-boundary / memory-write 等边界使用 `declared_test_contract` evidence 并标为 `declared-test-contract`，只公开验证命令而不声称 doctor 已运行测试；physics principle mappings、Phase 0-8 coverage 和 non-claims 均为报告/门禁信息，不是 runtime、solver、controller 或 scientific validation 能力
@@ -245,9 +248,15 @@ Implementation notes:
 ### 3. `self_snapshot`
 
 - 当前有统一 `SnapshotBudget`
-- 主要控制 evidence 数量
+- 显式 `namespace` 会生成 server-owned `MemoryScope`；调用方不能单独伪造 owner
+- claims / event references / episode references 已按精确 owner + namespace 在 query port / SQLite 层过滤
+- explicit `evidence_manifest` 要求同时显式传入 `namespace`，并已支持裸/前缀 ID 等价输入、canonical `event:<id>` 输出和 scope intersection/no-widening
+- explicit `recorded_after` / `recorded_before` 要求同时显式传入 `namespace`，并已对 evidence / episodes 使用 inclusive time intersection 与 recent-first 稳定 SQL 排序
+- automatic reflection 会从触发 namespace 派生完整 owner + namespace scope，把当前候选固定为 explicit manifest，并以候选最早/最晚记录时间约束其 snapshot 与 episode read；无合格候选不会回退到历史全量
+- 省略 `namespace` 仍只保留 legacy unscoped、无时间窗的兼容路径；需要隔离的调用方必须显式传入 scope
+- 当前 budget 主要控制 evidence 数量
 
-它还不是对 `identity / commitments / claims / episodes` 分层预算的完整模型。
+它还没有完成 repository-wide event ID 统一：本轮已覆盖 active reflection runtime、只读 evidence/episode projections，以及 offline demo 的外部 `timeline.json` baseline `event_reference`；demo snapshot evidence 原本已是 canonical reference，stub 只产生空 `proposed_evidence_event_ids` 与 query，SQLite artifact 的 `supporting_evidence_event_ids` 继续保持 raw 兼容。support bundle 仅记录为后续 inventory，未在本轮修改；它也不是对 `identity / commitments / claims / episodes` 分层预算的完整模型。claims 当前没有时间列，因此 snapshot time window 不会伪装成 claim recency filter。
 
 ### 4. `episodes`
 

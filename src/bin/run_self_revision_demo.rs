@@ -5,7 +5,7 @@ use std::{
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
 
-use agent_llm_mm::{run_doctor, support::config::AppConfig};
+use agent_llm_mm::{domain::event::EventReference, run_doctor, support::config::AppConfig};
 use anyhow::{Context, Result};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -159,9 +159,16 @@ async fn main() -> Result<()> {
         &sqlite_summary,
     )?;
 
+    let baseline_event_reference = EventReference::parse(
+        baseline["result"]["structuredContent"]["event_id"]
+            .as_str()
+            .context("baseline ingest response is missing event_id")?,
+    )
+    .map_err(|error| anyhow::anyhow!("baseline ingest returned an invalid event_id: {error:?}"))?
+    .canonical();
     let timeline = json!({
         "baseline": {
-            "event_id": baseline["result"]["structuredContent"]["event_id"]
+            "event_reference": baseline_event_reference
         },
         "gate_before": gate_before,
         "negative_conflict": {

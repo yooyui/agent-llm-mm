@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use crate::ports::EvidenceQuery;
 use crate::{
@@ -10,11 +10,11 @@ use crate::{
     domain::{
         claim::ClaimDraft,
         commitment::Commitment,
-        event::Event,
+        event::{Event, EventReference, MAX_EVIDENCE_MANIFEST_ITEMS},
         reflection::{Reflection, ReflectionIdentityUpdate},
         self_revision::TriggerType,
-        snapshot::{SelfSnapshot, SnapshotBudget},
-        types::{EventKind, Mode, Namespace, Owner},
+        snapshot::{SelfSnapshot, SnapshotBudget, SnapshotTimeWindow},
+        types::{EventKind, MemoryScope, Mode, Namespace, Owner},
     },
     error::AppError,
 };
@@ -238,14 +238,78 @@ fn ingest_trigger_type_from_hints(trigger_hints: &[String]) -> TriggerType {
 pub struct BuildSelfSnapshotParams {
     pub budget: usize,
     #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    #[schemars(length(max = MAX_EVIDENCE_MANIFEST_ITEMS))]
+    pub evidence_manifest: Option<Vec<String>>,
+    #[serde(default)]
+    pub recorded_after: Option<String>,
+    #[serde(default)]
+    pub recorded_before: Option<String>,
+    #[serde(default)]
     pub auto_reflect_namespace: Option<String>,
 }
 
-impl From<BuildSelfSnapshotParams> for BuildSelfSnapshotInput {
-    fn from(value: BuildSelfSnapshotParams) -> Self {
-        BuildSelfSnapshotInput {
-            budget: SnapshotBudget::new(value.budget),
+impl TryFrom<BuildSelfSnapshotParams> for BuildSelfSnapshotInput {
+    type Error = AppError;
+
+    fn try_from(value: BuildSelfSnapshotParams) -> Result<Self, Self::Error> {
+        if value.evidence_manifest.is_some() && value.namespace.is_none() {
+            return Err(AppError::InvalidParams(
+                "evidence_manifest requires an explicit namespace".to_string(),
+            ));
         }
+        if (value.recorded_after.is_some() || value.recorded_before.is_some())
+            && value.namespace.is_none()
+        {
+            return Err(AppError::InvalidParams(
+                "snapshot time window requires an explicit namespace".to_string(),
+            ));
+        }
+
+        let scope = value
+            .namespace
+            .map(Namespace::parse)
+            .transpose()
+            .map_err(AppError::from)?
+            .map(MemoryScope::for_namespace)
+            .unwrap_or_else(MemoryScope::legacy_unscoped);
+        let evidence_manifest = value
+            .evidence_manifest
+            .map(|manifest| -> Result<Vec<EventReference>, AppError> {
+                if manifest.len() > MAX_EVIDENCE_MANIFEST_ITEMS {
+                    return Err(AppError::InvalidParams(format!(
+                        "evidence_manifest must contain at most {MAX_EVIDENCE_MANIFEST_ITEMS} entries"
+                    )));
+                }
+
+                let mut canonical = Vec::new();
+                let mut seen = HashSet::with_capacity(manifest.len());
+                for value in manifest {
+                    let reference = EventReference::parse(value).map_err(AppError::from)?;
+                    if seen.insert(reference.clone()) {
+                        canonical.push(reference);
+                    }
+                }
+                Ok(canonical)
+            })
+            .transpose()?;
+        let time_window = SnapshotTimeWindow::new(
+            parse_optional_timestamp("recorded_after", value.recorded_after)?,
+            parse_optional_timestamp("recorded_before", value.recorded_before)?,
+        )
+        .map_err(|_| {
+            AppError::InvalidParams(
+                "recorded_after must be less than or equal to recorded_before".to_string(),
+            )
+        })?;
+
+        Ok(BuildSelfSnapshotInput {
+            scope,
+            evidence_manifest,
+            time_window,
+            budget: SnapshotBudget::new(value.budget),
+        })
     }
 }
 
@@ -401,20 +465,14 @@ impl TryFrom<EvidenceQueryDto> for EvidenceQuery {
             owner: value.owner.map(Owner::from),
             kind: value.kind.map(EventKind::from),
             limit: value.limit,
-            recorded_after: parse_optional_evidence_query_timestamp(
-                "recorded_after",
-                value.recorded_after,
-            )?,
-            recorded_before: parse_optional_evidence_query_timestamp(
-                "recorded_before",
-                value.recorded_before,
-            )?,
+            recorded_after: parse_optional_timestamp("recorded_after", value.recorded_after)?,
+            recorded_before: parse_optional_timestamp("recorded_before", value.recorded_before)?,
             event_id_prefix: value.event_id_prefix,
         })
     }
 }
 
-fn parse_optional_evidence_query_timestamp(
+fn parse_optional_timestamp(
     field: &str,
     value: Option<String>,
 ) -> Result<Option<DateTime<Utc>>, AppError> {

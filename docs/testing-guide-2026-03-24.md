@@ -303,6 +303,78 @@ cargo test --test mcp_stdio
 - 修改了 `src/interfaces/mcp/server.rs`
 - 修改了应用层输入校验或错误映射
 
+#### 6.3.1 M0.2 scoped snapshot 最小回归
+
+```zsh
+cargo test --test evidence_query_dto snapshot_dto_ -v
+cargo test --test sqlite_store sqlite_snapshot_queries_do_not_leak_across_owner_or_namespace -v
+cargo test --test application_use_cases build_self_snapshot_returns_store_backed_snapshot_and_respects_budget -v
+```
+
+这组回归验证：MCP DTO 只接受 namespace 并由 server-side conversion 推导 owner；省略 namespace 仍保持 legacy unscoped 兼容；显式 scope 会贯穿 application/query port/SQLite，并覆盖 self、world、两个 project 与两个 user namespace，确保 claims、event references 和 episode references 的跨 scope 注入为 0。它不单独证明 evidence manifest、time window / stable order、统一 event ID 或 scoped auto-reflection；manifest 与时间窗边界由后续专用回归覆盖。
+
+#### 6.3.2 M0.2 evidence manifest no-widening 回归
+
+```zsh
+cargo test --test domain_snapshot event_reference -v
+cargo test --test domain_snapshot raw_and_prefixed_event_ids_share_one_canonical_reference -v
+cargo test --test domain_invariants namespace_and_memory_scope_deserialization_preserve_scope_invariants -v
+cargo test --test evidence_query_dto snapshot_dto_ -v
+cargo test --test sqlite_store sqlite_snapshot_manifest_intersects_scope_without_widening -v
+cargo test --test mcp_stdio stdio_tools_share_runtime_state_across_calls -v
+cargo test --test mcp_stdio mcp_tool_calls_append_operation_logs_with_correlation_id_and_snapshot_scope -v
+```
+
+这组回归验证：`MemoryScope` 反序列化拒绝 partial / mismatched 状态；显式 manifest（包括空数组）必须同时显式提供 `namespace`，DTO、application 与 store 都不能进入 legacy unscoped 兼容路径；manifest 最多 256 项，边界值可接受、超限会在 SQLite bind 构造前以 invalid params 拒绝，重复项使用保序线性去重；裸 event ID 与 `event:<id>` 等价并输出 canonical reference；空白、空 ID、重复前缀等非法项会被拒绝；SQLite 使用 `owner + namespace + event_id IN (...)` 做交集查询；越 scope ID 被排除，显式空 manifest 和空交集均返回空 evidence 且不回退到全 scope；tool operation log 记录 snapshot namespace。非法 manifest / time filter 在 optional auto-reflection 前被拒绝的跨过滤器顺序、时间窗与稳定排序由下一节证明；本节也不证明 snapshot 外的全仓 ID 统一或 scoped auto-reflection。
+
+#### 6.3.3 M0.2 snapshot time-window / stable-order 回归
+
+```zsh
+cargo test --test domain_snapshot snapshot_time_window_accepts_equal_boundaries_and_rejects_reversed_bounds -v
+cargo test --test evidence_query_dto snapshot_dto_ -v
+cargo test --test application_use_cases build_self_snapshot_ -v
+cargo test --test sqlite_store sqlite_snapshot_time_window_intersects_scope_manifest_and_orders_real_instants -v
+cargo test --test sqlite_store sqlite_snapshot_preserves_submillisecond_time_window_precision -v
+cargo test --test sqlite_store sqlite_snapshot_orders_episodes_by_latest_in_window_event_tuple -v
+cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -v
+cargo test --test mcp_stdio invalid_snapshot_filters_are_rejected_before_auto_reflection_side_effects -v
+cargo test --test failure_modes auto_reflection_scopes_trigger_window_to_input_namespace -v
+```
+
+这组回归验证：`recorded_after` / `recorded_before` 是 additive optional MCP 字段，但任一边界都要求显式 `namespace`；RFC3339 会归一为 UTC，闭区间两端相等可用，倒置窗口由 DTO 与 application 拒绝，并在 optional auto-reflection 前停止；显式窗口查无结果时保持空 evidence / episodes，不会回退扩大查询。SQLite 在同一路径上取 scope ∩ manifest（如有）∩ time window，把项目 canonical timestamp 与常见 legacy `Z` / offset 文本归一为固定宽度 UTC 秒 + 9 位小数秒键，并以专用亚毫秒边界用例证明不会退化到 SQLite `julianday()` 精度，再按 `(recorded_at DESC, event rowid DESC)` 稳定排序；legacy unbounded SQLite snapshot 也走 recent-first 查询。automatic reflection 的候选 scope、manifest 与由候选生成的闭区间会传入同一 snapshot/episode path，跨 namespace 事件不可进入；空候选保持 not-triggered。claims 没有 recorded timestamp，本组不宣称 claim recency filtering。
+
+#### 6.3.4 M0.2 active reflection runtime event-ID 回归
+
+```zsh
+cargo test --test application_use_cases reflection_replaces_with_query_and_explicit_evidence_ids_without_duplication -v
+cargo test --test application_use_cases reflection_rejects_invalid_explicit_event_reference_forms -v
+cargo test --test failure_modes auto_reflection_normalizes_prefixed_proposal_evidence_ids_before_governance_and_audit -v
+cargo test --test mcp_stdio inferred_replacement_reflection_with_evidence_is_accepted_over_stdio -v
+cargo test --test sqlite_store sqlite_reflection_transactions_replace_identity_and_commitments_atomically -v
+```
+
+这组回归验证 active reflection runtime 的 explicit MCP/application evidence、query 合并和 auto-reflection proposal 都把裸 ID 与 `event:<id>` 解析为同一 raw event ID，按首次出现顺序去重，并拒绝空白、空 ID 与重复 `event:` 前缀。存在性校验与 SQLite 查询仍使用 raw ID；reflection audit `supporting_evidence_event_ids` 和 auto-reflection diagnostics 的 `*_event_ids` 是兼容字段，readback 继续断言 raw IDs，而 reference-shaped 输出才使用 canonical `event:<id>`。它不证明 repository-wide ID 统一；offline demo 由 6.3.6 单独覆盖，support bundle 等其他表面仍是 partial。
+
+#### 6.3.5 M0.2 read-only evidence / episode projection event-ID 回归
+
+```zsh
+cargo test --test product_completion_read_models -v
+cargo test --test domain_snapshot raw_and_prefixed_event_ids_share_one_canonical_reference -v
+cargo test --test domain_snapshot invalid_event_references_are_rejected -v
+cargo test --test bootstrap doctor_reports_self_revision_runtime_coverage -v
+```
+
+这组回归验证 evidence relation 的 `trigger_window_event_ids` / `selected_evidence_event_ids` 与 episode summary 的 `episode_event_ids` / `linked_evidence_ids` 都接受裸 ID 和 `event:<id>`，按底层 raw ID 保序去重后再执行 subset/no-widening、`event_count`、selected/rejected count 和 window rank。空白、空 ID、重复前缀 fail closed；projection JSON 的 `event_id` / `*_event_ids` readback 继续保持 raw IDs，不增加持久化、MCP tool 或 runtime read path。它不证明 repository-wide ID 统一；offline demo 由下一节单独覆盖，support bundle 和其他未授权表面仍是 partial。
+
+#### 6.3.6 M0.2 offline self-revision demo event-ID 回归
+
+```zsh
+cargo test --test self_revision_demo_runner -v
+cargo test --test demo_openai_compatible_stub -v
+```
+
+这组回归验证 deterministic demo 的真实边界：runner 不接收 caller-provided event ID；MCP ingest 返回的 raw `event_id` 必须经 `EventReference` fail-closed 解析，并在外部 `timeline.json` 中以 canonical `event_reference = event:<id>` 输出。snapshot 的 `evidence` 原本已是 canonical reference；内置与独立 stub 只返回空 `proposed_evidence_event_ids` 加受控 query，不比较或回显 event ID；SQLite artifact 的 `supporting_evidence_event_ids` 是明确 raw 兼容字段。它不改 SQLite schema、active runtime/projection、发布证据或 provider live path；support bundle 仅作为后续 inventory，repository-wide 统一仍为 partial。
+
 ### 6.4 Provider 合规预检
 
 新增 provider 前先阅读 [Provider Readiness Checklist](provider-contract.md)。下面这组命令只是当前共享 provider 路径的最小验证；如果 checklist 里仍有 `partial` 或 `gap` 且新 provider 依赖该行为，新增 provider 的同一变更必须补齐对应专用回归或记录明确例外。

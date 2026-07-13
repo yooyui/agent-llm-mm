@@ -27,11 +27,14 @@ use crate::{
         run_reflection,
         run_reflection::ReflectionInput,
     },
+    domain::event::EventReference,
     domain::identity_core::IdentityCore,
     domain::operation_log::{ActorKind, OperationLogEntry, OperationLogKind, OperationLogStatus},
     domain::self_revision::{
         SELF_REVISION_DURABLE_WRITE_PATH, SelfRevisionProposal, SelfRevisionRequest, TriggerType,
     },
+    domain::snapshot::SnapshotTimeWindow,
+    domain::types::MemoryScope,
     error::AppError,
     interfaces::dashboard::{
         DashboardHandle, DashboardObserver, DashboardRuntimeInfo, OperationRecorder,
@@ -301,6 +304,15 @@ impl Server {
             decode_tool_params::<BuildSelfSnapshotParams>(raw_params),
         )
         .await?;
+        let dashboard_namespace = params.namespace.clone();
+        let snapshot_input = map_tool_error(
+            &self.runtime,
+            "build_self_snapshot",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            build_self_snapshot::BuildSelfSnapshotInput::try_from(params.clone()),
+        )
+        .await?;
         let auto_reflect_input = map_tool_error(
             &self.runtime,
             "build_self_snapshot",
@@ -309,7 +321,6 @@ impl Server {
             AutoReflectInput::from_build_snapshot(&params),
         )
         .await?;
-        let dashboard_namespace = params.auto_reflect_namespace.clone();
         if let Some(auto_reflect_input) = auto_reflect_input {
             let auto_reflect_namespace = Some(auto_reflect_input.namespace.as_str().to_string());
             let auto_reflect_trigger_type = auto_reflect_input.trigger_type;
@@ -365,7 +376,7 @@ impl Server {
             "build_self_snapshot",
             dashboard_namespace.clone(),
             Some(correlation_id.clone()),
-            build_self_snapshot::execute(&self.runtime, params.into()).await,
+            build_self_snapshot::execute(&self.runtime, snapshot_input).await,
         )
         .await?;
         self.runtime.dashboard.record_tool_ok(
@@ -825,6 +836,37 @@ impl EventStore for Runtime {
         self.store.list_event_references().await
     }
 
+    async fn list_event_references_in_scope(
+        &self,
+        scope: &MemoryScope,
+        evidence_manifest: Option<&[EventReference]>,
+    ) -> Result<Vec<String>, AppError> {
+        self.store
+            .list_event_references_in_scope(scope, evidence_manifest)
+            .await
+    }
+
+    async fn list_event_references_for_snapshot(
+        &self,
+        scope: &MemoryScope,
+        evidence_manifest: Option<&[EventReference]>,
+        time_window: &SnapshotTimeWindow,
+    ) -> Result<Vec<String>, AppError> {
+        self.store
+            .list_event_references_for_snapshot(scope, evidence_manifest, time_window)
+            .await
+    }
+
+    async fn list_recorded_at_for_snapshot_manifest(
+        &self,
+        scope: &MemoryScope,
+        evidence_manifest: &[EventReference],
+    ) -> Result<Vec<DateTime<Utc>>, AppError> {
+        self.store
+            .list_recorded_at_for_snapshot_manifest(scope, evidence_manifest)
+            .await
+    }
+
     async fn query_evidence_event_ids(
         &self,
         query: EvidenceQuery,
@@ -858,6 +900,13 @@ impl ClaimStore for Runtime {
         self.store.list_active_claims().await
     }
 
+    async fn list_active_claims_in_scope(
+        &self,
+        scope: &MemoryScope,
+    ) -> Result<Vec<StoredClaim>, AppError> {
+        self.store.list_active_claims_in_scope(scope).await
+    }
+
     async fn update_claim_status(
         &self,
         claim_id: &str,
@@ -881,6 +930,23 @@ impl EpisodeStore for Runtime {
 
     async fn list_episode_references(&self) -> Result<Vec<String>, AppError> {
         self.store.list_episode_references().await
+    }
+
+    async fn list_episode_references_in_scope(
+        &self,
+        scope: &MemoryScope,
+    ) -> Result<Vec<String>, AppError> {
+        self.store.list_episode_references_in_scope(scope).await
+    }
+
+    async fn list_episode_references_for_snapshot(
+        &self,
+        scope: &MemoryScope,
+        time_window: &SnapshotTimeWindow,
+    ) -> Result<Vec<String>, AppError> {
+        self.store
+            .list_episode_references_for_snapshot(scope, time_window)
+            .await
     }
 }
 
