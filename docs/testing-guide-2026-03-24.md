@@ -406,6 +406,16 @@ cargo test --test sqlite_store sqlite_lists_only_episodes_reached_through_claim_
 
 这组回归验证：匹配 proposed identity value 的 active claims 只有经 persisted evidence link 到达 episode event membership 时才贡献 distinct cross-episode support；全局无关 episode、无 provenance 的 claims 和空 claim 集均不计数。拒绝路径只记录 rejected trigger，不写 reflection 或 identity；具备至少两条真实 episode 路径的后续 retry 仍可通过。该切片复用现有表，不证明完整 provenance graph、全部治理失败原子性或 M0.3 整体完成。
 
+### 6.3C M0.3 governance failure atomicity 回归
+
+```zsh
+cargo test --test failure_modes auto_reflection_commit_failure_records_only_rejected_audit_and_rolls_back_deeper_updates -- --exact
+cargo test --test failure_modes auto_reflection_handled_ledger_failure_rolls_back_reflection_updates -- --exact
+cargo test --test sqlite_store sqlite_handled_ledger_failure_rolls_back_deeper_reflection_updates -- --exact
+```
+
+这组回归把 validation rejection、handled trigger ledger append failure 与 reflection transaction commit failure 分开验证。失败后 identity、commitments、supporting claims/evidence links、reflection 与 handled ledger 必须保持原值或不存在；事务外仅允许一条 `Rejected` trigger entry，且不得带 `reflection_id`、`handled_at` 或 cooldown。SQLite 回归使用 duplicate ledger primary key 让最后的 handled-audit 写入失败，并 readback identity、commitments、reflection 与 ledger 行数。它证明当前本地 transaction path 的原子性，不证明进程崩溃恢复、跨进程事务或分布式一致性。
+
 ### 6.4 Provider 合规预检
 
 新增 provider 前先阅读 [Provider Readiness Checklist](provider-contract.md)。下面这组命令只是当前共享 provider 路径的最小验证；如果 checklist 里仍有 `partial` 或 `gap` 且新 provider 依赖该行为，新增 provider 的同一变更必须补齐对应专用回归或记录明确例外。

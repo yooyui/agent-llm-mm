@@ -1989,6 +1989,7 @@ async fn auto_reflection_rejected_identity_attempt_does_not_start_cooldown_for_l
 async fn auto_reflection_handled_ledger_failure_rolls_back_reflection_updates() {
     let deps = test_support::deps_with_fail_point(FailPoint::AppendHandledTriggerLedger);
     deps.set_self_revision_proposal(test_support::commitment_only_auto_reflection_proposal());
+    let evidence_links_before = deps.evidence_links();
 
     let result = auto_reflect_if_needed::execute(
         &deps,
@@ -2011,9 +2012,16 @@ async fn auto_reflection_handled_ledger_failure_rolls_back_reflection_updates() 
         )]
     );
     assert_eq!(
-        deps.latest_trigger_status(),
-        Some(TriggerLedgerStatus::Rejected)
+        deps.identity().canonical_claims(),
+        &["identity:self=architect".to_string()]
     );
+    assert_eq!(deps.evidence_links(), evidence_links_before);
+    let failed_entries = deps.trigger_entries();
+    assert_eq!(failed_entries.len(), 1);
+    assert_eq!(failed_entries[0].status, TriggerLedgerStatus::Rejected);
+    assert_eq!(failed_entries[0].reflection_id, None);
+    assert_eq!(failed_entries[0].handled_at, None);
+    assert_eq!(failed_entries[0].cooldown_until, None);
 
     deps.clear_fail_point();
 
@@ -2033,6 +2041,82 @@ async fn auto_reflection_handled_ledger_failure_rolls_back_reflection_updates() 
         Some(TriggerLedgerStatus::Handled)
     );
     assert_eq!(deps.reflections().len(), 1);
+}
+
+#[tokio::test]
+async fn auto_reflection_commit_failure_records_only_rejected_audit_and_rolls_back_deeper_updates()
+{
+    let deps = test_support::deps_with_fail_point(FailPoint::CommitReflection);
+    deps.set_self_revision_proposal(
+        test_support::identity_and_commitment_auto_reflection_proposal(),
+    );
+    deps.seed_identity_support_context(
+        vec![
+            "episode-support-001".to_string(),
+            "episode-support-002".to_string(),
+        ],
+        (1..=3)
+            .map(|index| {
+                StoredClaim::new(
+                    format!("claim-supporting-{index}"),
+                    ClaimDraft::new(
+                        Owner::World,
+                        "self.role",
+                        "is",
+                        "principal_architect",
+                        Mode::Observed,
+                    )
+                    .with_namespace(Namespace::world()),
+                    ClaimStatus::Active,
+                )
+            })
+            .collect(),
+    );
+    let evidence_links_before = deps.evidence_links();
+
+    let result = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::world(),
+            vec!["conflict".to_string(), "identity".to_string()],
+        ),
+    )
+    .await;
+
+    assert!(
+        matches!(result, Err(AppError::Message(message)) if message == "injected reflection commit failure")
+    );
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &["identity:self=architect".to_string()]
+    );
+    assert_eq!(
+        deps.commitments(),
+        vec![Commitment::new(
+            Owner::Self_,
+            "forbid:write_identity_core_directly",
+        )]
+    );
+    assert!(deps.reflections().is_empty());
+    assert_eq!(deps.evidence_links(), evidence_links_before);
+    for claim_id in [
+        "claim-supporting-1",
+        "claim-supporting-2",
+        "claim-supporting-3",
+    ] {
+        assert_eq!(
+            deps.claim(claim_id)
+                .expect("supporting claim must remain")
+                .status,
+            ClaimStatus::Active
+        );
+    }
+    let entries = deps.trigger_entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].status, TriggerLedgerStatus::Rejected);
+    assert_eq!(entries[0].reflection_id, None);
+    assert_eq!(entries[0].handled_at, None);
+    assert_eq!(entries[0].cooldown_until, None);
 }
 
 #[tokio::test]
@@ -2353,6 +2437,17 @@ mod test_support {
             confidence: None,
         }
     }
+
+    pub fn identity_and_commitment_auto_reflection_proposal()
+    -> agent_llm_mm::domain::self_revision::SelfRevisionProposal {
+        let mut proposal = identity_only_auto_reflection_proposal();
+        proposal.machine_patch.commitment_patch = Some(
+            agent_llm_mm::domain::self_revision::SelfRevisionCommitmentPatch::new(vec![
+                "prefer:evidence_backed_identity_updates".to_string(),
+            ]),
+        );
+        proposal
+    }
 }
 
 #[derive(Clone)]
@@ -2538,6 +2633,10 @@ impl FailureModeDeps {
             .trigger_ledger
             .last()
             .cloned()
+    }
+
+    fn trigger_entries(&self) -> Vec<StoredTriggerLedgerEntry> {
+        self.state.lock().unwrap().committed.trigger_ledger.clone()
     }
 
     fn evidence_query_trace(&self) -> Vec<EvidenceQuery> {

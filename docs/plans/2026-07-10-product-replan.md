@@ -207,14 +207,17 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 
 第二个最小切片（2026-07-14）已实现：identity auto-reflection 不再用 `min(global episode count, supporting claim count)` 推断跨 episode 支持。application 将与 proposed identity value 匹配的 active claim IDs 交给只读 `EpisodeStore` provenance port；SQLite 通过现有 `evidence_links` 与 `episode_events` 做 distinct join，只返回真实可达的 supporting episodes。无关 episode、无 evidence link 的 supporting claim 与空 claim 集不计数；非 SQLite store 对非空 provenance 查询默认 fail closed。未增加表、迁移、MCP schema 或新 write path。
 
+第三个最小切片（2026-07-14）已完成证据收口：生产写路径不需调整；`auto_reflect_if_needed` 的 validation rejection 在 transaction 前落 rejected audit，`run_reflection` 将 identity、commitments、claim/evidence、reflection 与 handled trigger ledger 放入同一 reflection transaction。新增组合 identity + commitment commit-failure 注入、handled-ledger append failure 全状态断言，以及真实 SQLite duplicate-ledger failure 回归，证明失败事务不留下部分更新，事务外最终只有 rejected trigger audit。此结论不扩张为 crash recovery 或 distributed transaction 保证。
+
 - [x] **M0.3.1 Trusted decision commitments and dual gate**
 - [x] **M0.3.2 Claim evidence episode provenance**
+- [x] **M0.3.3 Governance failure atomicity**
 
 - 已完成：`decide_with_snapshot` 使用服务端 commitments 作为当前 policy context。
 - 已完成：requested action 与 provider-selected action 都经过同一 commitment gate。
 - [ ] 如果 selected action 不可结构化验证，则返回 non-authoritative / experimental 结果，不能标记 policy passed。
 - 已完成：用 claim → evidence → episode 的真实 distinct join 计算跨 episode 支持。
-- [ ] 治理失败只产生 rejected audit，不留下部分 identity / commitment 更新。
+- 已完成：治理失败只产生 rejected audit，不留下部分 identity / commitment / reflection 更新。
 
 证据门：伪造 caller snapshot 不能移除 baseline commitment；provider 返回受禁 action 必须被阻断；无关 episode 不计入支持数。
 
@@ -430,8 +433,9 @@ M2 退出指标：
 - 串行通过 `cargo fmt --check`、`git diff --check`、`cargo check`、三级测试、status-sync 和完整 all-feature Clippy；
 - 未发布、未推送、未运行远程或 live-provider 操作。
 - M0.2 已完成七个连续最小切片：snapshot scope、explicit evidence manifest、time window / stable order、scoped auto-reflection snapshot、active reflection runtime event-ID 等价性、只读 evidence/episode projection event-ID 等价性，以及 offline demo artifact event reference。
-- M0.3 已完成两个独立最小切片：trusted decision commitments + requested/selected dual gate，以及 claim → evidence → episode distinct provenance join。
+- M0.3 已完成前两个独立最小切片：trusted decision commitments + requested/selected dual gate，以及 claim → evidence → episode distinct provenance join。
+- M0.3 已完成第三个证据切片：validation / handled-ledger / commit failure atomicity，不留下部分 identity / commitment / reflection 更新。
 
 尚未完成：repository-wide event-ID 统一仍为 partial；support bundle 仅列入后续 inventory；M0.3 整体仍在进行，M0.4–M0.5 尚未开始。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
 
-下一最小工程动作：继续 M0.3 的 failure atomicity 独立切片，盘点 governance validation、rejected ledger 与 reflection transaction 的失败顺序，以故障注入证明任何治理拒绝或 handled-ledger 写入失败都不留下部分 identity / commitment 更新；不要同时进入 M0.4、M1 或 support-bundle 清理。
+下一最小工程动作：继续 M0.3 的 decision authority 独立切片，为 action-string provider result 明确 non-authoritative / experimental 状态，确保本地 commitment gate 通过不被表述为完整 policy passed；保持 input schema 与 provider action-string contract 兼容，不同时进入 M0.4、M1 或 support-bundle 清理。

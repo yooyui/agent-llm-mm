@@ -1486,6 +1486,95 @@ async fn sqlite_reflection_transactions_replace_identity_and_commitments_atomica
 }
 
 #[tokio::test]
+async fn sqlite_handled_ledger_failure_rolls_back_deeper_reflection_updates() {
+    let context = test_support::new_sqlite_store().await;
+    context
+        .store
+        .save_identity(IdentityCore::new(vec![
+            "identity:self=architect".to_string(),
+        ]))
+        .await
+        .unwrap();
+    let baseline_identity = context.store.load_identity().await.unwrap();
+    let baseline_commitments = context.store.list_commitments().await.unwrap();
+    let duplicate_ledger_id = "ledger-existing";
+    context
+        .store
+        .record_trigger_attempt(StoredTriggerLedgerEntry::new(
+            duplicate_ledger_id,
+            TriggerType::Conflict,
+            Namespace::world(),
+            "world:conflict",
+            TriggerLedgerStatus::Rejected,
+        ))
+        .await
+        .unwrap();
+
+    let mut transaction = context.store.begin_reflection_transaction().await.unwrap();
+    transaction
+        .replace_identity(IdentityCore::new(vec![
+            "identity:self=must-roll-back".to_string(),
+        ]))
+        .await
+        .unwrap();
+    transaction
+        .replace_commitments(vec![agent_llm_mm::domain::commitment::Commitment::new(
+            Owner::Self_,
+            "prefer:must_roll_back",
+        )])
+        .await
+        .unwrap();
+    transaction
+        .append_reflection(StoredReflection::new(
+            "refl-handled-ledger-rollback".to_string(),
+            test_support::fixed_now(),
+            Reflection::new("handled ledger failure must roll back deeper writes"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    let handled_ledger_error = transaction
+        .append_trigger_ledger(StoredTriggerLedgerEntry::new(
+            duplicate_ledger_id,
+            TriggerType::Conflict,
+            Namespace::world(),
+            "world:conflict",
+            TriggerLedgerStatus::Handled,
+        ))
+        .await;
+    assert!(handled_ledger_error.is_err());
+    assert!(transaction.commit().await.is_err());
+
+    assert_eq!(
+        context.store.load_identity().await.unwrap(),
+        baseline_identity
+    );
+    assert_eq!(
+        context.store.list_commitments().await.unwrap(),
+        baseline_commitments
+    );
+    let reflection_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM reflections WHERE reflection_id = 'refl-handled-ledger-rollback'",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    let ledger_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM reflection_trigger_ledger WHERE ledger_id = 'ledger-existing'",
+    )
+    .fetch_one(&context.pool)
+    .await
+    .unwrap();
+    assert_eq!(reflection_count, 0);
+    assert_eq!(
+        ledger_count, 1,
+        "only the pre-existing rejected audit remains"
+    );
+}
+
+#[tokio::test]
 async fn sqlite_store_persists_identity_and_reads_commitments_for_snapshot_ports() {
     let context = test_support::new_sqlite_store().await;
 

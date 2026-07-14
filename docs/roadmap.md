@@ -59,12 +59,13 @@
 2. **已完成（M0.2，2026-07-14）**：建立 `MemoryScope`，让显式 scoped snapshot 和 auto-reflection 只读取允许的 namespace / trigger window，并使用 recent-first 稳定排序；完成 active reflection、只读 evidence/episode projection 与 offline demo artifact 的限定 event-ID 收口。省略 namespace 的 legacy unscoped 兼容、repository-wide ID 统一和 support bundle inventory 不计入该退出门。
 3. **已完成首个切片（M0.3，2026-07-14）**：decision 使用服务端 commitment store 覆盖 caller commitments，同时复检 requested / provider-selected action；被拒绝的 selected action 不返回 authoritative decision payload。
 4. **已完成第二个切片（M0.3，2026-07-14）**：用 claim → evidence → episode 的 distinct store join 替换全局 episode 数量推断，无关 episode 不计入 identity support。
-5. **下一步（M0.3）**：证明所有治理失败只产生 rejected audit，不留下部分 identity / commitment 更新。
-6. 拆分 `init`、`migrate`、`doctor --read-only` 与显式 bootstrap。
-7. 建立 schema version、事务 migration、备份、故障注入和恢复验证。
-8. 无认证阶段强制 dashboard loopback。
-9. 修正 CLI tracing，建立 format / clippy / tests / status-sync CI。
-10. 独立评估 `rmcp` 升级破坏面，不顺带引入 remote/tasks/OAuth。
+5. **已完成第三个切片（M0.3，2026-07-14）**：验证治理拒绝、handled-ledger 写入失败与 transaction commit 失败均不留下部分 identity / commitment / reflection 更新，失败后只保留 rejected audit。
+6. **下一步（M0.3）**：收口 action-string selected action 的 non-authoritative / experimental 状态，避免把有界字面量 gate 误报为完整 policy passed。
+7. 拆分 `init`、`migrate`、`doctor --read-only` 与显式 bootstrap。
+8. 建立 schema version、事务 migration、备份、故障注入和恢复验证。
+9. 无认证阶段强制 dashboard loopback。
+10. 修正 CLI tracing，建立 format / clippy / tests / status-sync CI。
+11. 独立评估 `rmcp` 升级破坏面，不顺带引入 remote/tasks/OAuth。
 
 退出门：
 

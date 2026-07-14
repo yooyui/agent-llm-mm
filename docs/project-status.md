@@ -17,7 +17,7 @@
 
 ## 2026-07-14 M0.2 收口与 M0.3 进展
 
-当前状态必须与 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 的七个最小切片及限定退出门已于 2026-07-14 收口。M0.3 已完成 trusted decision commitments + dual gate，以及 claim → evidence → episode provenance 两个独立切片。M0.3 整体及 M0.4–M0.5 尚未完成，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
+当前状态必须与 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 的七个最小切片及限定退出门已于 2026-07-14 收口。M0.3 已完成 trusted decision commitments + dual gate、claim → evidence → episode provenance，以及 governance failure atomicity 三个独立切片。M0.3 整体及 M0.4–M0.5 尚未完成，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
 
 M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/manifest/time 交集、stable recent-first order、scoped auto-reflection、active reflection 与只读 projection 的 event-ID 等价性，以及 offline demo artifact reference。省略 `namespace` 的 legacy MCP 调用仍是 unscoped 兼容路径；完整 recall contract、repository-wide event-ID 统一、support bundle inventory 和 M0.3 治理能力不属于本次完成声明。
 
@@ -29,6 +29,7 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 - automatic self-revision 已从触发 namespace 派生完整 owner + namespace scope：先冻结 trigger window，再取授权 scope 与 trigger manifest 的交集，并以该受限窗口构建 revision snapshot 与 episode read；无有效交集保持 fail-closed，不回退到历史全量。active reflection runtime 的 MCP/application/model proposal evidence 输入均接受裸 event ID 与 `event:<id>`，以底层 raw ID 保序去重；SQLite 查询、evidence links、reflection audit 与 auto-reflection diagnostics 的明确 `*_event_ids` 兼容字段继续存取 raw ID，reference-shaped 输出才使用 canonical `event:<id>`。
 - `decide_with_snapshot` 仍接收调用方 snapshot，但 application 会在 gate 与 provider 调用前用当前服务端 commitment store 覆盖其中的 commitments，并对 requested action 与 provider-selected action 复用同一 commitment gate；selected action 被拒绝时返回 blocked、保留被拒绝的 `selected_action`，且 `decision = null`。identity / claims / evidence / episodes 仍是 caller-provided，尚无 server-created snapshot handle、完整 policy binding 或 provenance join，因此仍不能描述为完整可信策略执行器。
 - cross-episode identity support 已不再使用全局 episode 数量推断：application 先选出与 proposed identity value 匹配的 active claims，再通过只读 store port 与 SQLite `evidence_links` → `episode_events` join 计算 distinct supporting episodes；无关 episode、无 evidence link 的 claim 和空 claim 集都不会提高支持数。该切片复用现有 schema，仍不是完整 provenance graph，也没有完成 M0.3 的全部治理门。
+- governance failure atomicity 已由 application fault injection 与真实 SQLite transaction 回归共同覆盖：validation rejection 不进入 reflection transaction；handled-ledger append 或 commit 失败时，pending identity / commitment / claim-evidence / reflection / handled audit 均回滚，随后事务外只记录 rejected trigger audit。该证据不等于进程崩溃恢复、跨进程事务或分布式一致性。
 - `doctor` 会进入 runtime bootstrap，可能创建目录/数据库、建表、迁移、seed baseline commitment 并补默认 identity。报告中的只读 projection 不代表 `doctor` 执行链无写入。
 - legacy SQLite 表重建缺 schema version、migration ledger 和显式事务恢复门；正式数据迁移前必须先补备份、故障注入、readback 和 rollback。
 - dashboard HTTP 路由无认证，配置可以绑定非 loopback host；在强制 loopback 或 auth 落地前，它只能描述为本地调试界面，不能描述为已验证的安全本机边界。
