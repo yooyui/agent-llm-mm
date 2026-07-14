@@ -517,6 +517,44 @@ impl EpisodeStore for SqliteStore {
             .collect())
     }
 
+    async fn list_episode_references_supporting_claims(
+        &self,
+        claim_ids: &[String],
+    ) -> Result<Vec<String>, AppError> {
+        if claim_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut query = QueryBuilder::<Sqlite>::new(
+            r#"
+            SELECT
+                episode_events.episode_reference,
+                MIN(episode_events.rowid) AS first_episode_event_rowid
+            FROM evidence_links
+            INNER JOIN episode_events
+                ON episode_events.event_id = evidence_links.event_id
+            WHERE evidence_links.claim_id IN (
+            "#,
+        );
+        let mut separated = query.separated(", ");
+        for claim_id in claim_ids {
+            separated.push_bind(claim_id);
+        }
+        separated.push_unseparated(")");
+        query.push(
+            r#"
+            GROUP BY episode_events.episode_reference
+            ORDER BY first_episode_event_rowid ASC, episode_events.episode_reference ASC
+            "#,
+        );
+
+        let rows = map_sqlite(query.build().fetch_all(&self.pool).await)?;
+        Ok(rows
+            .into_iter()
+            .map(|row| row.get::<String, _>("episode_reference"))
+            .collect())
+    }
+
     async fn list_episode_references_in_scope(
         &self,
         scope: &MemoryScope,

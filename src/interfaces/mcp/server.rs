@@ -932,6 +932,15 @@ impl EpisodeStore for Runtime {
         self.store.list_episode_references().await
     }
 
+    async fn list_episode_references_supporting_claims(
+        &self,
+        claim_ids: &[String],
+    ) -> Result<Vec<String>, AppError> {
+        self.store
+            .list_episode_references_supporting_claims(claim_ids)
+            .await
+    }
+
     async fn list_episode_references_in_scope(
         &self,
         scope: &MemoryScope,

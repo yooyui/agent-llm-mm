@@ -14,6 +14,18 @@ pub trait EpisodeStore {
     ) -> Result<(), AppError>;
 
     async fn list_episode_references(&self) -> Result<Vec<String>, AppError>;
+    async fn list_episode_references_supporting_claims(
+        &self,
+        claim_ids: &[String],
+    ) -> Result<Vec<String>, AppError> {
+        if claim_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        Err(AppError::InvalidParams(
+            "claim-to-evidence-to-episode lookup is not supported by this store".to_string(),
+        ))
+    }
     async fn list_episode_references_in_scope(
         &self,
         scope: &MemoryScope,

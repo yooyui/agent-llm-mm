@@ -38,13 +38,13 @@ MCP Memory Ledger 已经拥有可运行的 Rust + SQLite + MCP `stdio` 核心、
 - 本地 dashboard、support bundle、backup / restore、release preflight 和多类状态报告存在。
 - 测试已分为 `fast` / `core` / `full` 三级；发布证据、打包与 provider certification 工具由非默认 `release-tools` feature 承载。
 
-### 2.2 直接阻断 Local Alpha 的事实
+### 2.2 2026-07-10 审计阻断事实与当前状态
 
 | 编号 | 当前事实 | 风险 | 规划结论 |
 | --- | --- | --- | --- |
-| F-01 | Snapshot 输入只有 budget，运行时会读取全库 active claims、events 和 episodes；event 引用按旧序截断 | 跨 namespace / 陈旧证据进入 snapshot 与自动反思 | M0 先建立 `MemoryScope` 和存储层过滤 |
-| F-02 | `decide_with_snapshot` 接受调用方完整 snapshot，只 gate requested action，模型 selected action 不复检 | 返回“gate passed”但策略语义不可信 | M0 双重 gate，或先降级为 lab-only |
-| F-03 | 跨 episode 支持数由全局 episode 数与 claim 数取最小值，没有 claim → evidence → episode 的真实 join | 不相关 episode 可抬高 identity 更新支持度 | M0 补读取关系后重做治理校验 |
+| F-01 | M0.2 已为显式 snapshot 建立 namespace / manifest / time-window scope 与稳定排序；省略 namespace 的 legacy 调用仍保持 unscoped 兼容 | legacy 路径仍可能读取过宽，完整 recall contract 尚未建立 | M0.2 限定退出门已通过；剩余边界继续保持公开 |
+| F-02 | M0.3.1 已用服务端 commitments 覆盖 caller commitments，并复检 requested / provider-selected action；其他 snapshot 字段仍由 caller 提供 | 尚无完整 trusted snapshot handle 或结构化 policy arbitration | M0.3.1 已收口；M0.3 整体继续开放 |
+| F-03 | M0.3.2 已用 claim → evidence → episode distinct join 替代全局数量推断 | 现有 join 仍不是完整 provenance graph | M0.3.2 已收口；继续验证剩余治理门 |
 | F-04 | `doctor` 会 create / migrate / seed SQLite，并补默认 identity | 诊断命令会改变被检查对象，release soak 可能碰正式库 | M0 拆分只读诊断与显式 init / migrate |
 | F-05 | Legacy 表重建没有 schema version、migration ledger 或显式事务保护 | 中途失败可能留下半迁移数据库 | M0 建立版本化迁移与恢复门禁 |
 | F-06 | MCP 没有按 namespace 查询 event、claim、episode、reflection 和 evidence relation 的正式接口 | “记忆已写入，但用户无法可靠取回和解释” | M1 建设 Read Model v2 |
@@ -205,12 +205,15 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 
 首个最小切片（2026-07-14）已实现：`decide_with_snapshot` 在任何 gate 或 provider 调用前读取当前 `CommitmentStore`，以服务端 commitment descriptions 覆盖 caller snapshot commitments；caller 删除或注入 commitment 都不能改变服务端 policy context。requested action 先 gate，provider-selected action 返回后再经过同一 gate；selected action 被拒绝时结果为 `blocked`、`decision = null`，并以 `commitment_gate_blocked_selected_action` 和 `bounded-local-policy-rejected` 暴露有界解释。现有 input schema 与 `ModelDecision { action }` provider contract 不变；identity / claims / evidence / episodes 仍是 caller-provided，M0.3 整体保持开放。
 
+第二个最小切片（2026-07-14）已实现：identity auto-reflection 不再用 `min(global episode count, supporting claim count)` 推断跨 episode 支持。application 将与 proposed identity value 匹配的 active claim IDs 交给只读 `EpisodeStore` provenance port；SQLite 通过现有 `evidence_links` 与 `episode_events` 做 distinct join，只返回真实可达的 supporting episodes。无关 episode、无 evidence link 的 supporting claim 与空 claim 集不计数；非 SQLite store 对非空 provenance 查询默认 fail closed。未增加表、迁移、MCP schema 或新 write path。
+
 - [x] **M0.3.1 Trusted decision commitments and dual gate**
+- [x] **M0.3.2 Claim evidence episode provenance**
 
 - 已完成：`decide_with_snapshot` 使用服务端 commitments 作为当前 policy context。
 - 已完成：requested action 与 provider-selected action 都经过同一 commitment gate。
 - [ ] 如果 selected action 不可结构化验证，则返回 non-authoritative / experimental 结果，不能标记 policy passed。
-- [ ] 用 claim → evidence → episode 的真实 join 计算跨 episode 支持。
+- 已完成：用 claim → evidence → episode 的真实 distinct join 计算跨 episode 支持。
 - [ ] 治理失败只产生 rejected audit，不留下部分 identity / commitment 更新。
 
 证据门：伪造 caller snapshot 不能移除 baseline commitment；provider 返回受禁 action 必须被阻断；无关 episode 不计入支持数。
@@ -427,7 +430,8 @@ M2 退出指标：
 - 串行通过 `cargo fmt --check`、`git diff --check`、`cargo check`、三级测试、status-sync 和完整 all-feature Clippy；
 - 未发布、未推送、未运行远程或 live-provider 操作。
 - M0.2 已完成七个连续最小切片：snapshot scope、explicit evidence manifest、time window / stable order、scoped auto-reflection snapshot、active reflection runtime event-ID 等价性、只读 evidence/episode projection event-ID 等价性，以及 offline demo artifact event reference。
+- M0.3 已完成两个独立最小切片：trusted decision commitments + requested/selected dual gate，以及 claim → evidence → episode distinct provenance join。
 
 尚未完成：repository-wide event-ID 统一仍为 partial；support bundle 仅列入后续 inventory；M0.3 整体仍在进行，M0.4–M0.5 尚未开始。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
 
-下一最小工程动作：继续 M0.3 的 provenance correctness 独立切片，定位当前 cross-episode support 的全局数量推断，先以无关 episode 不得计入支持数的对抗测试冻结边界，再实现 claim → evidence → episode 的真实 join；不要同时进入 M0.4、M1 或 support-bundle 清理。
+下一最小工程动作：继续 M0.3 的 failure atomicity 独立切片，盘点 governance validation、rejected ledger 与 reflection transaction 的失败顺序，以故障注入证明任何治理拒绝或 handled-ledger 写入失败都不留下部分 identity / commitment 更新；不要同时进入 M0.4、M1 或 support-bundle 清理。

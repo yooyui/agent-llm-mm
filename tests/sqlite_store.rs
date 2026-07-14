@@ -56,6 +56,113 @@ async fn sqlite_store_bootstraps_all_tables() {
 }
 
 #[tokio::test]
+async fn sqlite_lists_only_episodes_reached_through_claim_evidence_links() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+
+    for (index, claim_id) in ["claim-support-1", "claim-support-2", "claim-support-3"]
+        .into_iter()
+        .enumerate()
+    {
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                claim_id.to_string(),
+                ClaimDraft::new(
+                    Owner::World,
+                    "self.role",
+                    "is",
+                    "principal_architect",
+                    Mode::Observed,
+                ),
+                ClaimStatus::Active,
+            ))
+            .await
+            .unwrap();
+        context
+            .store
+            .append_event(StoredEvent::new(
+                format!("evt-support-{index}"),
+                now + chrono::Duration::seconds(index as i64),
+                Event::new(
+                    Owner::World,
+                    EventKind::Observation,
+                    format!("supporting observation {index}"),
+                ),
+            ))
+            .await
+            .unwrap();
+    }
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "evt-unrelated".to_string(),
+            now + chrono::Duration::seconds(10),
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "unrelated episode event",
+            ),
+        ))
+        .await
+        .unwrap();
+
+    context
+        .store
+        .link_evidence("claim-support-1".to_string(), "evt-support-0".to_string())
+        .await
+        .unwrap();
+    context
+        .store
+        .link_evidence("claim-support-2".to_string(), "evt-support-1".to_string())
+        .await
+        .unwrap();
+    context
+        .store
+        .link_evidence("claim-support-3".to_string(), "evt-support-2".to_string())
+        .await
+        .unwrap();
+    for (episode_reference, event_id) in [
+        ("episode:support-a", "evt-support-0"),
+        ("episode:support-a", "evt-support-1"),
+        ("episode:support-b", "evt-support-2"),
+        ("episode:unrelated", "evt-unrelated"),
+    ] {
+        context
+            .store
+            .record_event_in_episode(episode_reference.to_string(), event_id.to_string())
+            .await
+            .unwrap();
+    }
+
+    let episodes = context
+        .store
+        .list_episode_references_supporting_claims(&[
+            "claim-support-1".to_string(),
+            "claim-support-2".to_string(),
+            "claim-support-3".to_string(),
+        ])
+        .await
+        .unwrap();
+
+    assert_eq!(
+        episodes,
+        vec![
+            "episode:support-a".to_string(),
+            "episode:support-b".to_string()
+        ]
+    );
+    assert!(
+        context
+            .store
+            .list_episode_references_supporting_claims(&[])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn sqlite_query_evidence_event_ids_is_recent_first_and_filtered() {
     let context = test_support::new_sqlite_store().await;
     let now = test_support::fixed_now();

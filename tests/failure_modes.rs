@@ -376,6 +376,61 @@ async fn auto_reflection_rejects_identity_patch_without_minimum_support_and_reco
 }
 
 #[tokio::test]
+async fn auto_reflection_ignores_unrelated_episodes_for_identity_support() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.set_self_revision_proposal(test_support::identity_only_auto_reflection_proposal());
+    deps.seed_identity_support_context_without_provenance(
+        vec![
+            "episode-unrelated-001".to_string(),
+            "episode-unrelated-002".to_string(),
+            "episode-unrelated-003".to_string(),
+        ],
+        (1..=3)
+            .map(|index| {
+                StoredClaim::new(
+                    format!("claim-supporting-{index}"),
+                    ClaimDraft::new(
+                        Owner::World,
+                        "self.role",
+                        "is",
+                        "principal_architect",
+                        Mode::Observed,
+                    )
+                    .with_namespace(Namespace::world()),
+                    ClaimStatus::Active,
+                )
+            })
+            .collect(),
+    );
+
+    let error = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::world(),
+            vec!["conflict".to_string(), "identity".to_string()],
+        ),
+    )
+    .await
+    .expect_err("unrelated episodes must not satisfy cross-episode identity support");
+
+    assert!(
+        error
+            .to_string()
+            .contains("requires support across at least 2 episodes"),
+        "unexpected rejection: {error}"
+    );
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
+    );
+    assert!(deps.reflections().is_empty());
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &["identity:self=architect".to_string()]
+    );
+}
+
+#[tokio::test]
 async fn auto_reflection_rejects_model_proposed_evidence_outside_trigger_window() {
     let deps = test_support::deps_for_failure_modes();
     deps.seed_failure_window(vec![
@@ -2329,6 +2384,7 @@ struct CommittedState {
     identity: IdentityCore,
     event_references: Vec<String>,
     episode_references: Vec<String>,
+    episode_events: Vec<(String, String)>,
     reflections: Vec<StoredReflection>,
     trigger_ledger: Vec<StoredTriggerLedgerEntry>,
     evidence_links: Vec<(String, String)>,
@@ -2375,6 +2431,10 @@ impl Default for State {
                     "event:baseline".to_string(),
                 ],
                 episode_references: vec!["episode:failure-modes".to_string()],
+                episode_events: vec![(
+                    "episode:failure-modes".to_string(),
+                    "evt-reflection-1".to_string(),
+                )],
                 reflections: Vec::new(),
                 trigger_ledger: Vec::new(),
                 evidence_links: Vec::new(),
@@ -2500,9 +2560,47 @@ impl FailureModeDeps {
         episode_references: Vec<String>,
         claims: Vec<StoredClaim>,
     ) {
+        let evidence_links = claims
+            .iter()
+            .enumerate()
+            .map(|(index, claim)| {
+                (
+                    claim.claim_id.clone(),
+                    format!("identity-support-event-{index}"),
+                )
+            })
+            .collect::<Vec<_>>();
+        let episode_events = if episode_references.is_empty() {
+            Vec::new()
+        } else {
+            evidence_links
+                .iter()
+                .enumerate()
+                .map(|(index, (_, event_id))| {
+                    (
+                        episode_references[index % episode_references.len()].clone(),
+                        event_id.clone(),
+                    )
+                })
+                .collect()
+        };
         let mut state = self.state.lock().unwrap();
         state.committed.episode_references = episode_references;
+        state.committed.episode_events = episode_events;
         state.committed.claims = claims;
+        state.committed.evidence_links = evidence_links;
+    }
+
+    fn seed_identity_support_context_without_provenance(
+        &self,
+        episode_references: Vec<String>,
+        claims: Vec<StoredClaim>,
+    ) {
+        let mut state = self.state.lock().unwrap();
+        state.committed.episode_references = episode_references;
+        state.committed.episode_events.clear();
+        state.committed.claims = claims;
+        state.committed.evidence_links.clear();
     }
 
     fn seed_failure_window(&self, events: Vec<(&str, &str)>) {
@@ -2866,14 +2964,17 @@ impl EpisodeStore for FailureModeDeps {
     async fn record_event_in_episode(
         &self,
         episode_reference: String,
-        _event_id: String,
+        event_id: String,
     ) -> Result<(), AppError> {
-        self.state
-            .lock()
-            .unwrap()
+        let mut state = self.state.lock().unwrap();
+        state
             .committed
             .episode_references
-            .push(episode_reference);
+            .push(episode_reference.clone());
+        state
+            .committed
+            .episode_events
+            .push((episode_reference, event_id));
         Ok(())
     }
 
@@ -2885,6 +2986,31 @@ impl EpisodeStore for FailureModeDeps {
             .committed
             .episode_references
             .clone())
+    }
+
+    async fn list_episode_references_supporting_claims(
+        &self,
+        claim_ids: &[String],
+    ) -> Result<Vec<String>, AppError> {
+        let state = self.state.lock().unwrap();
+        let linked_event_ids = state
+            .committed
+            .evidence_links
+            .iter()
+            .filter(|(claim_id, _)| claim_ids.contains(claim_id))
+            .map(|(_, event_id)| event_id.clone())
+            .collect::<Vec<_>>();
+        Ok(state
+            .committed
+            .episode_events
+            .iter()
+            .filter(|(_, event_id)| linked_event_ids.contains(event_id))
+            .fold(Vec::new(), |mut episodes, (episode_reference, _)| {
+                if !episodes.contains(episode_reference) {
+                    episodes.push(episode_reference.clone());
+                }
+                episodes
+            }))
     }
 
     async fn list_episode_references_in_scope(

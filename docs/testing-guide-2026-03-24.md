@@ -394,7 +394,17 @@ cargo test --test mcp_stdio fresh_stdio_runtime_blocks_forbidden_action_with_see
 cargo test --test mcp_stdio provider_selected_forbidden_action_is_blocked_over_stdio -- --exact
 ```
 
-这组回归验证：caller 即使从 snapshot 删除 baseline commitment，application 仍从当前 `CommitmentStore` 恢复服务端 policy context，并在 model call 前阻断 requested action；requested action 允许但 provider-selected action 违反同一 commitment 时，结果仍为 blocked、`decision = null`，并保留被拒绝的 `selected_action` 和有界 reason。允许动作继续保持 v2 response envelope 与 provider action-string contract。它不证明其余 caller snapshot 字段可信、完整 policy arbitration、claim → evidence → episode provenance join 或 M0.3 整体完成。
+这组回归验证：caller 即使从 snapshot 删除 baseline commitment，application 仍从当前 `CommitmentStore` 恢复服务端 policy context，并在 model call 前阻断 requested action；requested action 允许但 provider-selected action 违反同一 commitment 时，结果仍为 blocked、`decision = null`，并保留被拒绝的 `selected_action` 和有界 reason。允许动作继续保持 v2 response envelope 与 provider action-string contract。它不证明其余 caller snapshot 字段可信、完整 policy arbitration 或 M0.3 整体完成。
+
+### 6.3B M0.3 claim → evidence → episode provenance 回归
+
+```zsh
+cargo test --test failure_modes auto_reflection_ignores_unrelated_episodes_for_identity_support -- --exact
+cargo test --test failure_modes auto_reflection_rejected_identity_attempt_does_not_start_cooldown_for_later_valid_retry -- --exact
+cargo test --test sqlite_store sqlite_lists_only_episodes_reached_through_claim_evidence_links -- --exact
+```
+
+这组回归验证：匹配 proposed identity value 的 active claims 只有经 persisted evidence link 到达 episode event membership 时才贡献 distinct cross-episode support；全局无关 episode、无 provenance 的 claims 和空 claim 集均不计数。拒绝路径只记录 rejected trigger，不写 reflection 或 identity；具备至少两条真实 episode 路径的后续 retry 仍可通过。该切片复用现有表，不证明完整 provenance graph、全部治理失败原子性或 M0.3 整体完成。
 
 ### 6.4 Provider 合规预检
 

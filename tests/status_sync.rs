@@ -43,6 +43,12 @@ fn active_plan_and_reality_gate_documents_are_in_sync() {
             .contains(&"M0.3.1 Trusted decision commitments and dual gate".to_string()),
         "active plan must expose the completed M0.3.1 slice as a checkbox"
     );
+    assert!(
+        report
+            .completed_plan_items
+            .contains(&"M0.3.2 Claim evidence episode provenance".to_string()),
+        "active plan must expose the completed M0.3.2 slice as a checkbox"
+    );
 
     assert!(
         report.is_in_sync(),

@@ -673,9 +673,15 @@ where
             })
     });
     let latest_entry = deps.latest_trigger_entry(&candidate.trigger_key).await?;
-    let cross_episode_support_count = dedupe_strings(deps.list_episode_references().await?)
-        .len()
-        .min(supporting_claim_count);
+    let supporting_claim_ids = supporting_claims
+        .iter()
+        .map(|claim| claim.claim_id.clone())
+        .collect::<Vec<_>>();
+    let cross_episode_support_count = dedupe_strings(
+        deps.list_episode_references_supporting_claims(&supporting_claim_ids)
+            .await?,
+    )
+    .len();
     let now = deps.now().await?;
 
     Ok(IdentityRevisionContext {
