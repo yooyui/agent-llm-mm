@@ -1,8 +1,9 @@
 use agent_llm_mm::{
+    RunOutput,
     interfaces::mcp::server::AUTO_REFLECTION_RUNTIME_HOOKS,
     run_command, run_doctor, startup_transport_from_default_config,
     support::{
-        cli::{AppCommand, command_from_args},
+        cli::{AppCommand, DoctorMode, command_from_args},
         config::{AppConfig, DATABASE_URL_ENV_VAR, ModelConfig, ModelProviderKind, TransportKind},
     },
 };
@@ -146,7 +147,37 @@ fn cli_accepts_doctor_subcommand() {
     let command =
         command_from_args(vec!["agent_llm_mm".to_string(), "doctor".to_string()]).expect("command");
 
-    assert_eq!(command, AppCommand::Doctor);
+    assert_eq!(command, AppCommand::Doctor(DoctorMode::ReadOnly));
+}
+
+#[test]
+fn cli_accepts_explicit_database_lifecycle_and_doctor_modes() {
+    assert_eq!(
+        command_from_args(vec!["agent_llm_mm".into(), "init".into()]).expect("init"),
+        AppCommand::Init
+    );
+    assert_eq!(
+        command_from_args(vec!["agent_llm_mm".into(), "migrate".into()]).expect("migrate"),
+        AppCommand::Migrate
+    );
+    assert_eq!(
+        command_from_args(vec![
+            "agent_llm_mm".into(),
+            "doctor".into(),
+            "--read-only".into(),
+        ])
+        .expect("read-only doctor"),
+        AppCommand::Doctor(DoctorMode::ReadOnly)
+    );
+    assert_eq!(
+        command_from_args(vec![
+            "agent_llm_mm".into(),
+            "doctor".into(),
+            "--allow-bootstrap".into(),
+        ])
+        .expect("bootstrap doctor"),
+        AppCommand::Doctor(DoctorMode::AllowBootstrap)
+    );
 }
 
 #[test]
@@ -192,7 +223,7 @@ fn wrapper_scripts_reject_unsupported_modes_with_exit_code_two() {
         );
         assert!(
             String::from_utf8_lossy(&shell_output.stderr).contains(
-                "usage: ./scripts/agent-llm-mm.sh [serve|doctor|bootstrap-local] [config_path]"
+                "usage: ./scripts/agent-llm-mm.sh [serve|init|migrate|doctor|bootstrap-local] [config_path]"
             ),
             "shell wrapper should print supported mode/config path contract"
         );
@@ -211,7 +242,7 @@ fn wrapper_scripts_reject_unsupported_modes_with_exit_code_two() {
         );
         assert!(
             String::from_utf8_lossy(&powershell_output.stderr).contains(
-                "usage: pwsh -File .\\scripts\\agent-llm-mm.ps1 [serve|doctor|bootstrap-local] [config_path]"
+                "usage: pwsh -File .\\scripts\\agent-llm-mm.ps1 [serve|init|migrate|doctor|bootstrap-local] [config_path]"
             ),
             "PowerShell wrapper should print supported mode/config path contract"
         );
@@ -222,13 +253,13 @@ fn wrapper_scripts_reject_unsupported_modes_with_exit_code_two() {
     );
     assert!(
         script.contains(
-            "usage: ./scripts/agent-llm-mm.sh [serve|doctor|bootstrap-local] [config_path]"
+            "usage: ./scripts/agent-llm-mm.sh [serve|init|migrate|doctor|bootstrap-local] [config_path]"
         ),
         "shell wrapper should document the supported mode/config path contract"
     );
     assert!(
         powershell.contains(
-            "usage: pwsh -File .\\scripts\\agent-llm-mm.ps1 [serve|doctor|bootstrap-local] [config_path]"
+            "usage: pwsh -File .\\scripts\\agent-llm-mm.ps1 [serve|init|migrate|doctor|bootstrap-local] [config_path]"
         ),
         "PowerShell wrapper should document the supported mode/config path contract"
     );
@@ -280,7 +311,11 @@ fn bash_bootstrap_local_copies_dev_example_to_requested_target() {
     let escaped_target = target.to_string_lossy().replace(' ', "\\ ");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains(&format!("doctor {escaped_target}")),
+        stdout.contains(&format!("init {escaped_target}")),
+        "bootstrap-local should print a shell-safe init command for paths with spaces; stdout={stdout}"
+    );
+    assert!(
+        stdout.contains(&format!("doctor --read-only {escaped_target}")),
         "bootstrap-local should print a shell-safe doctor command for paths with spaces; stdout={stdout}"
     );
     assert!(
@@ -529,7 +564,7 @@ fn read_file(path: impl Into<PathBuf>) -> String {
 }
 
 #[tokio::test]
-async fn doctor_bootstraps_configured_sqlite_database_and_returns_report() {
+async fn doctor_read_only_reports_missing_database_without_bootstrapping() {
     let temp_dir = tempdir().expect("temp dir");
     let database_path = temp_dir.path().join("doctor.sqlite");
     let database_url = format!(
@@ -552,10 +587,40 @@ async fn doctor_bootstraps_configured_sqlite_database_and_returns_report() {
     assert_eq!(report.provider, ModelProviderKind::Mock);
     assert_eq!(report.base_url, None);
     assert_eq!(report.model, None);
+    assert_eq!(report.status, "attention_required");
+    assert_eq!(report.database_lifecycle.status, "missing");
+    assert!(!report.database_lifecycle.bootstrap_performed);
     assert!(
-        database_path.exists(),
-        "doctor should create sqlite database"
+        !database_path.exists(),
+        "read-only doctor must not create sqlite database"
     );
+}
+
+#[tokio::test]
+async fn doctor_allow_bootstrap_explicitly_initializes_missing_database() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_path = temp_dir.path().join("doctor-bootstrap.sqlite");
+    let config = AppConfig {
+        database_url: sqlite_url(&database_path),
+        ..Default::default()
+    };
+
+    let output = run_command(AppCommand::Doctor(DoctorMode::AllowBootstrap), config)
+        .await
+        .expect("bootstrap doctor")
+        .expect("doctor output");
+    let RunOutput::Doctor(report) = output else {
+        panic!("expected doctor output");
+    };
+
+    assert_eq!(report.status, "ok");
+    assert_eq!(report.database_lifecycle.status, "current");
+    assert_eq!(
+        report.database_lifecycle.operation,
+        "doctor_allow_bootstrap"
+    );
+    assert!(report.database_lifecycle.bootstrap_performed);
+    assert!(database_path.is_file());
 }
 
 #[tokio::test]
@@ -660,7 +725,7 @@ async fn run_uses_stdio_server_path_and_does_not_exit_immediately() {
 }
 
 #[tokio::test]
-async fn doctor_creates_missing_parent_directories_for_file_backed_sqlite_database() {
+async fn doctor_read_only_does_not_create_missing_parent_directories() {
     let temp_dir = tempdir().expect("temp dir");
     let database_path = temp_dir.path().join("missing-parent").join("serve.sqlite");
     let database_url = format!(
@@ -679,9 +744,10 @@ async fn doctor_creates_missing_parent_directories_for_file_backed_sqlite_databa
     let report = run_doctor(config).await.expect("doctor should pass");
 
     assert_eq!(report.database_url, database_url);
+    assert_eq!(report.database_lifecycle.status, "missing");
     assert!(
-        database_path.exists(),
-        "doctor should create missing parent directories for file-backed sqlite databases"
+        !database_path.exists() && !database_path.parent().expect("parent").exists(),
+        "read-only doctor must not create the database or missing parent directories"
     );
 }
 

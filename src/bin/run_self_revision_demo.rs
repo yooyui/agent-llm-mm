@@ -5,7 +5,10 @@ use std::{
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
 
-use agent_llm_mm::{domain::event::EventReference, run_doctor, support::config::AppConfig};
+use agent_llm_mm::{
+    adapters::sqlite::initialize_database, domain::event::EventReference, run_doctor,
+    support::config::AppConfig,
+};
 use anyhow::{Context, Result};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -46,6 +49,7 @@ async fn main() -> Result<()> {
     )?;
 
     let config = AppConfig::load_from_path(&config_path).map_err(anyhow::Error::msg)?;
+    initialize_database(&config.database_url).await?;
     let doctor = run_doctor(config).await?;
     write_json(&args.output_dir.join("doctor.json"), &doctor)?;
 
@@ -429,6 +433,7 @@ impl StdioClient {
                 agent_llm_mm::support::config::CONFIG_PATH_ENV_VAR,
                 config_path.to_string_lossy().into_owned(),
             )
+            .env_remove(agent_llm_mm::support::config::DATABASE_URL_ENV_VAR)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

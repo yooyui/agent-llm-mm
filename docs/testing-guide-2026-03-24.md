@@ -81,7 +81,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 - `provider`
 - provider-specific 配置
 
-如果只是跑现有自动化测试，不需要手工设置；测试本身已经为大多数场景隔离了数据库。若运行环境不能写入默认用户数据目录（例如受限沙箱或只读 home 目录），`doctor` 相关测试和命令会因为默认 SQLite 路径不可写而失败；此时应通过 `AGENT_LLM_MM_DATABASE_URL` 或本地 TOML 指向一个可写的 SQLite 文件。正式接入、手工测试和实验验证仍建议各自使用不同数据库文件。
+如果只是跑现有自动化测试，不需要手工设置；测试本身已经隔离数据库。`doctor` 默认只读，对 missing / old / read-only 路径只报告 `database_lifecycle`，不会因无法写入而 bootstrap。需要建立或升级测试库时，必须显式运行 `init` 或 `migrate`。正式接入、手工测试和实验验证仍应使用不同数据库文件。
 
 ---
 
@@ -95,14 +95,14 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 4. `cargo clippy --all-targets -- -D warnings`
 5. `./scripts/test-tier.sh core`
 6. `./scripts/status-sync-check.sh`
-7. `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor`
-8. `AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor-cargo.sqlite cargo run --quiet --bin agent_llm_mm -- doctor`
+7. 对 scratch path 运行 `init`，再运行 `doctor --read-only`，确认 lifecycle status 为 current
+8. `cargo test --test sqlite_lifecycle -v`
 9. 涉及发布工具链或最终 full gate 时，再运行 `cargo clippy --all-targets --all-features -- -D warnings` 和 `./scripts/test-tier.sh full`
 10. 如果改动涉及 automatic self-revision MVP，再补跑本指南里的 runtime coverage / diagnostics / evidence policy 定向验证
 11. 如果改动涉及 demo package，先用 timestamped / scratch output 跑 `./scripts/run-self-revision-demo.sh target/reports/self-revision-demo/manual-$(date +%Y%m%d-%H%M%S)`；如果要按 Local Alpha 发布口径复核 `latest` 证据链，使用下一条 product smoke
 12. 如果改动涉及 Local Alpha product smoke gate、启动包装脚本或本地产品化证据链，在 repo root 补跑 `./scripts/product-smoke-local.sh [config_path]`；如果当前目录不是 repo root，使用 `/path/to/agent-llm-mm/scripts/product-smoke-local.sh`，并在需要配置文件时传入绝对 config path
-13. 如果改动涉及 bootstrap wrapper，确认脚本契约仍是 `[serve|doctor|bootstrap-local] [config_path]`，unsupported mode 返回 exit code `2`，`bootstrap-local` 不覆盖已有配置、不生成 secret、不运行 `doctor` 或 `serve`，相对目标路径按仓库根目录解析，输出的下一步命令能处理含空格路径，并补跑 `cargo test --test bootstrap -v`
-14. 如果改动涉及 first-run bootstrap smoke、本地首启证据或 `bootstrap-local -> doctor` 产品化路径，补跑 `bash -n scripts/first-run-bootstrap-smoke-local.sh` 和 `cargo test --test first_run_bootstrap_smoke -v`
+13. 如果改动涉及 wrapper，确认模式仍为 `serve|init|migrate|doctor|bootstrap-local`，doctor 只接受 `--read-only|--allow-bootstrap`，unsupported mode 返回 exit code `2`，并补跑 `cargo test --test bootstrap -v`
+14. 如果改动涉及 first-run bootstrap smoke 或 `bootstrap-local -> init -> doctor --read-only` 路径，补跑 `bash -n scripts/first-run-bootstrap-smoke-local.sh` 和 `cargo test --test first_run_bootstrap_smoke -v`
 15. 如果改动涉及 Local Alpha evidence summary、发布证据汇总或 gate status 输出，补跑 `bash -n scripts/local-alpha-evidence-summary.sh`、`cargo test --features release-tools --test local_alpha_release_evidence -v`，并用 `cargo run --quiet --features release-tools --bin local_alpha_evidence_summary -- --evidence-root .` spot-check JSON 输出；该 summary 只是本地只读 gate 状态汇总，不是自动认证
 16. 如果改动涉及 Local Alpha release-gate refresh 或本机 gate 证据刷新流程，补跑 `bash -n scripts/local-alpha-release-gate-refresh.sh`、`cargo test --features release-tools --test local_alpha_release_evidence -v`，并按需执行 `./scripts/local-alpha-release-gate-refresh.sh [config_path]`；该 refresh 只产生本机可复现证据，不生成真实 fresh-machine、Windows runner、remote/team 或发布决策证据
 17. 如果改动涉及 release engineering、release evidence directory、soak evidence 或候选发布说明，补跑 `bash -n scripts/release-soak-local.sh`、`cargo test --features release-tools --test local_alpha_release_evidence release_soak -v`，并按需执行 `./scripts/release-soak-local.sh <candidate-name> [config_path]`；该 soak 只生成本地 release evidence，不生成真实 fresh-machine、Windows runner、remote/team、上传、tag、安装包或发布认证证据
@@ -111,6 +111,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
     bash -n scripts/backup-sqlite.sh
     bash -n scripts/restore-sqlite.sh
     cargo test --test sqlite_backup_restore -v
+    cargo test --test sqlite_lifecycle -v
     ```
 19. 如果改动涉及 product readiness、release decision artifact、产品措辞 gate、remote/team inventory/security gates、evidence relation、episode projection、layered memory projection 或 `doctor.system_layer_report`，补跑 `cargo test --features release-tools --test product_readiness -v`、`cargo test --features release-tools --test release_decision -v`、`cargo test --test product_completion_read_models -v`、`cargo test --test provider_config -v` 和 `./scripts/product-readiness-check.sh <candidate-name>` 的本地预检；这些检查只能核验本地门禁、doctor 只读架构层报告、runtime / declared-test-contract dependency-rule evidence、physics-informed non-claim / wording guard 和只读投影，不生成真实 fresh-machine、Windows runner、remote/team 产品模式、GA 或发布认证证据
 20. 如果改动涉及 release evidence index、provider certification preflight 或 packaging preflight，补跑以下命令，并按需执行对应脚本：
@@ -427,6 +428,19 @@ cargo test --test mcp_stdio provider_selected_forbidden_action_is_blocked_over_s
 这组回归验证：允许的 provider action-string 保持 legacy `status = model_decision` 与 `{ "action": "..." }` payload，但 additive 返回 `decision_authority = experimental_non_authoritative`、`policy_scope = server_commitment_gate_only` 和 `not an authoritative policy decision` non-claim；blocked 路径返回 `not_applicable_blocked`。因此 commitment gate 未阻断只能解释为该 bounded literal check 未命中，不能解释为 structured action validation 或完整 policy passed。
 
 M0.3 只有在 6.3A–6.3D 的行为边界由当前 `fast` / `core` 运行覆盖，且 active plan 的 `M0.3 Governance Correctness` 与四个子切片都和 reality-gate 的 `implemented` 行一致时才算限定收口。该完成状态不证明 caller snapshot 其余字段可信、server-created snapshot handle、完整 provenance graph、structured action validation、policy arbitration、crash recovery 或 distributed transaction 已实现，也不授权顺带进入 M0.4、M1、remote 或 release 工作。
+
+### 6.3E M0.4 explicit database lifecycle 回归
+
+```zsh
+cargo test --test sqlite_lifecycle -v
+cargo test --test bootstrap -v
+cargo test --test sqlite_backup_restore -v
+bash -n scripts/agent-llm-mm.sh scripts/first-run-bootstrap-smoke-local.sh scripts/release-soak-local.sh
+```
+
+这组回归验证：read-only doctor 对 missing / legacy / read-only file 不 create、migrate 或 seed；`init` 建立 schema version 3、三条 ledger、runtime defaults 和零 FK violation；legacy migration 在原库写入前建立 backup 与 restore rehearsal，在事务中保持行数并通过 FK/readback；rehearsal 失败时原库字节和 schema 保持可恢复；`serve` 拒绝 missing database；`doctor --allow-bootstrap` 的写权限必须显式。release soak 还必须把 lifecycle、doctor、product smoke 和 support bundle 绑定到 candidate-isolated database，并在 `release-boundaries.json` 记录 `formal_database_path_accepted = false`。
+
+M0.4 不证明 remote backup、scheduled backup、cloud sync、production disaster recovery，或超出 SQLite 事务语义的 crash/power-loss guarantee。
 
 ### 6.4 Provider 合规预检
 
@@ -844,8 +858,9 @@ cargo test --features release-tools --test local_alpha_release_evidence release_
 
 - candidate name 只能包含字母、数字、点、下划线或短横线，且不能包含 `..`
 - evidence directory 写入 `target/reports/releases/<candidate-name>/`，目录必须不存在或为空
+- lifecycle database 强制写入 `target/release-soak-runtime/<candidate-name>/release-soak.sqlite`；任何传入 config 的数据库路径都不得成为 soak 写目标
 - 目录内包含 `git-head.txt`、`git-status-before.txt`、`git-status-after.txt`、`command-summary.tsv`、`commands/`、`secret-scan.log`、`artifact-scan.log`、`support-bundle-files.txt`、`support-bundle-sha256.txt`、`product-smoke-latest-files.txt`、`product-smoke-latest-sha256.txt`、`local-alpha-evidence-summary.json`、`local-alpha-evidence-summary.md`、`compatibility-matrix.json`、`release-boundaries.json` 和 `release-soak-summary.md`
-- 运行顺序覆盖 `doctor`、`cargo test --test dashboard_http -v`、product smoke、first-run simulation、support bundle generation、secret scan、raw artifact scan 和 Local Alpha evidence summary
+- 运行顺序覆盖 explicit `init`、`doctor --read-only`、dashboard HTTP、product smoke、first-run simulation、support bundle、scans 和 Local Alpha evidence summary
 - support bundle secret scan 不应发现未脱敏 secret-like marker；raw artifact scan 不应发现 `.sqlite`、`.toml` 或 `.log`
 
 这条 soak 只生成本地候选证据；它不生成真实 fresh-machine evidence、Windows runner evidence、remote/team evidence、上传、source tag、binary package、installer、service manager、auto-updater、release decision 或 GA / production-ready 证明。
@@ -1266,12 +1281,12 @@ git diff --check
 ```zsh
 cargo test --test daemon_config -v
 cargo test --test operation_log -v
-AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor
+AGENT_LLM_MM_DATABASE_URL=sqlite:///private/tmp/agent-llm-mm-doctor.sqlite ./scripts/agent-llm-mm.sh doctor --read-only
 rg -n 'daemon_observe_only|observe-only|writes_allowed|remote_listener_enabled|operation_log' README.md docs/product/daemon-observe-only-gate.md docs/product/release-gate-local-alpha.md docs/project-status.md
 git diff --check
 ```
 
-这组命令验证 `doctor.daemon_observe_only` 的本机只读诊断字段、daemon 默认关闭、observe-only 写入 gate、operation-log status 查询，以及文档口径。`doctor` 的 runtime bootstrap 仍会执行既有 SQLite 初始化和 baseline guard 初始化，但 `doctor` 本身不启动 daemon handle；observe-only diagnostics 本身只能读取本地 `operation_log` 的 failed / suppressed `tool` 与 `trigger` 候选，不能调用 `run_reflection`、不能新增 identity / commitments / claims / events / reflections 语义写入，也不能声明 daemon 已具备后台自治。
+这组命令验证 `doctor.daemon_observe_only` 的本机只读诊断字段、daemon 默认关闭、observe-only 写入 gate、operation-log status 查询，以及文档口径。doctor 不执行 runtime bootstrap，也不启动 daemon handle；数据库不是 current 时只报告 operation-log unavailable。diagnostics 不能调用 `run_reflection`、不能新增 identity / commitments / claims / events / reflections 语义写入，也不能声明 daemon 已具备后台自治。
 
 ### 改 correlation id / operation log observability
 

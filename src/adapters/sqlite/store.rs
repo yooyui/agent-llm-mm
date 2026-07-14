@@ -1,11 +1,6 @@
-use std::{fs, path::PathBuf, str::FromStr};
-
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{
-    QueryBuilder, Row, Sqlite,
-    sqlite::{SqliteConnectOptions, SqlitePool},
-};
+use sqlx::{QueryBuilder, Row, Sqlite, sqlite::SqlitePool};
 
 use crate::{
     domain::{
@@ -31,75 +26,19 @@ use crate::{
 };
 
 use super::schema::{
-    OWNER_NAMESPACE_SCOPE_CONSTRAINT_NAME, claims_table_sql, events_table_sql, init_sql,
+    OWNER_NAMESPACE_SCOPE_CONSTRAINT_NAME, claims_table_sql, events_table_sql,
     legacy_namespace_backfill_expression,
 };
 
 #[derive(Clone)]
 pub struct SqliteStore {
-    pool: SqlitePool,
+    pub(super) pool: SqlitePool,
 }
 
 impl SqliteStore {
     pub async fn bootstrap(database_url: &str) -> Result<Self, AppError> {
-        ensure_sqlite_parent_directory(database_url)?;
-
-        let options = SqliteConnectOptions::from_str(database_url)
-            .map_err(|error| AppError::Message(error.to_string()))?
-            .create_if_missing(true)
-            .foreign_keys(true);
-        let pool = map_sqlite(SqlitePool::connect_with(options).await)?;
-        let mut connection = map_sqlite(pool.acquire().await)?;
-        let init_sql = init_sql();
-
-        for statement in init_sql.split(';').filter(|part| !part.trim().is_empty()) {
-            map_sqlite(sqlx::query(statement).execute(connection.as_mut()).await)?;
-        }
-        ensure_events_namespace_column(connection.as_mut()).await?;
-        ensure_claims_namespace_column(connection.as_mut()).await?;
-        ensure_reflection_audit_columns(connection.as_mut()).await?;
-        seed_baseline_commitments(connection.as_mut()).await?;
-
-        Ok(Self { pool })
+        super::lifecycle::bootstrap_database(database_url).await
     }
-}
-
-fn ensure_sqlite_parent_directory(database_url: &str) -> Result<(), AppError> {
-    let Some(path) = sqlite_file_path(database_url) else {
-        return Ok(());
-    };
-
-    let Some(parent) = path.parent() else {
-        return Ok(());
-    };
-    if parent.as_os_str().is_empty() {
-        return Ok(());
-    }
-
-    fs::create_dir_all(parent).map_err(|error| {
-        AppError::Message(format!(
-            "failed to create sqlite parent directory {}: {error}",
-            parent.display()
-        ))
-    })?;
-
-    Ok(())
-}
-
-fn sqlite_file_path(database_url: &str) -> Option<PathBuf> {
-    let path = database_url.strip_prefix("sqlite://")?;
-    let path = path.split_once('?').map_or(path, |(path, _)| path);
-    if path.is_empty() || path == ":memory:" {
-        return None;
-    }
-
-    #[cfg(windows)]
-    let path = normalize_windows_sqlite_path(path);
-
-    #[cfg(not(windows))]
-    let path = path.to_string();
-
-    Some(PathBuf::from(path))
 }
 
 fn sqlite_rfc3339_sort_key(column: &str) -> String {
@@ -122,16 +61,6 @@ fn utc_timestamp_sort_key(timestamp: &DateTime<Utc>) -> String {
         timestamp.format("%Y-%m-%dT%H:%M:%S"),
         timestamp.timestamp_subsec_nanos()
     )
-}
-
-#[cfg(windows)]
-fn normalize_windows_sqlite_path(path: &str) -> String {
-    let bytes = path.as_bytes();
-    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
-        return path[1..].to_string();
-    }
-
-    path.to_string()
 }
 
 #[async_trait]
@@ -1266,7 +1195,7 @@ where
     Ok(())
 }
 
-async fn seed_baseline_commitments<'e, E>(executor: E) -> Result<(), AppError>
+pub(super) async fn seed_baseline_commitments<'e, E>(executor: E) -> Result<(), AppError>
 where
     E: sqlx::Executor<'e, Database = Sqlite>,
 {
@@ -1286,7 +1215,7 @@ where
     Ok(())
 }
 
-async fn ensure_claims_namespace_column(
+pub(super) async fn ensure_claims_namespace_column(
     connection: &mut sqlx::SqliteConnection,
 ) -> Result<(), AppError> {
     let namespace_column_exists = map_sqlite(
@@ -1327,7 +1256,7 @@ async fn ensure_claims_namespace_column(
     Ok(())
 }
 
-async fn ensure_events_namespace_column(
+pub(super) async fn ensure_events_namespace_column(
     connection: &mut sqlx::SqliteConnection,
 ) -> Result<(), AppError> {
     let namespace_column_exists = map_sqlite(
@@ -1368,7 +1297,7 @@ async fn ensure_events_namespace_column(
     Ok(())
 }
 
-async fn ensure_reflection_audit_columns(
+pub(super) async fn ensure_reflection_audit_columns(
     connection: &mut sqlx::SqliteConnection,
 ) -> Result<(), AppError> {
     let columns = map_sqlite(
@@ -1424,16 +1353,6 @@ async fn rebuild_claims_table_with_namespace(
     );
 
     map_sqlite(
-        sqlx::query("PRAGMA foreign_keys = OFF")
-            .execute(&mut *connection)
-            .await,
-    )?;
-    map_sqlite(
-        sqlx::query("PRAGMA legacy_alter_table = ON")
-            .execute(&mut *connection)
-            .await,
-    )?;
-    map_sqlite(
         sqlx::query("ALTER TABLE claims RENAME TO claims_legacy")
             .execute(&mut *connection)
             .await,
@@ -1449,17 +1368,6 @@ async fn rebuild_claims_table_with_namespace(
             .execute(&mut *connection)
             .await,
     )?;
-    map_sqlite(
-        sqlx::query("PRAGMA legacy_alter_table = OFF")
-            .execute(&mut *connection)
-            .await,
-    )?;
-    map_sqlite(
-        sqlx::query("PRAGMA foreign_keys = ON")
-            .execute(&mut *connection)
-            .await,
-    )?;
-
     Ok(())
 }
 
@@ -1478,16 +1386,6 @@ async fn rebuild_events_table_with_namespace(
     );
 
     map_sqlite(
-        sqlx::query("PRAGMA foreign_keys = OFF")
-            .execute(&mut *connection)
-            .await,
-    )?;
-    map_sqlite(
-        sqlx::query("PRAGMA legacy_alter_table = ON")
-            .execute(&mut *connection)
-            .await,
-    )?;
-    map_sqlite(
         sqlx::query("ALTER TABLE events RENAME TO events_legacy")
             .execute(&mut *connection)
             .await,
@@ -1503,17 +1401,6 @@ async fn rebuild_events_table_with_namespace(
             .execute(&mut *connection)
             .await,
     )?;
-    map_sqlite(
-        sqlx::query("PRAGMA legacy_alter_table = OFF")
-            .execute(&mut *connection)
-            .await,
-    )?;
-    map_sqlite(
-        sqlx::query("PRAGMA foreign_keys = ON")
-            .execute(&mut *connection)
-            .await,
-    )?;
-
     Ok(())
 }
 

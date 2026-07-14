@@ -4287,14 +4287,14 @@ mod test_support {
     use super::*;
 
     pub async fn spawn_stdio_client() -> io::Result<StdioClient> {
-        let database = database_override()?;
+        let database = database_override().await?;
         StdioClient::spawn(&database.url, Some(database.temp_dir))
     }
 
     pub async fn spawn_stdio_client_with_config(
         config_template: String,
     ) -> io::Result<StdioClient> {
-        let database = database_override()?;
+        let database = database_override().await?;
         let config_path = database.temp_dir.path().join("agent-llm-mm.local.toml");
         let config = config_template.replace("__DATABASE_URL__", &database.url);
         std::fs::write(&config_path, config)?;
@@ -4311,7 +4311,7 @@ mod test_support {
     pub async fn spawn_stdio_client_with_config_and_database(
         config_template: String,
     ) -> io::Result<(StdioClient, String, TempDir)> {
-        let database = database_override()?;
+        let database = database_override().await?;
         let url = database.url.clone();
         let config_path = database.temp_dir.path().join("agent-llm-mm.local.toml");
         let config = config_template.replace("__DATABASE_URL__", &url);
@@ -4329,7 +4329,7 @@ mod test_support {
     }
 
     pub async fn spawn_stdio_client_with_database() -> io::Result<(StdioClient, String, TempDir)> {
-        let database = database_override()?;
+        let database = database_override().await?;
         let url = database.url.clone();
         let temp_dir = database.temp_dir;
         let client = StdioClient::spawn(&url, None)?;
@@ -4594,13 +4594,14 @@ mod test_support {
         }
     }
 
-    fn database_override() -> io::Result<DatabaseOverride> {
+    async fn database_override() -> io::Result<DatabaseOverride> {
         let temp_dir = tempfile::tempdir()?;
         let database_path = temp_dir.path().join("agent-llm-mm.sqlite");
-        Ok(DatabaseOverride {
-            url: sqlite_url(&database_path),
-            temp_dir,
-        })
+        let url = sqlite_url(&database_path);
+        agent_llm_mm::adapters::sqlite::initialize_database(&url)
+            .await
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        Ok(DatabaseOverride { url, temp_dir })
     }
 
     fn sqlite_url(path: &Path) -> String {

@@ -15,9 +15,9 @@
 
 归档不代表删除证据；具体查阅与恢复方式见[archive.md](archive.md)。
 
-## 2026-07-14 M0.2 与 M0.3 收口
+## 2026-07-14 M0.2 至 M0.4 收口
 
-当前状态必须与 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 的七个最小切片及限定退出门已于 2026-07-14 收口。M0.3 已完成 trusted decision commitments + dual gate、claim → evidence → episode provenance、governance failure atomicity，以及 experimental non-authoritative decision authority 四个独立切片并完成限定收口。M0.4–M0.5 尚未完成，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
+当前状态必须与 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 的 scoped snapshot 限定退出门、M0.3 的四个 governance correctness 切片，以及 M0.4 explicit database lifecycle 均已于 2026-07-14 收口。M0.5 仍在推进，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
 
 M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/manifest/time 交集、stable recent-first order、scoped auto-reflection、active reflection 与只读 projection 的 event-ID 等价性，以及 offline demo artifact reference。省略 `namespace` 的 legacy MCP 调用仍是 unscoped 兼容路径；完整 recall contract、repository-wide event-ID 统一、support bundle inventory 和 M0.3 治理能力不属于本次完成声明。
 
@@ -30,8 +30,8 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 - `decide_with_snapshot` 仍接收调用方 snapshot，但 application 会在 gate 与 provider 调用前用当前服务端 commitment store 覆盖其中的 commitments，并对 requested action 与 provider-selected action 复用同一 commitment gate；selected action 被拒绝时返回 blocked、保留被拒绝的 `selected_action`，且 `decision = null`。允许路径保留兼容的 `model_decision` / action-string payload，同时明确返回 `decision_authority = experimental_non_authoritative` 与 `policy_scope = server_commitment_gate_only`；`gate.blocked = false` 不是完整 policy-passed verdict。identity / claims / evidence / episodes 仍是 caller-provided，尚无 server-created snapshot handle 或完整 policy binding，因此仍不能描述为完整可信策略执行器。
 - cross-episode identity support 已不再使用全局 episode 数量推断：application 先选出与 proposed identity value 匹配的 active claims，再通过只读 store port 与 SQLite `evidence_links` → `episode_events` join 计算 distinct supporting episodes；无关 episode、无 evidence link 的 claim 和空 claim 集都不会提高支持数。该切片复用现有 schema，仍不是完整 provenance graph。
 - governance failure atomicity 已由 application fault injection 与真实 SQLite transaction 回归共同覆盖：validation rejection 不进入 reflection transaction；handled-ledger append 或 commit 失败时，pending identity / commitment / claim-evidence / reflection / handled audit 均回滚，随后事务外只记录 rejected trigger audit。该证据不等于进程崩溃恢复、跨进程事务或分布式一致性。
-- `doctor` 会进入 runtime bootstrap，可能创建目录/数据库、建表、迁移、seed baseline commitment 并补默认 identity。报告中的只读 projection 不代表 `doctor` 执行链无写入。
-- legacy SQLite 表重建缺 schema version、migration ledger 和显式事务恢复门；正式数据迁移前必须先补备份、故障注入、readback 和 rollback。
+- `doctor` 默认执行只读检查；missing / old / read-only 数据库只报告状态，不创建、迁移或 seed。只有显式 `init`、`migrate` 或 `doctor --allow-bootstrap` 可以改变数据库；`serve` 只接受 current database。
+- SQLite 当前 schema version 为 3，并使用 `schema_migrations` ledger。legacy rebuild 在原库写入前建立 backup anchor 和 restore rehearsal，随后在事务内执行 row-count preservation、`foreign_key_check`、ledger 与表行数 readback；这仍不是 remote backup、scheduled backup、cloud sync 或 production DR。
 - dashboard HTTP 路由无认证，配置可以绑定非 loopback host；在强制 loopback 或 auth 落地前，它只能描述为本地调试界面，不能描述为已验证的安全本机边界。
 - evidence relation、episode summary、memory layer 和 richer semantics projection 主要是 read-only 定义与测试切片，尚未形成统一 MCP / application runtime read path。
 - 当前没有 `.github/workflows`、真实 binary package、fresh-machine / Windows 完整证据或正式 release approval。
@@ -105,7 +105,7 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 
 `bootstrap-local` 是 Local Alpha first-run 配置引导器：默认把 `examples/agent-llm-mm.dev.example.toml` 复制到 `agent-llm-mm.local.toml`，或复制到显式传入的目标路径。显式目标为相对路径时按仓库根目录解析；跨目录调用建议传绝对路径。它拒绝覆盖已有配置，父目录不存在时拒绝继续，不生成 secret，不运行 `doctor`，不启动 `serve` 或 daemon，也不代表安装包、远程 bootstrapper、GA 或 production-ready 能力。
 
-`first-run-bootstrap-smoke-local.sh` 是 Local Alpha first-run 本地模拟证据脚本：它在不存在或为空的隔离输出目录里运行 `bootstrap-local`，把生成配置的 `database_url` 改成同目录 SQLite，再运行 `doctor` 并写出 `doctor.json` / `summary.json`。它会清理 `AGENT_LLM_MM_CONFIG` / `AGENT_LLM_MM_DATABASE_URL` 干扰，不写真实 HOME，不启动 `serve`，不调用 product smoke 或 demo wrapper，也不代表真实 fresh-machine install、Windows runner parity、installer、远程 bootstrapper、GA 或 production-ready 能力。
+`first-run-bootstrap-smoke-local.sh` 是 Local Alpha first-run 本地模拟证据脚本：它在不存在或为空的隔离输出目录里运行 `bootstrap-local`，把生成配置的 `database_url` 改成同目录 SQLite，再运行显式 `init` 与 `doctor --read-only` 并写出 `init.json` / `doctor.json` / `summary.json`。它会清理环境变量干扰，不写真实 HOME，不启动 `serve`，不调用 product smoke 或 demo wrapper，也不代表真实 fresh-machine install、Windows runner parity、installer、远程 bootstrapper、GA 或 production-ready 能力。
 
 ### 6. SQLite backup / restore 本地门禁
 
@@ -282,6 +282,8 @@ Implementation notes:
 - 已可稳定落盘
 - 默认语义已收口为“本机用户共享的持久化默认库”
 - 若需要按项目、按环境或按实验隔离，应显式配置不同的 `database_url`
+- 首次使用先执行 `init`；旧库先执行 `doctor --read-only`，再显式执行 `migrate`。`serve` 不再隐式 bootstrap。
+- release soak 会用 `AGENT_LLM_MM_DATABASE_URL` 强制覆盖为 candidate-specific isolated database，不把传入配置中的未确认正式库路径作为写目标。
 
 ### 7. self-revision 触发面与运行形态
 
@@ -334,19 +336,19 @@ Implementation notes:
 - `status-sync-check` 不再编译并枚举整套测试，只检查非空的 active-plan 完成态 / reality gate 对齐与根目录 SQLite fixture；
 - 文档不再复制易漂移的测试总数和 suite count。
 
-以下 product smoke、doctor、support bundle 和 release evidence 结果沿用此前记录，本轮规划任务没有重新生成对应工件：
+以下 product smoke、doctor、support bundle 和 release evidence 已在 M0.4 收口中重新生成或由当前测试验证：
 
 - `doctor` 返回 JSON，且 `status = ok`
 - self-revision demo package 生成 release gate 要求的 8 个核心 artifact，并证明 before / after decision shift
 - Local Alpha product smoke 通过 staging / promote 流程刷新 `target/reports/self-revision-demo/latest`
 - Local Alpha support bundle 生成允许的 JSON 文件，敏感词扫描无未脱敏命中，且未包含 `.sqlite`、`.toml` 或原始 `.log` 文件
 - Local release soak runner 生成 source-only `compatibility-matrix.json` 和 `release-boundaries.json` blocker artifacts；它们记录边界，不生成真实 Windows / fresh-machine / daemon write / release approval 证据
-- Local release soak runner 可生成 `target/reports/releases/<candidate-name>/` 候选证据，覆盖 doctor、dashboard HTTP 回归、product smoke、first-run simulation、support bundle、redacted command logs、secret/artifact scan、release evidence secret scan、support bundle / product smoke SHA-256 manifest 和 Local Alpha evidence summary；它不生成 Windows runner、真实 fresh-machine、remote/team、daemon writes、上传、tag、安装包或发布认证证据
+- Local release soak runner 可生成 `target/reports/releases/<candidate-name>/` 候选证据，先在 `target/release-soak-runtime/<candidate-name>/` 显式初始化隔离数据库，再让 read-only doctor、product smoke 和 support bundle 使用该覆盖路径；`release-boundaries.json.database_isolation` 明确记录隔离开启且不接受正式库路径。它仍不生成 Windows runner、真实 fresh-machine、remote/team、daemon writes、上传、tag、安装包或发布认证证据
 - Release evidence index 可把候选 evidence root 下的 Local Alpha evidence summary 与 product readiness gate 合并为 present / missing / not_verified / blocked 的本地只读索引；它只输出 JSON/Markdown，不生成缺失 evidence、不批准 release、不上传文件
 - Provider certification preflight 可校验本地 provider config shape 并列出 live evidence preflight 缺口；显式 live evidence runner 只生成 provider preflight 可读取的 evidence files，配置示例本身不是 live evidence，必须显式运行 runner 才能生成 live evidence；runner 用于记录本次配置下的 endpoint reachability、decision probe、self-revision parse probe、错误处理和 redaction review provenance，不输出 API key、URL userinfo、path secret、query secret、model id、request body、response body 或 provider-native payload；live evidence 只有在 provider、status、expected evidence_kind、`mode = live`、非空 `generated_at`、`local_only = false`、`endpoint_reached = true`、`redaction_reviewed = true`、`request_outcome = passed` 和带显式 `exit_code = 0` 的成功 command evidence 同时满足时才算 present；stub/simulated runner 只能生成本地模拟证据，不能让 `live_certified = true`；即便 preflight 输出 `live_certified = true`，也只表示 config preflight 通过且四类 live evidence present，不代表 provider 输出质量、SLA、provider gateway、Local Alpha / Beta / GA / production-ready、production readiness 或 release approval
 - Packaging preflight 可区分 source-only soak artifacts 与真实 binary archive / installer / service manager / auto-updater evidence；新增 archive manifest / SHA-256 evidence 生成入口只校验已存在 archive 是否可解析为对应 `.tar.gz` / `.zip`、文件大小和 SHA-256，不构建二进制；缺少真实打包证据、纯文本占位、截断 archive、零字节占位、部分平台 archive、缺失 manifest 或 manifest mismatch 时保持 blocked，不创建 tag、安装包、上传或发布认证证据
 - Richer memory semantics projection 已提供只读 evidence relation / episode summary / semantic claim / procedural memory / durable self-model write 状态投影；它不新增 durable memory layer 写路径，也不是 full ranking engine
-- `first-run-bootstrap-smoke-local.sh` 已提供 `bootstrap-local -> doctor` 的本地 fresh-machine simulation evidence，包含 env 隔离、输出目录隔离、`doctor.json` / `summary.json` 和 isolated SQLite 证据；但真实 fresh-machine install / Windows runner 实机验证仍需单独记录，当前本机没有 `pwsh` 时，PowerShell runtime parity 只能视为待补证据
+- `first-run-bootstrap-smoke-local.sh` 已提供 `bootstrap-local -> init -> doctor --read-only` 的本地 fresh-machine simulation evidence，包含 env 隔离、输出目录隔离、`init.json` / `doctor.json` / `summary.json` 和 isolated SQLite 证据；但真实 fresh-machine install / Windows runner 实机验证仍需单独记录，PowerShell runtime parity 仍只能视为待补证据
 - SQLite backup / restore 本地脚本门禁已覆盖 roundtrip、拒绝覆盖、拒绝 live DB 子目录备份、拒绝 in-memory / invalid URL 和拒绝 `..` restore target；这不是远程备份、云同步或生产灾备证明
 
 ## 对外描述建议

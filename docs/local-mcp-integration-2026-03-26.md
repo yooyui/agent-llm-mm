@@ -12,15 +12,15 @@
 
 ## 2. 推荐接入形态
 
-macOS 下优先入口是 `scripts/agent-llm-mm.sh`。它提供 `doctor` / `serve` 两种封装，并贴合当前 zsh / bash 环境。
+macOS 下优先入口是 `scripts/agent-llm-mm.sh`。它提供 `init` / `migrate` / `doctor` / `serve` 封装，并贴合当前 zsh / bash 环境。
 
-如果你想完全绕过脚本，也可直接运行 `cargo run --quiet --bin agent_llm_mm -- <serve|doctor>`。
+如果你想完全绕过脚本，也可直接运行 `cargo run --quiet --bin agent_llm_mm -- <serve|init|migrate|doctor>`。
 
 原因：
 
 - 可以从任意当前目录启动
 - 可以固化项目根目录
-- 可以统一 `serve` / `doctor` 两种模式
+- 可以统一显式数据库生命周期、只读诊断与 `serve` 模式
 - 后续切换为预编译二进制时，客户端配置无需大改
 
 入口脚本：
@@ -34,13 +34,15 @@ macOS 下优先入口是 `scripts/agent-llm-mm.sh`。它提供 `doctor` / `serve
 ```zsh
 cd ~/code/agent-llm-mm
 cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
-./scripts/agent-llm-mm.sh doctor
+./scripts/agent-llm-mm.sh init
+./scripts/agent-llm-mm.sh doctor --read-only
 ```
 
 预期输出为 JSON，至少包含：
 
 - `transport`
 - `database_url`
+- `database_lifecycle`
 - `auto_reflection_runtime_hooks`
 - `self_revision_write_path`
 - `status`
@@ -48,9 +50,9 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 当前 `status = "ok"` 代表：
 
 - 配置已解析
-- SQLite 已可成功 bootstrap
+- SQLite schema / ledger / foreign keys / runtime defaults 已通过只读检查
 - provider 已按配置完成校验
-- 默认 runtime 初始化已通过
+- 当前数据库可由 `serve` 只读打开校验
 - `doctor` 还能保守显示当前 MCP runtime hook coverage 和 durable write path
 
 当前 `doctor` 输出里的 self-revision 相关字段，应按下面口径理解：
@@ -78,7 +80,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 - `./scripts/test-tier.sh full` 启用 `release-tools`，保留完整发布证据、打包与 provider certification 验证
 - `./scripts/status-sync-check.sh` 只检查 active plan / reality gate 和仓库 fixture，不再编译整套测试清单
 - self-revision demo package wrapper 可生成本地 artifact report
-- `release-soak-local.sh` 已提供本地 release evidence runner，可记录 candidate-specific doctor / dashboard HTTP / product smoke / first-run simulation / support bundle / evidence summary、compatibility matrix 和 release boundary 证据；它不生成 Windows runner、真实 fresh-machine、remote/team、上传、tag、安装包或发布认证证据
+- `release-soak-local.sh` 已提供本地 release evidence runner；数据库写入强制落到 candidate-isolated runtime path，`release-boundaries.json` 明确记录不接受正式库路径。它不生成 Windows runner、真实 fresh-machine、remote/team、上传、tag、安装包或发布认证证据
 - `product-readiness-check.sh` 已提供本地候选 readiness gate，能够把 release decision、release engineering、真实 fresh-machine、Windows parity、remote/team、安全/auth 和产品措辞缺口保持为 blocked
 - `release-evidence-index.sh`、`provider-certification-check.sh` 和 `packaging-preflight-check.sh` 已提供候选 evidence 索引、provider live-certification 缺口预检和 packaging 缺口预检；这些脚本不新增 MCP tool、不调用 provider endpoint、不生成 installer、不上传文件，也不改变 `stdio` 接入契约；provider evidence 占位文件和零字节/部分 packaging archive 不会被当作完整证据
 
@@ -132,7 +134,8 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 
 | Symptom | Likely Cause | Verification | Fix |
 | --- | --- | --- | --- |
-| `doctor` cannot write SQLite | database path not writable or sandbox restriction | 先检查本地 TOML 的 `database_url` 与启动环境里的 `AGENT_LLM_MM_DATABASE_URL`；如果 `doctor` 已返回 JSON，再核对其中的 `database_url` | 设定 `AGENT_LLM_MM_DATABASE_URL` 指向可写路径，或在本地 TOML 固定可写 SQLite 路径 |
+| `init` / `migrate` cannot write SQLite | database path not writable or sandbox restriction | 先运行 `doctor --read-only` 查看 `database_lifecycle`，再核对 config 与环境覆盖 | 仅为显式 lifecycle command 选择可写路径；不要为只读 doctor 放宽正式库权限 |
+| `serve` reports database not ready | missing / stale schema / incomplete defaults | 查看 `doctor --read-only` 的 lifecycle status | missing 用 `init`，旧库用 `migrate`；只有明确允许写入时才用 `doctor --allow-bootstrap` |
 | MCP client starts the wrong binary | auxiliary `src/bin` target ambiguity | 检查客户端是否显式传递 `--bin agent_llm_mm` | 优先使用脚本入口（`agent-llm-mm.sh` / `agent-llm-mm.ps1`），或固定 `--bin agent_llm_mm` |
 | dashboard not visible | `[dashboard].enabled = false` 或端口占用 | 查看配置和 `doctor` 输出 | 将 `enabled` 设为 `true`，并选择可用 localhost 端口 |
 | model calls fail | provider 配置不完整 | `doctor` 中确认 `provider`、`base_url`、`model` | 补齐本地 TOML 的 provider 配置（仅本地文件，勿提交 API key） |

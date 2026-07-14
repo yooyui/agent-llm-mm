@@ -42,8 +42,8 @@
 - 没有正式的 memory search / get / history MCP 接口；
 - decision 已改用服务端 commitments，并同时 gate requested / provider-selected action；允许的 action-string 结果显式标记为 `experimental_non_authoritative`，且 policy scope 只覆盖 server commitment gate。但其他 snapshot 字段仍由 caller 提供，尚无完整 trusted snapshot handle 或 provenance binding；
 - cross-episode identity support 已使用 claim → evidence → episode 的真实 distinct join，但仍没有完整 provenance graph；
-- `doctor` 会 create / migrate / seed 数据库，不是纯只读诊断；
-- legacy migration 缺 schema version、migration ledger 和显式事务恢复门；
+- M0.4 已完成：`init` / `migrate` / 默认只读 `doctor` / 显式 `doctor --allow-bootstrap` 已拆分，`serve` 不再隐式改库；
+- SQLite 使用 schema version 与 migration ledger；legacy migration 先建立 backup anchor 和 restore rehearsal，再在事务中执行 FK / 表行数 readback；
 - dashboard 无认证且配置可绑定非 loopback；
 - daemon 仍是 observe-only idle lifecycle；
 - memory layer / evidence relation 等投影尚未形成统一 runtime read path；
@@ -61,10 +61,10 @@
 4. **已完成第二个切片（M0.3，2026-07-14）**：用 claim → evidence → episode 的 distinct store join 替换全局 episode 数量推断，无关 episode 不计入 identity support。
 5. **已完成第三个切片（M0.3，2026-07-14）**：验证治理拒绝、handled-ledger 写入失败与 transaction commit 失败均不留下部分 identity / commitment / reflection 更新，失败后只保留 rejected audit。
 6. **已完成第四个切片并收口（M0.3，2026-07-14）**：v2 envelope additive 返回 `decision_authority = experimental_non_authoritative` 与 `policy_scope = server_commitment_gate_only`，保留 legacy 字段和 provider action-string contract，不把有界字面量 gate 误报为完整 policy passed。
-7. **下一步（M0.4）**：拆分 `init`、`migrate`、`doctor --read-only` 与显式 bootstrap。
-8. 建立 schema version、事务 migration、备份、故障注入和恢复验证。
-9. 无认证阶段强制 dashboard loopback。
-10. 修正 CLI tracing，建立 format / clippy / tests / status-sync CI。
+7. **已完成（M0.4，2026-07-14）**：拆分显式数据库生命周期；只读 doctor 对 missing / old / read-only 路径不 create / migrate / seed；migration ledger、事务、备份、恢复演练、FK / 行数读回和 release-soak 隔离库均有回归证据。
+8. **下一步（M0.5）**：无认证阶段强制 dashboard loopback。
+9. 修正 CLI tracing，建立 format / clippy / tests / status-sync CI。
+10. 固定 Rust toolchain / MSRV 决策。
 11. 独立评估 `rmcp` 升级破坏面，不顺带引入 remote/tasks/OAuth。
 
 退出门：

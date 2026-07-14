@@ -27,7 +27,7 @@ Expected evidence:
 - `doctor` continues to report `self_revision_write_path = run_reflection`
 - `doctor` does not expose provider secrets
 - bootstrap documentation remains config-first then doctor-second, and wrapper
-  scripts keep the `[serve|doctor|bootstrap-local] [config_path]` contract with
+  scripts keep the `serve|init|migrate|doctor|bootstrap-local` contract with
   unsupported modes returning exit code `2`
 - `bootstrap-local` must refuse to overwrite an existing config, must copy only
   the safe dev example profile, and must not create secrets, run `doctor`, start
@@ -35,7 +35,7 @@ Expected evidence:
 - relative `bootstrap-local` targets are documented and tested as repository-root
   relative; cross-directory examples should prefer absolute config paths
 - first-run bootstrap smoke evidence must prove a local-only
-  `bootstrap-local -> doctor` simulation in an isolated output directory, with
+  `bootstrap-local -> init -> doctor --read-only` simulation in an isolated output directory, with
   `fresh_machine_simulation = true` and `real_fresh_machine_evidence = false`
 - first-run bootstrap smoke must clear config/database environment overrides,
   rewrite the generated dev config to an isolated SQLite path, write

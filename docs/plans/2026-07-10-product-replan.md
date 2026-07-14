@@ -1,6 +1,6 @@
 # MCP Memory Ledger 全新项目规划
 
-状态：`active / M0.2 complete / M0.3 in progress`
+状态：`active / M0.2-M0.4 complete / M0.5 in progress`
 规划日期：`2026-07-10`
 规划输入基线：`dev-work@6fcbb5f`
 主线整理基线：`1f7390d`
@@ -45,7 +45,7 @@ MCP Memory Ledger 已经拥有可运行的 Rust + SQLite + MCP `stdio` 核心、
 | F-01 | M0.2 已为显式 snapshot 建立 namespace / manifest / time-window scope 与稳定排序；省略 namespace 的 legacy 调用仍保持 unscoped 兼容 | legacy 路径仍可能读取过宽，完整 recall contract 尚未建立 | M0.2 限定退出门已通过；剩余边界继续保持公开 |
 | F-02 | M0.3.1 已用服务端 commitments 覆盖 caller commitments，并复检 requested / provider-selected action；其他 snapshot 字段仍由 caller 提供 | 尚无完整 trusted snapshot handle 或结构化 policy arbitration | M0.3.1 已收口；M0.3 整体继续开放 |
 | F-03 | M0.3.2 已用 claim → evidence → episode distinct join 替代全局数量推断 | 现有 join 仍不是完整 provenance graph | M0.3.2 已收口；继续验证剩余治理门 |
-| F-04 | `doctor` 会 create / migrate / seed SQLite，并补默认 identity | 诊断命令会改变被检查对象，release soak 可能碰正式库 | M0 拆分只读诊断与显式 init / migrate |
+| F-04 | M0.4 已拆分显式 init / migrate / bootstrap permission；默认 doctor 只读，serve current-only | remote backup / scheduled backup / production DR 仍不属于本地 SQLite 合同 | M0.4 已收口；后续 schema 变更继续复用 ledger / backup / rehearsal / transaction / readback 门 |
 | F-05 | Legacy 表重建没有 schema version、migration ledger 或显式事务保护 | 中途失败可能留下半迁移数据库 | M0 建立版本化迁移与恢复门禁 |
 | F-06 | MCP 没有按 namespace 查询 event、claim、episode、reflection 和 evidence relation 的正式接口 | “记忆已写入，但用户无法可靠取回和解释” | M1 建设 Read Model v2 |
 | F-07 | Dashboard 无认证且配置允许非 loopback bind | 本地只读口径与可配置暴露面不一致 | M0 在无认证阶段强制 loopback |
@@ -230,12 +230,16 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 
 ### M0.4 Explicit Database Lifecycle
 
-- [ ] 拆分 `init`、`migrate`、`doctor --read-only` 和显式 `doctor --allow-bootstrap`。
-- [ ] `doctor --read-only` 对不存在数据库、旧 schema 和不可写路径只报告，不 create / migrate / seed。
-- [ ] 建立 schema version 与 migration ledger。
-- [ ] legacy rebuild 在事务和备份锚点下执行；失败后原库可恢复。
-- [ ] 每次迁移执行 `foreign_key_check`、表/行数 readback 和恢复演练。
-- [ ] release soak 强制使用隔离数据库，不接受未确认的正式库路径。
+收口结论（2026-07-14）：CLI 已拆分 `init`、`migrate`、默认只读 `doctor`、显式 `doctor --allow-bootstrap`；`serve` 只打开 current database。SQLite 使用 `PRAGMA user_version` 与 `schema_migrations` ledger，旧库 migration 在原库写入前创建 backup anchor 并对备份副本完成 restore rehearsal，随后在单一事务内执行 rebuild、default seed、row-count preservation、`foreign_key_check` 和 ledger readback。missing / old / read-only 数据库的只读检查不创建、迁移或 seed；实际 release soak 已把 init / doctor / product smoke / support bundle 绑定到 candidate-isolated database，并明确拒绝把未确认正式库路径作为 soak 写目标。此结论不扩张为 remote backup、scheduled backup、cloud sync 或 production disaster recovery。
+
+- [x] **M0.4 Explicit Database Lifecycle**
+
+- 已完成：拆分 `init`、`migrate`、`doctor --read-only` 和显式 `doctor --allow-bootstrap`。
+- 已完成：`doctor --read-only` 对不存在数据库、旧 schema 和不可写路径只报告，不 create / migrate / seed。
+- 已完成：建立 schema version 与 migration ledger。
+- 已完成：legacy rebuild 在事务和备份锚点下执行；失败后原库可恢复。
+- 已完成：每次迁移执行 `foreign_key_check`、表/行数 readback 和恢复演练。
+- 已完成：release soak 强制使用隔离数据库，不接受未确认的正式库路径。
 
 证据门：doctor 前后数据库 checksum / schema / row count 不变；故障注入后恢复成功；旧库 roundtrip 无数据丢失。
 
@@ -442,6 +446,6 @@ M2 退出指标：
 - M0.2 已完成七个连续最小切片：snapshot scope、explicit evidence manifest、time window / stable order、scoped auto-reflection snapshot、active reflection runtime event-ID 等价性、只读 evidence/episode projection event-ID 等价性，以及 offline demo artifact event reference。
 - M0.3 已完成四个限定切片并收口：trusted decision commitments + requested/selected dual gate、claim → evidence → episode distinct provenance join、validation / handled-ledger / commit failure atomicity，以及 experimental non-authoritative decision authority。
 
-尚未完成：repository-wide event-ID 统一仍为 partial；support bundle 仅列入后续 inventory；M0.4–M0.5 尚未开始。`decide_with_snapshot` 仍无 server-created snapshot handle、structured action validation 或完整 policy arbitration。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
+尚未完成：repository-wide event-ID 统一仍为 partial；support bundle 仅列入后续 inventory；M0.5 尚未开始。`decide_with_snapshot` 仍无 server-created snapshot handle、structured action validation 或完整 policy arbitration。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
 
-下一最小工程动作：另行进入 M0.4 的 explicit database lifecycle，先盘点并拆分 `init`、`migrate`、`doctor --read-only` 与显式 bootstrap；本次 M0.3 收口不授权顺带修改数据库生命周期、M1、remote、release 或 support-bundle 路径。
+下一最小工程动作：进入 M0.5 runtime boundary，先拒绝无认证 dashboard 的非 loopback 绑定，再修正 tracing stdout/stderr 隔离；M1、remote、provider 扩张仍不进入本轮。

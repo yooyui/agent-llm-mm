@@ -16,7 +16,7 @@ use uuid::Uuid;
 use crate::{
     adapters::{
         model::{mock::MockModel, openai_compatible::OpenAiCompatibleModel},
-        sqlite::SqliteStore,
+        sqlite::{SqliteStore, open_current_database},
     },
     application::{
         auto_reflect_if_needed::{self, AutoReflectInput, RecursionGuard},
@@ -69,7 +69,7 @@ pub async fn run_stdio_server() -> Result<()> {
 
 pub async fn run_stdio_server_with_config(config: AppConfig) -> Result<()> {
     config.validate().map_err(anyhow::Error::msg)?;
-    let store = SqliteStore::bootstrap(&config.database_url).await?;
+    let store = open_current_database(&config.database_url).await?;
     let (dashboard_observer, _dashboard_handle) =
         start_configured_dashboard(&config, Some(store.clone())).await?;
     let daemon_handle = start_configured_daemon(&config);
@@ -100,9 +100,8 @@ fn start_configured_daemon(config: &AppConfig) -> Option<DaemonHandle> {
 }
 
 pub async fn validate_stdio_runtime(config: &AppConfig) -> Result<SqliteStore, AppError> {
-    Runtime::bootstrap(config, DashboardObserver::disabled())
-        .await
-        .map(|runtime| runtime.store)
+    config.validate().map_err(AppError::Message)?;
+    open_current_database(&config.database_url).await
 }
 
 async fn start_configured_dashboard(
@@ -593,13 +592,6 @@ enum RuntimeModel {
 }
 
 impl Runtime {
-    async fn bootstrap(config: &AppConfig, dashboard: DashboardObserver) -> Result<Self, AppError> {
-        config.validate().map_err(AppError::Message)?;
-
-        let store = SqliteStore::bootstrap(&config.database_url).await?;
-        Self::from_store(config, store, dashboard).await
-    }
-
     async fn from_store(
         config: &AppConfig,
         store: SqliteStore,
@@ -612,22 +604,12 @@ impl Runtime {
             model: build_runtime_model(config)?,
             dashboard,
         };
-        runtime.ensure_default_identity().await?;
+        runtime.validate_default_identity().await?;
         Ok(runtime)
     }
 
-    async fn ensure_default_identity(&self) -> Result<(), AppError> {
-        match self.store.load_identity().await {
-            Ok(_) => Ok(()),
-            Err(AppError::Message(message)) if message == "missing identity" => {
-                self.store
-                    .save_identity(IdentityCore::new(vec![
-                        "identity:self=agent_llm_mm".to_string(),
-                    ]))
-                    .await
-            }
-            Err(error) => Err(error),
-        }
+    async fn validate_default_identity(&self) -> Result<(), AppError> {
+        self.store.load_identity().await.map(|_| ())
     }
 
     async fn record_tool_operation(&self, record: ToolOperationRecord) {

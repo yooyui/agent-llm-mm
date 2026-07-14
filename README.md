@@ -16,7 +16,7 @@ The current project is best understood as a technical MVP for local agent memory
 - **SQLite persistence**: stores events, claims, evidence, reflection audits, trigger ledger entries, and operation logs.
 - **Evidence-gated self-revision**: claim, identity, and commitment updates must be backed by explicit evidence and governance rules. `run_reflection` remains the only durable write path for identity, commitment, and reflection changes.
 - **Bounded scoped snapshots**: the M0.2 path accepts an explicit namespace, optional evidence manifest, and inclusive time window; it applies owner/namespace filtering and stable recent-first ordering in SQLite, and feeds automatic reflection only from the frozen trigger scope and evidence window.
-- **Bounded local operations**: includes operation-log lookup, backup / restore helpers, and redacted diagnostics. The current `doctor` runtime check can create, migrate, and seed the configured SQLite database, so it must not be treated as a no-write inspection until the planned command split lands.
+- **Bounded local operations**: includes operation-log lookup, backup / restore helpers, redacted diagnostics, explicit `init` / `migrate`, and a no-write `doctor --read-only` default. `serve` refuses missing or stale databases instead of changing them implicitly.
 - **Provider integration**: supports `mock`, `openai-compatible`, and OpenRouter configuration paths. Provider secrets should stay in private local config or environment variables.
 
 ## Use Cases
@@ -32,7 +32,8 @@ macOS:
 
 ```zsh
 ./scripts/agent-llm-mm.sh bootstrap-local
-./scripts/agent-llm-mm.sh doctor
+./scripts/agent-llm-mm.sh init
+./scripts/agent-llm-mm.sh doctor --read-only
 ./scripts/agent-llm-mm.sh serve
 ```
 
@@ -40,7 +41,8 @@ Windows:
 
 ```powershell
 pwsh -File .\scripts\agent-llm-mm.ps1 bootstrap-local
-pwsh -File .\scripts\agent-llm-mm.ps1 doctor
+pwsh -File .\scripts\agent-llm-mm.ps1 init
+pwsh -File .\scripts\agent-llm-mm.ps1 doctor --read-only
 pwsh -File .\scripts\agent-llm-mm.ps1 serve
 ```
 
@@ -82,6 +84,7 @@ Implemented:
 - Minimal identity and commitment revision
 - Trigger-ledger-backed automatic self-revision MVP
 - Read-only dashboard, `doctor`, local support bundle, and local gate summary scripts
+- Explicit SQLite schema version / migration ledger, transactional legacy migration, pre-write backup and restore rehearsal
 
 Partially implemented:
 
@@ -107,7 +110,6 @@ Not implemented:
 - Full memory layering
 - User-facing scoped memory search, record lookup, provenance history, and audited correction tools
 - Richer evidence ranking / weighting
-- Versioned transactional schema migrations and a no-write doctor mode
 - Production-grade remote, team, or multi-tenant mode
 - Daemon write capabilities and autonomous background operation
 - Installers, service managers, auto-updaters, and release certification

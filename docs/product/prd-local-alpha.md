@@ -53,7 +53,7 @@ Local Product Alpha 不承诺生产级高可用、远程团队管理、无人值
 
 ## 6. First-Run Contract
 
-A Local Alpha user can clone or unpack the repository, create one local config from the safe dev example via `bootstrap-local` or manual copy, run `doctor`, and start `serve` without editing source files. The supported first-run path is bootstrap / config first and doctor second: users must be able to validate config, provider shape, database path, dashboard status, daemon status, and runtime hooks before starting the MCP service.
+A Local Alpha user can clone or unpack the repository, create one local config from the safe dev example, run explicit `init`, verify with `doctor --read-only`, and start `serve` without editing source files. Old databases use explicit `migrate`; `serve` never bootstraps them implicitly. Users must be able to validate lifecycle status, provider shape, database path, dashboard status, daemon status, and runtime hooks before starting the MCP service.
 
 `bootstrap-local` is a local config helper, not an installer or production bootstrapper. It must not create secrets, overwrite an existing config, run `doctor`, start `serve`, enable daemon behavior, or imply that Local Alpha, Beta, remote/team mode, multi-tenancy, GA, or production-ready status is complete.
 

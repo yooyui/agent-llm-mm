@@ -13,6 +13,10 @@ async fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&report)?);
             Ok(())
         }
+        Some(RunOutput::DatabaseLifecycle(report)) => {
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            Ok(())
+        }
         None => Ok(()),
     }
 }

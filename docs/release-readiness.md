@@ -61,7 +61,7 @@
 - `2026-07-10` 已建立 `fast` / `core` / `full` 三级验证；发布前使用 `./scripts/test-tier.sh full`
 - `./scripts/status-sync-check.sh` 通过，active plan 与 reality gate 一致且根目录 SQLite fixture 未回流
 - `cargo clippy --all-targets --all-features -- -D warnings` 通过，当前静态质量基线无 warning
-- 历史记录中 `doctor` 返回 `status = ok`，但当前实现会 create / migrate / seed 配置的 SQLite；它不是 no-write inspection
+- `doctor` 默认是 no-write inspection；只有显式 `init`、`migrate` 或 `doctor --allow-bootstrap` 可以改变 SQLite，`serve` 只接受 current database
 - `cargo test --features release-tools --test non_mvp_product_tracks -v` 覆盖 release evidence index、provider certification preflight 和 packaging preflight 的本地只读 / preflight 边界；richer memory semantics projection 保留在默认 `product_completion_read_models` 核心回归中
 
 ### 4. 当前边界已经能被文档清楚说明
