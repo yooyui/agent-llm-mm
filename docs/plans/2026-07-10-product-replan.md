@@ -1,6 +1,6 @@
 # MCP Memory Ledger 全新项目规划
 
-状态：`active / M0.2-M0.4 complete / M0.5 in progress`
+状态：`active / M0.2-M0.5 complete / M1 not started`
 规划日期：`2026-07-10`
 规划输入基线：`dev-work@6fcbb5f`
 主线整理基线：`1f7390d`
@@ -43,13 +43,13 @@ MCP Memory Ledger 已经拥有可运行的 Rust + SQLite + MCP `stdio` 核心、
 | 编号 | 当前事实 | 风险 | 规划结论 |
 | --- | --- | --- | --- |
 | F-01 | M0.2 已为显式 snapshot 建立 namespace / manifest / time-window scope 与稳定排序；省略 namespace 的 legacy 调用仍保持 unscoped 兼容 | legacy 路径仍可能读取过宽，完整 recall contract 尚未建立 | M0.2 限定退出门已通过；剩余边界继续保持公开 |
-| F-02 | M0.3.1 已用服务端 commitments 覆盖 caller commitments，并复检 requested / provider-selected action；其他 snapshot 字段仍由 caller 提供 | 尚无完整 trusted snapshot handle 或结构化 policy arbitration | M0.3.1 已收口；M0.3 整体继续开放 |
-| F-03 | M0.3.2 已用 claim → evidence → episode distinct join 替代全局数量推断 | 现有 join 仍不是完整 provenance graph | M0.3.2 已收口；继续验证剩余治理门 |
+| F-02 | M0.3 已用服务端 commitments 覆盖 caller commitments、复检 requested / provider-selected action，并把允许结果标为 experimental non-authoritative；其他 snapshot 字段仍由 caller 提供 | 尚无完整 trusted snapshot handle 或结构化 policy arbitration | M0.3 限定退出门已通过；剩余能力进入后续独立切片 |
+| F-03 | M0.3 已用 claim → evidence → episode distinct join 替代全局数量推断，并覆盖 governance transaction failure atomicity | 现有 join 仍不是完整 provenance graph，事务证据也不是 crash recovery | M0.3 限定退出门已通过；完整 provenance / recovery 继续保持公开边界 |
 | F-04 | M0.4 已拆分显式 init / migrate / bootstrap permission；默认 doctor 只读，serve current-only | remote backup / scheduled backup / production DR 仍不属于本地 SQLite 合同 | M0.4 已收口；后续 schema 变更继续复用 ledger / backup / rehearsal / transaction / readback 门 |
-| F-05 | Legacy 表重建没有 schema version、migration ledger 或显式事务保护 | 中途失败可能留下半迁移数据库 | M0 建立版本化迁移与恢复门禁 |
+| F-05 | M0.4 已为 legacy rebuild 建立 schema version、migration ledger、备份/恢复演练与显式事务 | 本地 SQLite 合同已收口；remote/scheduled/production DR 仍不存在 | 后续 schema 变更必须复用同一迁移与恢复门禁 |
 | F-06 | MCP 没有按 namespace 查询 event、claim、episode、reflection 和 evidence relation 的正式接口 | “记忆已写入，但用户无法可靠取回和解释” | M1 建设 Read Model v2 |
-| F-07 | Dashboard 无认证且配置允许非 loopback bind | 本地只读口径与可配置暴露面不一致 | M0 在无认证阶段强制 loopback |
-| F-08 | `.github/workflows` 缺失，CLI 启动路径未初始化 tracing，真实二进制包尚未建立 | 本地测试资产没有持续门禁，排障与交付不完整 | M0 补 CI / tracing；M2 补真实包 |
+| F-07 | Dashboard 仍无认证，但启用时已拒绝非 loopback host | 本地只读口径已有强制边界；remote dashboard 仍未授权 | M0.5 已收口；保持 loopback-only，认证与 remote 另走独立 gate |
+| F-08 | Linux/macOS CI 与 CLI stderr tracing 已建立；真实二进制包尚未建立 | source gate 已持续化，artifact delivery 仍不完整 | M0.5 已收口；M2 补真实包 |
 | F-09 | evidence / episode / memory layer projection 主要停留在定义和测试调用 | 测试存在被误读为运行时产品能力 | 未接入前标记 partial / experimental |
 | F-10 | 文档有多套并行计划、旧测试总数与命名漂移 | 下一步来源不唯一，状态容易高估 | 本计划成为唯一 active plan |
 
@@ -57,7 +57,7 @@ MCP Memory Ledger 已经拥有可运行的 Rust + SQLite + MCP `stdio` 核心、
 
 - MCP 官方仍把 `stdio` 与 Streamable HTTP 都定义为标准传输，并建议客户端在可行时支持 `stdio`。本项目当前不需要为了“跟上协议”而提前进入远程服务。[MCP Transports](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
 - MCP Resources 适合暴露由应用控制的上下文数据。M1 可以在稳定查询契约之后评估只读 `memory://` resources，但不应绕过同一 scope 和 provenance 规则。[MCP Server Features](https://modelcontextprotocol.io/specification/2025-06-18/server/index)
-- 当前仓库固定 `rmcp = 0.5`，官方 Rust SDK 文档已经进入更新的 API 线并提供 resources、notifications、tasks 与 OAuth 等能力。M0 只做兼容性 spike，不直接跳版本或顺手扩功能。[Official MCP Rust SDK](https://github.com/modelcontextprotocol/rust-sdk)
+- 当前仓库固定 `rmcp = 0.5`；2026-07-14 的隔离 spike 已对照官方 `2.2.0`，确认直接升级仍有 router warning 与 handler error-contract 回归，因此本里程碑 no-go。迁移清单与测试矩阵见 [`rmcp` compatibility spike](../spikes/rmcp-compatibility-2026-07-14.md)，不得顺手扩入 remote/tasks/OAuth。
 - MCP Tasks 仍带实验性质，不是当前本地记忆闭环的前置依赖。[MCP Tasks](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks)
 
 ## 3. 主用户与核心任务
@@ -245,14 +245,16 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 
 ### M0.5 Runtime Boundary and CI
 
-- [ ] 无认证阶段拒绝 dashboard 非 loopback host。
-- [ ] 修正 CLI tracing 初始化，使 stderr 日志与 MCP stdout 保持隔离。
-- 已完成（2026-07-10）：修复测试辅助代码的 `clippy::collapsible_if`，恢复当前 toolchain 的零 warning 基线。
-- [ ] 增加 GitHub Actions：format、clippy、tests、status sync；先覆盖 macOS / Linux，Windows 进入 M2 完整 parity gate。
-- [ ] 固定 Rust toolchain / MSRV 决策。
-- [ ] 对 `rmcp 0.5` 到当前官方 SDK 做独立兼容 spike，只提交迁移清单、破坏面和测试矩阵；不得顺带引入 remote/tasks/OAuth。
+- [x] **M0.5 Runtime Boundary and CI**
 
-证据门：CI 在 clean clone 通过；stdout 只有 MCP 消息；dashboard loopback 规则有正反测试；SDK spike 有 go / no-go 结论。
+- 已完成（2026-07-14）：无认证阶段启用 dashboard 时拒绝非 loopback host；disabled 配置不会启动暴露面。
+- 已完成（2026-07-14）：CLI 在参数解析后记录 command-level tracing，所有 tracing 固定写入 stderr；真实 JSON stdout 与 MCP `stdio` 不混入日志。
+- 已完成（2026-07-10）：修复测试辅助代码的 `clippy::collapsible_if`，恢复当前 toolchain 的零 warning 基线。
+- 已完成（2026-07-14）：增加 GitHub Actions，Linux / macOS 均执行 format、all-feature Clippy、full test tier 与 status sync；Windows 保持在 M2 完整 parity gate。
+- 已完成（2026-07-14）：`rust-toolchain.toml` 固定 Rust `1.95.0`，`Cargo.toml` 声明 `rust-version = "1.95"`；当前支持下限只承诺该已验证版本。
+- 已完成（2026-07-14）：对 `rmcp 0.5.0` → `2.2.0` 完成隔离兼容 spike；机械修复后 compile 通过，但 `stdio` 回归为 47/48 且有 router warning，因此结论为 M0.5 不直接升级，后续只允许独立迁移切片。
+
+证据门：CI workflow 在 clean clone 执行固定门禁；本机同命令通过；stdout 只有 MCP/命令 JSON；dashboard loopback 规则有正反测试；SDK spike 有 no-go 结论与独立测试矩阵。
 
 ## 7. M1 — Trustworthy Recall
 
@@ -446,6 +448,6 @@ M2 退出指标：
 - M0.2 已完成七个连续最小切片：snapshot scope、explicit evidence manifest、time window / stable order、scoped auto-reflection snapshot、active reflection runtime event-ID 等价性、只读 evidence/episode projection event-ID 等价性，以及 offline demo artifact event reference。
 - M0.3 已完成四个限定切片并收口：trusted decision commitments + requested/selected dual gate、claim → evidence → episode distinct provenance join、validation / handled-ledger / commit failure atomicity，以及 experimental non-authoritative decision authority。
 
-尚未完成：repository-wide event-ID 统一仍为 partial；support bundle 仅列入后续 inventory；M0.5 尚未开始。`decide_with_snapshot` 仍无 server-created snapshot handle、structured action validation 或完整 policy arbitration。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
+M0 已收口。仍属于后续路线图而非本轮完成声明的项目包括：repository-wide event-ID 统一、完整 recall contract、support bundle inventory、server-created snapshot handle、structured action validation、完整 policy arbitration、真实 binary package、fresh-machine 与 Windows runtime parity。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
 
-下一最小工程动作：进入 M0.5 runtime boundary，先拒绝无认证 dashboard 的非 loopback 绑定，再修正 tracing stdout/stderr 隔离；M1、remote、provider 扩张仍不进入本轮。
+下一里程碑是 M1 Trustworthy Recall；它必须从独立最小切片开始。remote、tasks、OAuth、daemon writes、provider 扩张和正式发布仍不因 M0 完成而获得授权。

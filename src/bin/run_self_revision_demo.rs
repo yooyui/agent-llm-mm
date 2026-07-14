@@ -447,6 +447,12 @@ impl StdioClient {
             .stdout
             .take()
             .ok_or_else(|| io::Error::other("missing child stdout"))?;
+        if let Some(stderr) = child.stderr.take() {
+            std::thread::spawn(move || {
+                let mut stderr = stderr;
+                let _ = io::copy(&mut stderr, &mut io::sink());
+            });
+        }
 
         Ok(Self {
             child,

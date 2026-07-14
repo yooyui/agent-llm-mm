@@ -44,10 +44,10 @@
 - cross-episode identity support 已使用 claim → evidence → episode 的真实 distinct join，但仍没有完整 provenance graph；
 - M0.4 已完成：`init` / `migrate` / 默认只读 `doctor` / 显式 `doctor --allow-bootstrap` 已拆分，`serve` 不再隐式改库；
 - SQLite 使用 schema version 与 migration ledger；legacy migration 先建立 backup anchor 和 restore rehearsal，再在事务中执行 FK / 表行数 readback；
-- dashboard 无认证且配置可绑定非 loopback；
+- dashboard 无认证，但启用时配置已强制 localhost / loopback；remote/public exposure 仍未实现；
 - daemon 仍是 observe-only idle lifecycle；
 - memory layer / evidence relation 等投影尚未形成统一 runtime read path；
-- 没有 GitHub Actions、真实二进制交付或 fresh-machine / Windows 完整证据。
+- 已有 Linux/macOS GitHub Actions 与固定 Rust toolchain；仍没有真实二进制交付或 fresh-machine / Windows 完整证据。
 
 ## Now — M0 Truth and Safety Reset
 
@@ -62,10 +62,10 @@
 5. **已完成第三个切片（M0.3，2026-07-14）**：验证治理拒绝、handled-ledger 写入失败与 transaction commit 失败均不留下部分 identity / commitment / reflection 更新，失败后只保留 rejected audit。
 6. **已完成第四个切片并收口（M0.3，2026-07-14）**：v2 envelope additive 返回 `decision_authority = experimental_non_authoritative` 与 `policy_scope = server_commitment_gate_only`，保留 legacy 字段和 provider action-string contract，不把有界字面量 gate 误报为完整 policy passed。
 7. **已完成（M0.4，2026-07-14）**：拆分显式数据库生命周期；只读 doctor 对 missing / old / read-only 路径不 create / migrate / seed；migration ledger、事务、备份、恢复演练、FK / 行数读回和 release-soak 隔离库均有回归证据。
-8. **下一步（M0.5）**：无认证阶段强制 dashboard loopback。
-9. 修正 CLI tracing，建立 format / clippy / tests / status-sync CI。
-10. 固定 Rust toolchain / MSRV 决策。
-11. 独立评估 `rmcp` 升级破坏面，不顺带引入 remote/tasks/OAuth。
+8. **已完成（M0.5，2026-07-14）**：无认证阶段强制 dashboard loopback；CLI tracing 固定写入 stderr。
+9. **已完成（M0.5，2026-07-14）**：Linux/macOS CI 执行 format / all-feature Clippy / full tests / status sync。
+10. **已完成（M0.5，2026-07-14）**：固定 Rust `1.95.0` 与 `rust-version = 1.95`。
+11. **已完成 spike（M0.5，2026-07-14）**：`rmcp 0.5.0` → `2.2.0` 直接升级 no-go；后续迁移必须独立且不得引入 remote/tasks/OAuth。
 
 退出门：
 
@@ -75,7 +75,7 @@
 - `doctor --read-only` 前后 DB checksum / schema / row count 不变；
 - migration 故障后可恢复且行数一致；
 - 非 loopback dashboard 配置被拒绝；
-- clean clone CI 通过。
+- clean clone CI workflow 覆盖 Linux/macOS，且同一组固定门禁在本机通过。
 
 M0 未通过前，不开始新 provider、daemon 写能力、remote/team 或正式发布扩张。
 

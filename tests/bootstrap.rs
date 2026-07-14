@@ -205,6 +205,31 @@ fn shell_entry_pins_main_binary_when_auxiliary_bins_exist() {
 }
 
 #[test]
+fn cli_tracing_writes_to_stderr_without_corrupting_json_stdout() {
+    let temp_dir = tempdir().expect("temp dir");
+    let database_url = sqlite_url(&temp_dir.path().join("tracing-doctor.sqlite"));
+    let output = Command::new(env!("CARGO_BIN_EXE_agent_llm_mm"))
+        .args(["doctor", "--read-only"])
+        .current_dir(temp_dir.path())
+        .env(DATABASE_URL_ENV_VAR, database_url)
+        .env("RUST_LOG", "agent_llm_mm=debug")
+        .output()
+        .expect("doctor process");
+
+    assert!(
+        output.status.success(),
+        "doctor failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout must contain only doctor JSON");
+    assert_eq!(stdout["database_lifecycle"]["status"], "missing");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("CLI command selected"));
+    assert!(!stderr.contains("\"database_lifecycle\""));
+}
+
+#[test]
 fn wrapper_scripts_reject_unsupported_modes_with_exit_code_two() {
     let script = fs::read_to_string("scripts/agent-llm-mm.sh").expect("script should be readable");
     let powershell = fs::read_to_string("scripts/agent-llm-mm.ps1")

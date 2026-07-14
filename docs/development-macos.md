@@ -4,7 +4,7 @@
 
 ## 1. 环境前提
 
-- 已安装 Rust toolchain
+- 已安装 `rustup`；仓库会通过 `rust-toolchain.toml` 选择 Rust `1.95.0`，并安装 `rustfmt` / `clippy` 组件
 - `cargo` 可用
 - 使用 `zsh` 或 `bash`
 - 当前仓库内提供 macOS 原生入口脚本：
@@ -25,6 +25,15 @@ cd ~/code/agent-llm-mm
 ```
 
 请按你的本机实际路径替换上面的示例目录。
+
+进入仓库后先确认当前固定工具链：
+
+```zsh
+rustc --version
+cargo --version
+```
+
+`rustc` 应报告 `1.95.0`。支持下限与升级规则见 [Rust Toolchain Policy](toolchain-policy.md)；不要只改 `Cargo.toml` 或只改 `rust-toolchain.toml`。
 
 ## 3. 准备本地配置
 
@@ -263,7 +272,7 @@ port = 8787
 ./scripts/agent-llm-mm.sh serve
 ```
 
-浏览器访问 `http://127.0.0.1:8787/`。该面板只读，不会调用 `run_reflection` 或修改 SQLite。保持 `host = "127.0.0.1"` 作为本机使用边界；`base_path = "/agent-llm-mm"` 只表示路径挂载，不是认证、授权或公网暴露控制。不要在没有单独产品化 gate / auth 决策前把 dashboard 暴露到公网反向代理。
+浏览器访问 `http://127.0.0.1:8787/`。该面板只读，不会调用 `run_reflection` 或修改 SQLite。启用 dashboard 时，配置校验只接受 `localhost` 或 loopback IP；`0.0.0.0`、LAN IP 和域名会在启动前被拒绝。`base_path = "/agent-llm-mm"` 只表示路径挂载，不是认证、授权或公网暴露控制。不要在没有单独产品化 gate / auth 决策前把 dashboard 暴露到公网反向代理。
 
 当前面板标题为 `Memory-chan Live Desk`，内嵌两份生成图物料：
 

@@ -20,7 +20,7 @@
 
 命令执行环境要求：
 
-- 安装 Rust toolchain
+- 安装 `rustup`；仓库固定 Rust `1.95.0` 与 `rustfmt` / `clippy`
 - `cargo` 可用
 - `bash` 或 `zsh`（用于 `scripts/agent-llm-mm.sh`）
 
@@ -51,13 +51,17 @@ provider certification 和 packaging 相关模块、二进制与测试；这些�
 它要求至少存在一项完成态 checkbox，并在缺少匹配 reality row 或对应状态未完成时失败，
 避免零项解析被误报为同步成功。
 
+`.github/workflows/ci.yml` 在 `ubuntu-latest` 与 `macos-latest` 上执行同一组
+format、all-feature Clippy、`full` 与 status-sync 门禁。`tests/ci_contract.rs`
+阻止平台或命令清单被静默削弱；Windows 仍是 M2 独立 runtime parity gate。
+
 ---
 
 ## 3. 测试前准备
 
 ### 3.1 环境要求
 
-- 安装 Rust toolchain
+- 安装 `rustup`，并允许仓库选择 `rust-toolchain.toml` 中的 Rust `1.95.0`
 - 可用的 `cargo`
 - `bash` 或 `zsh`：用于 `scripts/agent-llm-mm.sh`
 
@@ -89,7 +93,7 @@ cp examples/agent-llm-mm.example.toml agent-llm-mm.local.toml
 
 建议按下面顺序执行：
 
-1. `cargo fmt --check`
+1. `cargo fmt --all -- --check`
 2. `git diff --check`
 3. `./scripts/test-tier.sh fast`
 4. `cargo clippy --all-targets -- -D warnings`
@@ -1054,7 +1058,17 @@ cargo test --test dashboard_config --test dashboard_recorder --test dashboard_pr
 cargo test --test mcp_stdio dashboard_enabled_does_not_corrupt_mcp_stdout_and_records_tool_event -v
 ```
 
-dashboard HTTP 测试会监听本机端口，受限沙箱中可能需要在允许本地监听的环境运行。该面板只读，不会调用 `run_reflection` 或修改 SQLite；`dashboard_rejects_write_methods_on_read_only_routes` 覆盖 POST / PUT / PATCH / DELETE 返回 `405 Method Not Allowed`，`dashboard_serves_html_summary_events_detail_and_health` 覆盖 HTML、JSON API、health 和 SSE 只读 GET surface。
+dashboard HTTP 测试会监听本机端口，受限沙箱中可能需要在允许本地监听的环境运行。启用 dashboard 时，`DashboardConfig::validate` 只接受 `localhost` 或 loopback IP，明确拒绝 `0.0.0.0`、LAN IP 与域名；disabled 配置可以保留未启用的 host 值但不会启动监听。该面板只读，不会调用 `run_reflection` 或修改 SQLite；`dashboard_rejects_write_methods_on_read_only_routes` 覆盖 POST / PUT / PATCH / DELETE 返回 `405 Method Not Allowed`，`dashboard_serves_html_summary_events_detail_and_health` 覆盖 HTML、JSON API、health 和 SSE 只读 GET surface。
+
+如果改动涉及 CLI tracing 或 `stdio` 隔离，补跑：
+
+```zsh
+cargo test --test bootstrap cli_tracing_writes_to_stderr_without_corrupting_json_stdout -- --exact
+cargo test --test mcp_stdio -v
+```
+
+command-level tracing 在解析 CLI 后初始化并固定写入 stderr。`doctor` 的 JSON 与
+`serve` 的 MCP protocol frames 必须保持在 stdout，任何日志进入 stdout 都是阻断错误。
 
 如果改动涉及 dashboard 视觉或静态物料，还需要确认：
 

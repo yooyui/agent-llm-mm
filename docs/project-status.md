@@ -15,9 +15,9 @@
 
 归档不代表删除证据；具体查阅与恢复方式见[archive.md](archive.md)。
 
-## 2026-07-14 M0.2 至 M0.4 收口
+## 2026-07-14 M0.2 至 M0.5 收口
 
-当前状态必须与 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 的 scoped snapshot 限定退出门、M0.3 的四个 governance correctness 切片，以及 M0.4 explicit database lifecycle 均已于 2026-07-14 收口。M0.5 仍在推进，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
+当前状态必须与 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束、M0.2 scoped snapshot 限定退出门、M0.3 governance correctness、M0.4 explicit database lifecycle，以及 M0.5 runtime boundary / CI 均已收口。Local Alpha、Beta、GA 和 production-ready 仍未通过对应 gate。
 
 M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/manifest/time 交集、stable recent-first order、scoped auto-reflection、active reflection 与只读 projection 的 event-ID 等价性，以及 offline demo artifact reference。省略 `namespace` 的 legacy MCP 调用仍是 unscoped 兼容路径；完整 recall contract、repository-wide event-ID 统一、support bundle inventory 和 M0.3 治理能力不属于本次完成声明。
 
@@ -32,9 +32,10 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 - governance failure atomicity 已由 application fault injection 与真实 SQLite transaction 回归共同覆盖：validation rejection 不进入 reflection transaction；handled-ledger append 或 commit 失败时，pending identity / commitment / claim-evidence / reflection / handled audit 均回滚，随后事务外只记录 rejected trigger audit。该证据不等于进程崩溃恢复、跨进程事务或分布式一致性。
 - `doctor` 默认执行只读检查；missing / old / read-only 数据库只报告状态，不创建、迁移或 seed。只有显式 `init`、`migrate` 或 `doctor --allow-bootstrap` 可以改变数据库；`serve` 只接受 current database。
 - SQLite 当前 schema version 为 3，并使用 `schema_migrations` ledger。legacy rebuild 在原库写入前建立 backup anchor 和 restore rehearsal，随后在事务内执行 row-count preservation、`foreign_key_check`、ledger 与表行数 readback；这仍不是 remote backup、scheduled backup、cloud sync 或 production DR。
-- dashboard HTTP 路由无认证，配置可以绑定非 loopback host；在强制 loopback 或 auth 落地前，它只能描述为本地调试界面，不能描述为已验证的安全本机边界。
+- dashboard HTTP 路由仍无认证；启用 dashboard 时配置校验只接受 `localhost` 或 loopback IP，非 loopback host 会在启动前失败。它仍只是本机只读界面，不能暴露到公网反向代理，也不能描述为 remote/admin 能力。
 - evidence relation、episode summary、memory layer 和 richer semantics projection 主要是 read-only 定义与测试切片，尚未形成统一 MCP / application runtime read path。
-- 当前没有 `.github/workflows`、真实 binary package、fresh-machine / Windows 完整证据或正式 release approval。
+- `.github/workflows/ci.yml` 已在 Linux/macOS 上声明 format、all-feature Clippy、full tests 与 status sync；Rust 固定为 `1.95.0`，CLI tracing 固定写 stderr。当前仍无真实 binary package、fresh-machine / Windows 完整证据或正式 release approval。
+- `rmcp` 仍固定在 `0.5.0`。对官方 `2.2.0` 的隔离探针在机械迁移后 compile 通过，但存在 router dead-code warning，且 MCP `stdio` 回归为 47/48；因此本轮不升级，具体破坏面与测试矩阵见 [兼容性 spike](spikes/rmcp-compatibility-2026-07-14.md)。
 
 新的优先级是：`Truth and Safety -> Trustworthy Recall -> Local Product Alpha -> Retrieval Quality -> optional Remote/Autonomy`。旧 productization、P1/P2/P3 和 non-MVP plans 保留为历史记录，不再决定下一步。
 

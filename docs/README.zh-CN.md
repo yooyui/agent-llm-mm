@@ -14,6 +14,7 @@ MCP Memory Ledger 是一个本地优先的 Rust MCP `stdio` 记忆服务。它�
 - **SQLite 持久化**：保存 event、claim、evidence、reflection audit、trigger ledger 和 operation log。
 - **证据门控自我修订**：claim、identity、commitment 的修订必须经过明确证据和治理规则；`run_reflection` 仍是 identity / commitment / reflection 的唯一持久化写路径。
 - **可观测诊断**：提供只读 dashboard、doctor 预检、operation log 查询和本地支持包生成器。
+- **运行时与源码门禁**：启用无认证 dashboard 时只允许 localhost/loopback，tracing 固定写 stderr；Rust `1.95.0` 下的 Linux/macOS CI 执行格式、全特性 Clippy、full tests 与状态同步。
 - **Provider 接入**：内置 `mock`、`openai-compatible` 和 OpenRouter 配置路径；provider 密钥只应放在本机私有配置或环境变量中。
 - **本地发布门禁**：包含本地 Alpha、provider 预检、打包预检、发布证据索引等只读检查脚本，用于证明边界而不是自动发布或认证。
 
@@ -92,6 +93,7 @@ pwsh -File .\scripts\agent-llm-mm.ps1 serve
 - 最小 identity / commitment 修订
 - 基于 trigger ledger 的自动自我修订 MVP
 - 只读 dashboard、doctor、本地支持包和本地门禁汇总脚本
+- dashboard loopback 强制边界、stderr-only tracing、固定 Rust `1.95.0` 的 Linux/macOS source CI
 
 部分实现：
 
@@ -99,6 +101,7 @@ pwsh -File .\scripts\agent-llm-mm.ps1 serve
 - episode 目前主要是轻量 projection，不是完整自传式记忆模型
 - provider live evidence 只证明配置和连通性，不证明模型质量、SLA 或生产可用性
 - 本地 Alpha 门禁仍依赖真实 fresh-machine、Windows parity 和人工 release decision 等外部证据
+- `rmcp` 仍固定为 `0.5.0`；对官方 `2.2.0` 的隔离 spike 因一个 handler error contract 回归而判定本里程碑不直接升级
 
 未实现：
 

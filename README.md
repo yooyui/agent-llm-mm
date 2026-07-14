@@ -17,6 +17,8 @@ The current project is best understood as a technical MVP for local agent memory
 - **Evidence-gated self-revision**: claim, identity, and commitment updates must be backed by explicit evidence and governance rules. `run_reflection` remains the only durable write path for identity, commitment, and reflection changes.
 - **Bounded scoped snapshots**: the M0.2 path accepts an explicit namespace, optional evidence manifest, and inclusive time window; it applies owner/namespace filtering and stable recent-first ordering in SQLite, and feeds automatic reflection only from the frozen trigger scope and evidence window.
 - **Bounded local operations**: includes operation-log lookup, backup / restore helpers, redacted diagnostics, explicit `init` / `migrate`, and a no-write `doctor --read-only` default. `serve` refuses missing or stale databases instead of changing them implicitly.
+- **Local runtime safety gate**: an enabled unauthenticated dashboard accepts only localhost/loopback hosts, while CLI tracing is initialized on stderr so MCP/JSON stdout stays protocol-only.
+- **Reproducible source gate**: Rust `1.95.0` is pinned, and Linux/macOS CI runs formatting, all-feature Clippy, the full test tier, and status synchronization.
 - **Provider integration**: supports `mock`, `openai-compatible`, and OpenRouter configuration paths. Provider secrets should stay in private local config or environment variables.
 
 ## Use Cases
@@ -85,6 +87,7 @@ Implemented:
 - Trigger-ledger-backed automatic self-revision MVP
 - Read-only dashboard, `doctor`, local support bundle, and local gate summary scripts
 - Explicit SQLite schema version / migration ledger, transactional legacy migration, pre-write backup and restore rehearsal
+- Loopback-only enabled dashboard configuration, stderr-only tracing, and Linux/macOS source CI on pinned Rust `1.95.0`
 
 Partially implemented:
 
@@ -104,6 +107,7 @@ Partially implemented:
 - Evidence relation, episode summary, and memory-layer projections are not yet unified behind a runtime memory read interface.
 - Provider live evidence proves configuration and connectivity only. It does not prove model quality, SLA, or production readiness.
 - Local alpha gates still depend on external evidence such as a real fresh-machine run, Windows parity, and a human release decision.
+- The repository remains on `rmcp 0.5.0`. An isolated `2.2.0` compatibility probe is documented as no-go for an in-place M0.5 bump because one handler error contract regressed; the future upgrade must remain capability-neutral.
 
 Not implemented:
 

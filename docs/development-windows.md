@@ -4,7 +4,7 @@
 
 ## 1. 环境前提
 
-- 已安装 Rust toolchain
+- 已安装 `rustup`；仓库声明 Rust `1.95.0`、`rustfmt` 与 `clippy`，但该声明本身不构成 Windows runtime parity 证据
 - `cargo` 可用
 - 已安装 PowerShell 7
 - 当前仓库内提供 Windows 入口脚本：

@@ -14,6 +14,7 @@ MCP Memory Ledger は、ローカル AI クライアント向けの Rust 製 MCP
 - **SQLite persistence**: event、claim、evidence、reflection audit、trigger ledger、operation log を保存します。
 - **Evidence-gated self-revision**: claim、identity、commitment の更新には明示的な evidence と governance rule が必要です。identity / commitment / reflection の永続化 write path は `run_reflection` のみです。
 - **Observable local diagnostics**: read-only dashboard、`doctor` preflight、operation-log lookup、redacted support-bundle generator を含みます。
+- **Runtime and source gates**: unauthenticated dashboard は localhost/loopback のみを許可し、tracing は stderr に固定します。Rust `1.95.0` の Linux/macOS CI で formatting、all-feature Clippy、full tests、status sync を実行します。
 - **Provider integration**: `mock`、`openai-compatible`、OpenRouter の config path をサポートします。provider secrets は private local config または environment variables に置く前提です。
 - **Local release gates**: local alpha evidence、provider preflight、packaging preflight、release evidence summary の read-only checks を含みます。これらは現在の境界を証明するものであり、release の公開や認証は行いません。
 
@@ -92,6 +93,7 @@ Implemented:
 - Minimal identity and commitment revision
 - Trigger-ledger-backed automatic self-revision MVP
 - Read-only dashboard, `doctor`, local support bundle, and local gate summary scripts
+- Dashboard loopback enforcement, stderr-only tracing, and Linux/macOS source CI on pinned Rust `1.95.0`
 
 Partially implemented:
 
@@ -99,6 +101,7 @@ Partially implemented:
 - episode は現在 lightweight projection であり、complete autobiographical memory model ではありません。
 - provider live evidence は configuration と connectivity のみを証明します。model quality、SLA、production readiness は証明しません。
 - local alpha gates は real fresh-machine run、Windows parity、human release decision などの external evidence に依存します。
+- `rmcp` は `0.5.0` のままです。official `2.2.0` isolated spike は handler error contract の回帰が 1 件あったため、M0.5 内の直接 upgrade は no-go です。
 
 Not implemented:
 

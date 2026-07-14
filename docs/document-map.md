@@ -33,6 +33,7 @@ README 负责公共入口，起点与原则负责方向约束，状态负责当�
 - [Windows 开发说明](development-windows.md)
 - [本机 MCP 接入](local-mcp-integration-2026-03-26.md)
 - [测试指南](testing-guide-2026-03-24.md)：`fast` / `core` / `full` 分层命令和按改动类型选择验证范围。
+- [Rust Toolchain Policy](toolchain-policy.md)：Rust `1.95.0` 固定版本、支持下限和升级门禁。
 - [Provider contract](provider-contract.md)
 - [Self-revision demo guide](self-revision-demo-guide-2026-04-24.md)
 
@@ -47,6 +48,7 @@ README 负责公共入口，起点与原则负责方向约束，状态负责当�
 - [Data safety](product/data-safety-local-alpha.md)
 - [Structured decision protocol](product/structured-decision-protocol.md)
 - [Reality gates](product/follow-up-reality-gates.md)
+- [`rmcp 0.5` → `2.2.0` compatibility spike](spikes/rmcp-compatibility-2026-07-14.md)：独立迁移破坏面、no-go 结论与测试矩阵。
 
 ### 本地运维与可观测性
 

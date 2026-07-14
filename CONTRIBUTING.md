@@ -26,6 +26,7 @@ This repository is a public technical demo and MVP. Please keep changes aligned 
 3. After each completed task, update the corresponding docs whenever behavior, scope, integration, configuration, verification commands, or public-facing wording changes.
 4. Prefer explicit wording for what is implemented, partially implemented, and not implemented.
 5. For release-facing changes, follow [Release Engineering](docs/product/release-engineering.md): source-only artifacts first, evidence directory recorded, compatibility and soak evidence captured when relevant, and deprecation notes written before removal.
+6. Keep `Cargo.toml` and `rust-toolchain.toml` aligned. Toolchain changes must be explicit and pass the Linux/macOS CI-equivalent full gate documented in [Rust Toolchain Policy](docs/toolchain-policy.md).
 
 ## Verification
 
@@ -41,6 +42,11 @@ For local release soak evidence, use
 `./scripts/release-soak-local.sh <candidate-name> [config_path]` and preserve the
 generated `target/reports/releases/<candidate-name>/` evidence directory with
 the release note or review record.
+
+The repository CI contract is `cargo fmt --all -- --check`, all-target/all-feature
+Clippy with `-D warnings`, `./scripts/test-tier.sh full`, and
+`./scripts/status-sync-check.sh` on Linux and macOS. Windows runtime parity is a
+separate M2 evidence gate, not something inferred from this matrix.
 Do not claim Beta, GA, production-ready status, remote write admin, remote team
 service, multi-tenancy, or a replacement for `run_reflection` unless a later
 gate explicitly approves that boundary.

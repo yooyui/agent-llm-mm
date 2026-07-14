@@ -254,7 +254,8 @@ SQLite 非常适合本机 MVP，但它仍然是单写者模型。若多个 AI �
 
 - MCP 协议通信依赖标准输入输出
 - 不应在 `serve` 模式额外向 `stdout` 打印杂讯
-- 诊断信息应放到 `doctor` 模式或日志侧
+- tracing 诊断固定写入 `stderr`；`doctor` 的 JSON 与 `serve` 的 MCP frames 保持在 `stdout`
+- 启用无认证 dashboard 时，host 只允许 `localhost` 或 loopback IP；非 loopback 配置会在启动前失败
 
 ### 8.5 能力边界
 

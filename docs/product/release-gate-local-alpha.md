@@ -535,7 +535,8 @@ The dashboard remains a local-only, read-only inspection surface for Local Alpha
 
 Required boundary:
 
-- bind only to localhost or an explicitly local address
+- enabled dashboard configuration accepts only `localhost` or a loopback IP;
+  non-loopback hosts fail validation before bind
 - expose read-only routes for local observation, including bounded live events
   and durable operation-log history for known MCP tool calls whose
   object-shaped arguments reach project handlers
