@@ -31,6 +31,12 @@ fn active_plan_and_reality_gate_documents_are_in_sync() {
             .contains(&"M0.1.1 Test and toolchain slimming".to_string()),
         "active plan must expose the completed M0.1.1 milestone as a checkbox"
     );
+    assert!(
+        report
+            .completed_plan_items
+            .contains(&"M0.2 Scoped Snapshot v2".to_string()),
+        "active plan must expose the completed M0.2 milestone as a checkbox"
+    );
 
     assert!(
         report.is_in_sync(),

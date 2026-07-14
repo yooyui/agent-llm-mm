@@ -23,12 +23,15 @@ Current baseline:
 
 The active execution order is now governed by
 [`docs/plans/2026-07-10-product-replan.md`](../plans/2026-07-10-product-replan.md).
-The following truth-and-safety gaps block packaging, remote access, or broader
-autonomy work even when an older productization slice is marked `implemented`:
+M0.2 no longer appears in the blocker list: its explicit scoped-snapshot path,
+stable ordering, and bounded auto-reflection inputs are implemented and covered
+by the current branch tests. Legacy unscoped compatibility, complete recall, and
+repository-wide event-ID normalization remain separate open boundaries.
 
-- `partial`: snapshot construction accepts a budget but not an explicit scope;
-  auto-reflection can select scoped candidates and still build a final snapshot
-  containing unrelated active claims, episodes, or evidence.
+The following truth-and-safety gaps still block packaging, remote access, or
+broader autonomy work even when an older productization slice is marked
+`implemented`:
+
 - `partial`: `decide_with_snapshot` checks the requested action against a
   caller-supplied snapshot, but it neither proves that snapshot came from the
   ledger nor re-checks the provider-selected action before returning it.
@@ -107,6 +110,7 @@ tests, docs, fresh evidence, and review:
 | --- | --- | --- | --- | --- | --- |
 | `M0` | M0.1 Mainline and repository hygiene | `implemented` | The repository previously exposed parallel task sources and tracked a root SQLite artifact. | Keep one active plan, preserve the historical archive reference, and reject root fixture re-entry. | `./scripts/status-sync-check.sh`; active plan and archive readback; no tracked `not-a-sqlite-url`. |
 | `M0` | M0.1.1 Test and toolchain slimming | `implemented` | Default Cargo targets and status checks had accumulated release-only cost and exact-count coupling. | Keep `fast` / `core` / `full` stable, preserve release assets behind `release-tools`, and fail status sync when no completed checkbox can be checked. | `cargo check`; all three test tiers; `cargo clippy --all-targets --all-features -- -D warnings`; non-vacuous status-sync regression. |
+| `M0` | M0.2 Scoped Snapshot v2 | `implemented` | The explicit path derives owner/namespace scope server-side, intersects optional manifest/time filters without widening, orders evidence and episodes deterministically, and constrains auto-reflection to the frozen trigger window. Legacy calls without namespace remain unscoped compatibility behavior; full recall and repository-wide ID normalization are not claimed. | Preserve explicit-scope fail-closed validation and raw-ID compatibility fields; do not reopen M0.2 for unrelated support-bundle inventory or future recall work. | `./scripts/test-tier.sh fast`; `./scripts/test-tier.sh core`; focused M0.2 sections in `docs/testing-guide-2026-03-24.md`; `cargo test --test status_sync`; `./scripts/status-sync-check.sh`. |
 | `P0` | Local Alpha evidence summary | `implemented` | Mainline previously had no single read-only rollup to distinguish open, not-verified, and satisfied gates. The summary now also exposes `external_blockers`, `human_blockers`, `unimplemented_capability_blockers`, and a separate `first_run_simulation` gate so local simulation does not masquerade as real fresh-machine evidence. | Keep `scripts/local-alpha-evidence-summary.sh`, `src/bin/local_alpha_evidence_summary.rs`, `src/support/local_alpha_evidence.rs`, and `tests/local_alpha_release_evidence.rs` behind `release-tools`; run it after every release-gate refresh. Do not treat blocker rows or simulation rows as generated external evidence. | `cargo test --features release-tools --test local_alpha_release_evidence -v`; `cargo run --quiet --features release-tools --bin local_alpha_evidence_summary -- --evidence-root .` |
 | `P0` | Local Alpha release-gate refresh | `implemented` | Manual refresh could skip product smoke, first-run simulation, support bundle, or summary output, leaving stale gate evidence. | Use `scripts/local-alpha-release-gate-refresh.sh [config_path]` to refresh the locally reproducible gate slice; keep missing real fresh-machine, Windows runner, remote/team, and release-decision evidence open. | `bash -n scripts/local-alpha-release-gate-refresh.sh`; `cargo test --features release-tools --test local_alpha_release_evidence -v`; optional manual run writes `target/reports/local-alpha/evidence-summary.json`. |
 | `P0` | Local Alpha full release gate | `partial` | Product smoke, first-run simulation, support bundle, and summary can now be refreshed together locally, but Windows parity, real fresh-machine evidence, and release decision evidence can still be missing. | Run the refresh script for local evidence, then separately record real fresh-machine and Windows runner evidence without claiming completion from local simulation artifacts. | `./scripts/local-alpha-release-gate-refresh.sh`; evidence summary JSON showing every gate state; separate real fresh-machine and Windows parity summaries before human release review. |

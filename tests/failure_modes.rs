@@ -2915,9 +2915,11 @@ impl EpisodeStore for FailureModeDeps {
                     .recorded_before
                     .is_none_or(|before| event.recorded_at <= before)
         });
-        Ok(has_qualifying_event
-            .then(|| state.committed.episode_references.clone())
-            .unwrap_or_default())
+        Ok(if has_qualifying_event {
+            state.committed.episode_references.clone()
+        } else {
+            Vec::new()
+        })
     }
 }
 

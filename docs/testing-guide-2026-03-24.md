@@ -375,6 +375,17 @@ cargo test --test demo_openai_compatible_stub -v
 
 这组回归验证 deterministic demo 的真实边界：runner 不接收 caller-provided event ID；MCP ingest 返回的 raw `event_id` 必须经 `EventReference` fail-closed 解析，并在外部 `timeline.json` 中以 canonical `event_reference = event:<id>` 输出。snapshot 的 `evidence` 原本已是 canonical reference；内置与独立 stub 只返回空 `proposed_evidence_event_ids` 加受控 query，不比较或回显 event ID；SQLite artifact 的 `supporting_evidence_event_ids` 是明确 raw 兼容字段。它不改 SQLite schema、active runtime/projection、发布证据或 provider live path；support bundle 仅作为后续 inventory，repository-wide 统一仍为 partial。
 
+#### 6.3.7 M0.2 收口门禁
+
+```zsh
+./scripts/test-tier.sh fast
+./scripts/test-tier.sh core
+cargo test --test status_sync
+./scripts/status-sync-check.sh
+```
+
+M0.2 只有在 6.3.1–6.3.6 的行为边界由 `fast` / `core` 当前运行覆盖，且 active plan 的 `M0.2 Scoped Snapshot v2` 完成项与 reality-gate 的 `implemented` 行一致时才算收口。该完成状态不证明省略 `namespace` 的 legacy 调用已隔离，不证明完整 memory recall contract、repository-wide event-ID 统一或 support-bundle inventory 已完成，也不授权进入 M0.4、M1、remote 或 release 工作。
+
 ### 6.4 Provider 合规预检
 
 新增 provider 前先阅读 [Provider Readiness Checklist](provider-contract.md)。下面这组命令只是当前共享 provider 路径的最小验证；如果 checklist 里仍有 `partial` 或 `gap` 且新 provider 依赖该行为，新增 provider 的同一变更必须补齐对应专用回归或记录明确例外。
@@ -1264,7 +1275,7 @@ demo / MVP 发布前核验不使用这段简表作为最终依据；请按 [Rele
 
 ## 11. 当前结论
 
-截至 `2026-07-10`，推荐把下面七条当作普通提交前基线；demo / MVP 发布前仍以 [Release Gate](release-gate.md) 为准；Local Alpha / product alpha 发布前以 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 为准：
+截至 `2026-07-14`，推荐把下面七条当作普通提交前基线；demo / MVP 发布前仍以 [Release Gate](release-gate.md) 为准；Local Alpha / product alpha 发布前以 [Local Alpha Release Gate](product/release-gate-local-alpha.md) 为准：
 
 ```zsh
 cargo fmt --check

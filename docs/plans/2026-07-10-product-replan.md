@@ -1,6 +1,6 @@
 # MCP Memory Ledger 全新项目规划
 
-状态：`active / M0.1.1 complete / M0.2 in progress`
+状态：`active / M0.2 complete / M0.3 next`
 规划日期：`2026-07-10`
 规划输入基线：`dev-work@6fcbb5f`
 主线整理基线：`1f7390d`
@@ -175,11 +175,11 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 
 ### M0.2 Scoped Snapshot v2
 
-首个最小切片（2026-07-11）已实现：`build_self_snapshot` 增加 additive `namespace`，由 server 推导 owner 并生成 `MemoryScope`，显式 scope 的 claims / event references / episode references 在 query port / SQLite 层过滤；`MemoryScope` 反序列化只接受完整匹配 scope 或全空 legacy 状态；省略 namespace 保留 legacy unscoped 兼容行为。下面 checkbox 继续保持未完成，直到该项的 time / manifest、ID、完整排序与 auto-reflection 边界一起满足。
+首个最小切片（2026-07-11）已实现：`build_self_snapshot` 增加 additive `namespace`，由 server 推导 owner 并生成 `MemoryScope`，显式 scope 的 claims / event references / episode references 在 query port / SQLite 层过滤；`MemoryScope` 反序列化只接受完整匹配 scope 或全空 legacy 状态；省略 namespace 保留 legacy unscoped 兼容行为。该切片落地时 M0.2 仍保持开放，直到后续 time / manifest、ID、完整排序与 auto-reflection 边界一起满足。
 
 第二个最小切片（2026-07-11）已实现：`build_self_snapshot` 增加 additive `evidence_manifest`；显式 manifest（包括空数组）必须同时显式提供 `namespace`，最多 256 项，并在 DTO 中保序线性去重；DTO、application 与 store 都不能进入 legacy unscoped 兼容路径或绕过数量上限，且 snapshot 参数在 optional auto-reflection 之前完成校验。裸 event ID 与 `event:<id>` 在 snapshot 输入中统一为 canonical reference，SQLite 以 manifest event IDs 与 server-owned owner/namespace 同时过滤。越 scope ID、显式空 manifest 与空交集均不会扩大查询；tool operation log 使用 snapshot namespace。该切片当时未覆盖 time window、其他入口的全局 ID 统一、完整排序和 scoped auto-reflection；其中 time window / 排序由下一段的第三个切片补齐。
 
-第三个最小切片（2026-07-11）已实现：`build_self_snapshot` 增加 additive `recorded_after` / `recorded_before` 闭区间；任一时间边界都要求显式 `namespace`，RFC3339 输入归一到 UTC，倒置窗口会在 optional auto-reflection 前被 DTO / application 拒绝。evidence 在 SQLite 中按 owner/namespace ∩ manifest（如有）∩ time window 查询；SQL 会把项目 canonical timestamp 与旧库常见的 `Z` / offset RFC3339 文本归一成固定宽度 UTC 排序键，并保留 9 位小数秒，再以 `rowid DESC` 收口稳定顺序。episode 先在相同 scope + window 中选择每个 episode 最新的合格 `(recorded_at, event rowid)`，再以该元组和 `episode_reference` 形成全序。显式窗口的空交集保持为空；claims 因无 recorded timestamp 仍只按 scope 收窄。legacy unbounded snapshot 仍兼容，但 SQLite snapshot 读取已改为 recent-first。其他入口的全局 ID 统一和 scoped auto-reflection 仍未完成，因此 M0.2 checkbox 保持开放。
+第三个最小切片（2026-07-11）已实现：`build_self_snapshot` 增加 additive `recorded_after` / `recorded_before` 闭区间；任一时间边界都要求显式 `namespace`，RFC3339 输入归一到 UTC，倒置窗口会在 optional auto-reflection 前被 DTO / application 拒绝。evidence 在 SQLite 中按 owner/namespace ∩ manifest（如有）∩ time window 查询；SQL 会把项目 canonical timestamp 与旧库常见的 `Z` / offset RFC3339 文本归一成固定宽度 UTC 排序键，并保留 9 位小数秒，再以 `rowid DESC` 收口稳定顺序。episode 先在相同 scope + window 中选择每个 episode 最新的合格 `(recorded_at, event rowid)`，再以该元组和 `episode_reference` 形成全序。显式窗口的空交集保持为空；claims 因无 recorded timestamp 仍只按 scope 收窄。legacy unbounded snapshot 仍兼容，但 SQLite snapshot 读取已改为 recent-first。该切片落地时，scoped auto-reflection 仍是 M0.2 的开放项。
 
 第四个最小切片（2026-07-12）已实现：automatic reflection 不再借用 legacy unscoped snapshot。触发 namespace 先派生为完整 `MemoryScope`，候选 event ID 固定为 explicit manifest，并读取该 scope ∩ manifest 的记录时间形成闭区间；同一 scope/window 也传入 episode read。没有合格候选时该路径保持 not-triggered，不会扩张到历史全量。显式 MCP `build_self_snapshot` 的兼容调用不变；M0.2 仍不包含 snapshot 外的全局 ID 统一。
 
@@ -189,13 +189,15 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 
 第七个最小切片（2026-07-13）已实现：盘点 offline self-revision demo runner、内置/独立 demo stub、tests 与生成 artifacts 后，确认 runner 没有 caller-provided event-ID 输入；snapshot `evidence` 已是 canonical reference；stub 只返回空 `proposed_evidence_event_ids` 与受控 query；SQLite summary 的 `supporting_evidence_event_ids` 是明确 raw 兼容字段。唯一需收口的外部边界是 `timeline.json` baseline event，现经 `EventReference` fail-closed 解析并输出 canonical `event_reference`，不再把 raw MCP `event_id` 直接作为 artifact 引用。未改 SQLite schema、active runtime/projection、发布证据或 provider 调用；support bundle 只记录为后续 inventory。
 
-当前子项事实：snapshot scope、snapshot query 的 scope/manifest/time 交集、snapshot 内 canonical event reference、SQLite recent-first 稳定排序、scoped auto-reflection snapshot、active reflection runtime event-ID 等价性、read-only evidence/episode projection event-ID 等价性，以及 offline demo artifact event reference 均为 `implemented`；repository-wide event-ID 统一仍为 `partial`。下面的 M0.2 checkbox 是整体退出门，不因单个切片通过而提前关闭。
+收口结论（2026-07-14）：snapshot scope、snapshot query 的 scope/manifest/time 交集、snapshot 内 canonical event reference、SQLite recent-first 稳定排序、scoped auto-reflection snapshot、active reflection runtime event-ID 等价性、read-only evidence/episode projection event-ID 等价性，以及 offline demo artifact event reference 均已有实现与回归证据，M0.2 限定退出门完成。repository-wide event-ID 统一仍为 `partial`，不再作为这个 scoped-snapshot 里程碑的无限扩张条件。
 
-- [ ] 为 snapshot 输入增加服务端 `MemoryScope`。
-- [ ] 在 store/query port 层按 namespace、owner、时间和显式 evidence manifest 查询。
-- [ ] 统一裸 event ID 与 `event:<id>` 表示（active reflection runtime、只读 evidence/episode projections 与 offline demo artifact 已完成；repository-wide 仍 partial）。
-- [ ] recent-first 排序必须在 SQL 层完成，稳定 tie-break 使用 `(recorded_at, rowid/id)`。
-- [ ] auto-reflection snapshot 只能使用当前 trigger window 和允许的 scope 关系。
+- [x] **M0.2 Scoped Snapshot v2**
+
+- 已完成：snapshot 输入使用服务端派生的 `MemoryScope`。
+- 已完成：store/query port 层按 namespace、owner、时间和显式 evidence manifest 取交集，空交集不扩大。
+- 已完成：M0.2 涉及的 active reflection runtime、只读 evidence/episode projections 与 offline demo artifact 接受并规范化裸 event ID / `event:<id>`；明确 raw-ID 兼容字段保持原契约。
+- 已完成：recent-first 排序在 SQL 层完成，并使用 `(recorded_at, rowid/id)` 稳定收口。
+- 已完成：auto-reflection snapshot 仅使用当前 trigger window 和允许的 scope 关系。
 
 证据门：至少覆盖 self / world / 两个 project / 两个 user namespace；跨 scope 注入为 0；相同输入产生相同顺序。
 
@@ -422,6 +424,6 @@ M2 退出指标：
 - 未发布、未推送、未运行远程或 live-provider 操作。
 - M0.2 已完成七个连续最小切片：snapshot scope、explicit evidence manifest、time window / stable order、scoped auto-reflection snapshot、active reflection runtime event-ID 等价性、只读 evidence/episode projection event-ID 等价性，以及 offline demo artifact event reference。
 
-尚未完成：M0.2 整体退出门仍开放，repository-wide event-ID 统一仍为 partial；support bundle 仅列入后续 inventory，M0.3–M0.5 尚未开始。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
+尚未完成：repository-wide event-ID 统一仍为 partial；support bundle 仅列入后续 inventory，M0.3–M0.5 尚未开始。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
 
-下一最小工程动作：在新的执行契约下先盘点 support bundle 的 event-ID 表面，再决定是否存在独立、可验证且非装饰性的 M0.2 切片；在证据冻结前不要开始 M0.3 或 M1 接口开发。
+下一最小工程动作：进入 M0.3 Governance Correctness 的首个独立切片，先用对抗测试冻结 caller-supplied snapshot 不能移除 baseline commitment、provider-selected action 必须经过同一 policy gate 的失败证据；不要同时进入 M0.4、M1 或 support-bundle 清理。

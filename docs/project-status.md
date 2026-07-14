@@ -15,9 +15,11 @@
 
 归档不代表删除证据；具体查阅与恢复方式见[archive.md](archive.md)。
 
-## 2026-07-10 事实校准
+## 2026-07-14 M0.2 收口
 
-当前状态必须与新的 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 已完成 scope、explicit evidence manifest、snapshot time window / stable order、scoped auto-reflection、active reflection runtime event-ID 等价性、read-only evidence/episode projection event-ID 等价性、offline demo artifact event reference 七个最小切片，M0.3–M0.5 尚未开始，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
+当前状态必须与 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 的七个最小切片及限定退出门已于 2026-07-14 收口，下一执行切片是 M0.3 Governance Correctness。M0.3–M0.5 尚未实现，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
+
+M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/manifest/time 交集、stable recent-first order、scoped auto-reflection、active reflection 与只读 projection 的 event-ID 等价性，以及 offline demo artifact reference。省略 `namespace` 的 legacy MCP 调用仍是 unscoped 兼容路径；完整 recall contract、repository-wide event-ID 统一、support bundle inventory 和 M0.3 治理能力不属于本次完成声明。
 
 本次代码级审计确认了以下必须优先公开的边界：
 
