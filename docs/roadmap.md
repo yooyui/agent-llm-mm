@@ -40,7 +40,7 @@
 
 - 显式 namespace / manifest / time-window 的 M0.2 scoped snapshot 已收口，但省略 namespace 的 legacy 兼容调用仍未隔离，且尚无完整 recall read model；
 - 没有正式的 memory search / get / history MCP 接口；
-- decision 已改用服务端 commitments，并同时 gate requested / provider-selected action；但其他 snapshot 字段仍由 caller 提供，尚无完整 trusted snapshot handle 或 provenance binding；
+- decision 已改用服务端 commitments，并同时 gate requested / provider-selected action；允许的 action-string 结果显式标记为 `experimental_non_authoritative`，且 policy scope 只覆盖 server commitment gate。但其他 snapshot 字段仍由 caller 提供，尚无完整 trusted snapshot handle 或 provenance binding；
 - cross-episode identity support 已使用 claim → evidence → episode 的真实 distinct join，但仍没有完整 provenance graph；
 - `doctor` 会 create / migrate / seed 数据库，不是纯只读诊断；
 - legacy migration 缺 schema version、migration ledger 和显式事务恢复门；
@@ -60,8 +60,8 @@
 3. **已完成首个切片（M0.3，2026-07-14）**：decision 使用服务端 commitment store 覆盖 caller commitments，同时复检 requested / provider-selected action；被拒绝的 selected action 不返回 authoritative decision payload。
 4. **已完成第二个切片（M0.3，2026-07-14）**：用 claim → evidence → episode 的 distinct store join 替换全局 episode 数量推断，无关 episode 不计入 identity support。
 5. **已完成第三个切片（M0.3，2026-07-14）**：验证治理拒绝、handled-ledger 写入失败与 transaction commit 失败均不留下部分 identity / commitment / reflection 更新，失败后只保留 rejected audit。
-6. **下一步（M0.3）**：收口 action-string selected action 的 non-authoritative / experimental 状态，避免把有界字面量 gate 误报为完整 policy passed。
-7. 拆分 `init`、`migrate`、`doctor --read-only` 与显式 bootstrap。
+6. **已完成第四个切片并收口（M0.3，2026-07-14）**：v2 envelope additive 返回 `decision_authority = experimental_non_authoritative` 与 `policy_scope = server_commitment_gate_only`，保留 legacy 字段和 provider action-string contract，不把有界字面量 gate 误报为完整 policy passed。
+7. **下一步（M0.4）**：拆分 `init`、`migrate`、`doctor --read-only` 与显式 bootstrap。
 8. 建立 schema version、事务 migration、备份、故障注入和恢复验证。
 9. 无认证阶段强制 dashboard loopback。
 10. 修正 CLI tracing，建立 format / clippy / tests / status-sync CI。

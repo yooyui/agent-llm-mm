@@ -55,6 +55,18 @@ fn active_plan_and_reality_gate_documents_are_in_sync() {
             .contains(&"M0.3.3 Governance failure atomicity".to_string()),
         "active plan must expose the completed M0.3.3 slice as a checkbox"
     );
+    assert!(
+        report
+            .completed_plan_items
+            .contains(&"M0.3 Governance Correctness".to_string()),
+        "active plan must expose the completed M0.3 milestone as a checkbox"
+    );
+    assert!(
+        report
+            .completed_plan_items
+            .contains(&"M0.3.4 Experimental non-authoritative decision result".to_string()),
+        "active plan must expose the completed M0.3.4 slice as a checkbox"
+    );
 
     assert!(
         report.is_in_sync(),

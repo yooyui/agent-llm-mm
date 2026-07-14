@@ -2496,6 +2496,11 @@ timeout_ms = 30000
     assert_eq!(structured["requested_action"], "read_identity_core");
     assert_eq!(structured["selected_action"], "provider_selected_action");
     assert_eq!(structured["confidence"], "bounded-local-metadata");
+    assert_eq!(
+        structured["decision_authority"],
+        "experimental_non_authoritative"
+    );
+    assert_eq!(structured["policy_scope"], "server_commitment_gate_only");
     assert_eq!(structured["gate"]["name"], "commitment_gate");
     assert_eq!(structured["gate"]["blocked"], false);
     assert!(
@@ -2504,6 +2509,13 @@ timeout_ms = 30000
             .expect("non_claims array")
             .iter()
             .any(|claim| claim == "not provider-native structured decision JSON")
+    );
+    assert!(
+        structured["non_claims"]
+            .as_array()
+            .expect("non_claims array")
+            .iter()
+            .any(|claim| claim == "not an authoritative policy decision")
     );
     assert!(
         !response.to_string().contains("example-test-key"),

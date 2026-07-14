@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use agent_llm_mm::{
-    application::decide_with_snapshot::{DecideWithSnapshotInput, execute},
+    application::decide_with_snapshot::{DecideWithSnapshotInput, DecisionAuthority, execute},
     domain::{
         commitment::Commitment,
         self_revision::{SelfRevisionProposal, SelfRevisionRequest},
@@ -40,6 +40,11 @@ async fn decision_returns_blocked_without_calling_model_when_gate_fails() {
     assert_eq!(result.gate.name, "commitment_gate");
     assert!(result.gate.blocked);
     assert_eq!(
+        result.decision_authority,
+        DecisionAuthority::NotApplicableBlocked
+    );
+    assert_eq!(result.policy_scope, "server_commitment_gate_only");
+    assert_eq!(
         result.provider_diagnostics_class,
         "not-applicable-gate-blocked"
     );
@@ -68,6 +73,8 @@ async fn decision_returns_blocked_without_calling_model_when_gate_fails() {
     );
     assert_eq!(serialized["status"], "blocked");
     assert_eq!(serialized["reason"], "commitment_gate_blocked_action");
+    assert_eq!(serialized["decision_authority"], "not_applicable_blocked");
+    assert_eq!(serialized["policy_scope"], "server_commitment_gate_only");
     assert_eq!(
         serialized["provider_diagnostics_class"],
         "not-applicable-gate-blocked"
@@ -121,6 +128,11 @@ async fn provider_selected_action_is_rechecked_against_server_commitments() {
     );
     assert!(result.gate.blocked);
     assert_eq!(
+        result.decision_authority,
+        DecisionAuthority::NotApplicableBlocked
+    );
+    assert_eq!(result.policy_scope, "server_commitment_gate_only");
+    assert_eq!(
         result.provider_diagnostics_class,
         "bounded-local-policy-rejected"
     );
@@ -157,6 +169,11 @@ async fn mock_model_receives_snapshot_context_when_gate_passes() {
     );
     assert_eq!(result.status, "model_decision");
     assert!(result.reason.is_none());
+    assert_eq!(
+        result.decision_authority,
+        DecisionAuthority::ExperimentalNonAuthoritative
+    );
+    assert_eq!(result.policy_scope, "server_commitment_gate_only");
     assert_eq!(result.provider_diagnostics_class, "bounded-local-only");
     assert_eq!(result.gate.name, "commitment_gate");
     assert!(!result.gate.blocked);
@@ -173,6 +190,11 @@ async fn mock_model_receives_snapshot_context_when_gate_passes() {
     assert_eq!(serialized["status"], "model_decision");
     assert_eq!(serialized["reason"], serde_json::Value::Null);
     assert_eq!(
+        serialized["decision_authority"],
+        "experimental_non_authoritative"
+    );
+    assert_eq!(serialized["policy_scope"], "server_commitment_gate_only");
+    assert_eq!(
         serialized["provider_diagnostics_class"],
         "bounded-local-only"
     );
@@ -183,6 +205,13 @@ async fn mock_model_receives_snapshot_context_when_gate_passes() {
             "blocked": false,
             "reason": null
         })
+    );
+    assert!(
+        serialized["non_claims"]
+            .as_array()
+            .expect("non_claims array")
+            .iter()
+            .any(|claim| claim == "not an authoritative policy decision")
     );
 
     let request = deps.last_request().expect("model should receive request");

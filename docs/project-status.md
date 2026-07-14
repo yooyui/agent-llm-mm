@@ -15,9 +15,9 @@
 
 归档不代表删除证据；具体查阅与恢复方式见[archive.md](archive.md)。
 
-## 2026-07-14 M0.2 收口与 M0.3 进展
+## 2026-07-14 M0.2 与 M0.3 收口
 
-当前状态必须与 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 的七个最小切片及限定退出门已于 2026-07-14 收口。M0.3 已完成 trusted decision commitments + dual gate、claim → evidence → episode provenance，以及 governance failure atomicity 三个独立切片。M0.3 整体及 M0.4–M0.5 尚未完成，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
+当前状态必须与 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 的七个最小切片及限定退出门已于 2026-07-14 收口。M0.3 已完成 trusted decision commitments + dual gate、claim → evidence → episode provenance、governance failure atomicity，以及 experimental non-authoritative decision authority 四个独立切片并完成限定收口。M0.4–M0.5 尚未完成，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
 
 M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/manifest/time 交集、stable recent-first order、scoped auto-reflection、active reflection 与只读 projection 的 event-ID 等价性，以及 offline demo artifact reference。省略 `namespace` 的 legacy MCP 调用仍是 unscoped 兼容路径；完整 recall contract、repository-wide event-ID 统一、support bundle inventory 和 M0.3 治理能力不属于本次完成声明。
 
@@ -27,8 +27,8 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 - `build_self_snapshot` 已增加 additive `evidence_manifest`：只要显式提供 manifest（包括空数组）就必须同时显式提供 `namespace`，并在 query construction 前限制为最多 256 项；DTO、application 与 store 三层都会拒绝未完整收窄或超限的 manifest 查询，且 snapshot 参数会在可选 auto-reflection 之前完成校验；裸 event ID 与 `event:<id>` 会先规范化并保序线性去重，再与 server-owned owner/namespace scope 在 SQLite 查询中同时约束。越 scope ID 被排除；显式空 manifest 或空交集返回空 evidence，不会回退为全 scope。tool operation log 使用 snapshot namespace，auto-reflection 诊断保留独立 namespace。
 - `build_self_snapshot` 已增加 additive `recorded_after` / `recorded_before`：任一时间边界都要求显式 `namespace`，使用 inclusive 边界，RFC3339 输入归一到 UTC，倒置窗口由 DTO / application fail closed。SQLite evidence 查询在同一条 SQL 中取 owner/namespace、manifest（如有）与时间窗交集；SQL 将项目 canonical timestamp 与旧库常见 `Z` / offset 文本转换为固定宽度 UTC 秒 + 9 位小数秒排序键，避免 SQLite date function 折叠亚毫秒差异，再以 `rowid DESC` 稳定 tie-break。episode 按窗口内最新合格事件元组排序，避免独立 `MAX(recorded_at)` / `MAX(rowid)` 来自不同事件。显式窗口空交集保持为空；claims 没有 recorded timestamp，因此仍只做 scope filtering。legacy unbounded snapshot 继续兼容，但 snapshot evidence / episode SQLite 读取已统一 recent-first；手工写入且超出项目 canonical / 常见 legacy 形式的畸形时间文本会 fail closed，而不是扩大 bounded 查询。
 - automatic self-revision 已从触发 namespace 派生完整 owner + namespace scope：先冻结 trigger window，再取授权 scope 与 trigger manifest 的交集，并以该受限窗口构建 revision snapshot 与 episode read；无有效交集保持 fail-closed，不回退到历史全量。active reflection runtime 的 MCP/application/model proposal evidence 输入均接受裸 event ID 与 `event:<id>`，以底层 raw ID 保序去重；SQLite 查询、evidence links、reflection audit 与 auto-reflection diagnostics 的明确 `*_event_ids` 兼容字段继续存取 raw ID，reference-shaped 输出才使用 canonical `event:<id>`。
-- `decide_with_snapshot` 仍接收调用方 snapshot，但 application 会在 gate 与 provider 调用前用当前服务端 commitment store 覆盖其中的 commitments，并对 requested action 与 provider-selected action 复用同一 commitment gate；selected action 被拒绝时返回 blocked、保留被拒绝的 `selected_action`，且 `decision = null`。identity / claims / evidence / episodes 仍是 caller-provided，尚无 server-created snapshot handle、完整 policy binding 或 provenance join，因此仍不能描述为完整可信策略执行器。
-- cross-episode identity support 已不再使用全局 episode 数量推断：application 先选出与 proposed identity value 匹配的 active claims，再通过只读 store port 与 SQLite `evidence_links` → `episode_events` join 计算 distinct supporting episodes；无关 episode、无 evidence link 的 claim 和空 claim 集都不会提高支持数。该切片复用现有 schema，仍不是完整 provenance graph，也没有完成 M0.3 的全部治理门。
+- `decide_with_snapshot` 仍接收调用方 snapshot，但 application 会在 gate 与 provider 调用前用当前服务端 commitment store 覆盖其中的 commitments，并对 requested action 与 provider-selected action 复用同一 commitment gate；selected action 被拒绝时返回 blocked、保留被拒绝的 `selected_action`，且 `decision = null`。允许路径保留兼容的 `model_decision` / action-string payload，同时明确返回 `decision_authority = experimental_non_authoritative` 与 `policy_scope = server_commitment_gate_only`；`gate.blocked = false` 不是完整 policy-passed verdict。identity / claims / evidence / episodes 仍是 caller-provided，尚无 server-created snapshot handle 或完整 policy binding，因此仍不能描述为完整可信策略执行器。
+- cross-episode identity support 已不再使用全局 episode 数量推断：application 先选出与 proposed identity value 匹配的 active claims，再通过只读 store port 与 SQLite `evidence_links` → `episode_events` join 计算 distinct supporting episodes；无关 episode、无 evidence link 的 claim 和空 claim 集都不会提高支持数。该切片复用现有 schema，仍不是完整 provenance graph。
 - governance failure atomicity 已由 application fault injection 与真实 SQLite transaction 回归共同覆盖：validation rejection 不进入 reflection transaction；handled-ledger append 或 commit 失败时，pending identity / commitment / claim-evidence / reflection / handled audit 均回滚，随后事务外只记录 rejected trigger audit。该证据不等于进程崩溃恢复、跨进程事务或分布式一致性。
 - `doctor` 会进入 runtime bootstrap，可能创建目录/数据库、建表、迁移、seed baseline commitment 并补默认 identity。报告中的只读 projection 不代表 `doctor` 执行链无写入。
 - legacy SQLite 表重建缺 schema version、migration ledger 和显式事务恢复门；正式数据迁移前必须先补备份、故障注入、readback 和 rollback。
@@ -221,7 +221,7 @@ Implementation notes:
 - Release decision artifact 生成器已能写 source-only decision 模板，并在 evidence summary 仍为 `in_progress` 时拒绝 approved 决策
 - `status-sync-check` 已收敛为轻量 plan/reality gate 矛盾检测；勾选完成的计划项如果没有对应 reality row、对应状态仍不完整，或 active plan 根本没有可检查的完成态 checkbox，都会 fail closed；它不再为了核对精确测试总数编译整套测试
 - Support bundle manifest 已增加非 manifest 文件的 SHA-256 integrity 列表；daemon observe-only diagnostics 已输出 write/remote blockers
-- `decide_with_snapshot` response envelope 已升级为 `protocol_version = 2`，新增 `decision_id`、requested/selected action、bounded local confidence metadata、policy checks 和 non-claims，同时保留旧 `blocked` / `decision` 字段
+- `decide_with_snapshot` response envelope 使用 `protocol_version = 2`，已有 `decision_id`、requested/selected action、bounded local confidence metadata、policy checks 和 non-claims；M0.3.4 additive 增加 `decision_authority` 与 `policy_scope`，同时保留旧 `blocked` / `decision` / `status` 字段和 provider action-string contract
 - Evidence relation read model 已能只读展示 trigger window 内 selected evidence、available-not-selected rows、rejected count、relation status、window rank、rejection reason、bounded binary selection weight 和 no-widening policy；trigger window 与 selected `*_event_ids` 同时接受裸 ID / `event:<id>`，先解析为 raw ID、保序去重后执行 subset/no-widening 与 count/rank；JSON `event_id` readback 保持 raw ID。`doctor.system_layer_report.evidence_relation_contract` 同步公开 v2 contract、read-only/no-widening/binary-weight policy、allowed status、selected/unselected weight、rejection reason 和 additive v2 字段；它不拉取 trigger window 外证据，也不是完整 ranking / scoring engine
 - Episode summary projection 已能以只读 local metadata 表达 objective、outcome、linked evidence ids，不写 identity 或 commitments；episode / linked `*_event_ids` 同时接受裸 ID / `event:<id>`，按 raw ID 保序去重后执行 subset 校验与 `event_count`，JSON `linked_evidence_ids` readback 继续保持 raw ID
 - Provider matrix planned-only 行已输出 missing implementation checklist，避免把 future provider 当作可配置 adapter
@@ -237,6 +237,7 @@ Implementation notes:
 - commitment gate 是真实能力
 - 下游模型调用已可走 `openai-compatible` 或 OpenRouter
 - 当前返回 envelope 已有 `protocol_version = 2`、`decision_id`、requested/selected action、bounded local confidence metadata、policy checks、non-claims 和 commitment-gate metadata
+- 返回的 provider action string 显式标记为 `experimental_non_authoritative`，policy scope 只覆盖 `server_commitment_gate_only`；允许结果不等于完整 policy passed
 - 原有 `blocked` / `decision` 字段保留，`decision` 内仍是最小 `action` 字符串
 
 因此它更适合作为最小决策闭环和集成验证能力，而不是完整决策引擎。

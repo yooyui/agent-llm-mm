@@ -394,7 +394,7 @@ cargo test --test mcp_stdio fresh_stdio_runtime_blocks_forbidden_action_with_see
 cargo test --test mcp_stdio provider_selected_forbidden_action_is_blocked_over_stdio -- --exact
 ```
 
-这组回归验证：caller 即使从 snapshot 删除 baseline commitment，application 仍从当前 `CommitmentStore` 恢复服务端 policy context，并在 model call 前阻断 requested action；requested action 允许但 provider-selected action 违反同一 commitment 时，结果仍为 blocked、`decision = null`，并保留被拒绝的 `selected_action` 和有界 reason。允许动作继续保持 v2 response envelope 与 provider action-string contract。它不证明其余 caller snapshot 字段可信、完整 policy arbitration 或 M0.3 整体完成。
+这组回归验证：caller 即使从 snapshot 删除 baseline commitment，application 仍从当前 `CommitmentStore` 恢复服务端 policy context，并在 model call 前阻断 requested action；requested action 允许但 provider-selected action 违反同一 commitment 时，结果仍为 blocked、`decision = null`，并保留被拒绝的 `selected_action` 和有界 reason。允许动作继续保持 v2 response envelope 与 provider action-string contract。这个切片单独不证明其余 caller snapshot 字段可信或完整 policy arbitration。
 
 ### 6.3B M0.3 claim → evidence → episode provenance 回归
 
@@ -404,7 +404,7 @@ cargo test --test failure_modes auto_reflection_rejected_identity_attempt_does_n
 cargo test --test sqlite_store sqlite_lists_only_episodes_reached_through_claim_evidence_links -- --exact
 ```
 
-这组回归验证：匹配 proposed identity value 的 active claims 只有经 persisted evidence link 到达 episode event membership 时才贡献 distinct cross-episode support；全局无关 episode、无 provenance 的 claims 和空 claim 集均不计数。拒绝路径只记录 rejected trigger，不写 reflection 或 identity；具备至少两条真实 episode 路径的后续 retry 仍可通过。该切片复用现有表，不证明完整 provenance graph、全部治理失败原子性或 M0.3 整体完成。
+这组回归验证：匹配 proposed identity value 的 active claims 只有经 persisted evidence link 到达 episode event membership 时才贡献 distinct cross-episode support；全局无关 episode、无 provenance 的 claims 和空 claim 集均不计数。拒绝路径只记录 rejected trigger，不写 reflection 或 identity；具备至少两条真实 episode 路径的后续 retry 仍可通过。该切片复用现有表，不证明完整 provenance graph 或全部治理失败原子性。
 
 ### 6.3C M0.3 governance failure atomicity 回归
 
@@ -415,6 +415,18 @@ cargo test --test sqlite_store sqlite_handled_ledger_failure_rolls_back_deeper_r
 ```
 
 这组回归把 validation rejection、handled trigger ledger append failure 与 reflection transaction commit failure 分开验证。失败后 identity、commitments、supporting claims/evidence links、reflection 与 handled ledger 必须保持原值或不存在；事务外仅允许一条 `Rejected` trigger entry，且不得带 `reflection_id`、`handled_at` 或 cooldown。SQLite 回归使用 duplicate ledger primary key 让最后的 handled-audit 写入失败，并 readback identity、commitments、reflection 与 ledger 行数。它证明当前本地 transaction path 的原子性，不证明进程崩溃恢复、跨进程事务或分布式一致性。
+
+### 6.3D M0.3 experimental decision authority 回归
+
+```zsh
+cargo test --test decision_flow -v
+cargo test --test mcp_stdio decide_with_snapshot_over_stdio_uses_openai_compatible_provider_from_config_file -- --exact
+cargo test --test mcp_stdio provider_selected_forbidden_action_is_blocked_over_stdio -- --exact
+```
+
+这组回归验证：允许的 provider action-string 保持 legacy `status = model_decision` 与 `{ "action": "..." }` payload，但 additive 返回 `decision_authority = experimental_non_authoritative`、`policy_scope = server_commitment_gate_only` 和 `not an authoritative policy decision` non-claim；blocked 路径返回 `not_applicable_blocked`。因此 commitment gate 未阻断只能解释为该 bounded literal check 未命中，不能解释为 structured action validation 或完整 policy passed。
+
+M0.3 只有在 6.3A–6.3D 的行为边界由当前 `fast` / `core` 运行覆盖，且 active plan 的 `M0.3 Governance Correctness` 与四个子切片都和 reality-gate 的 `implemented` 行一致时才算限定收口。该完成状态不证明 caller snapshot 其余字段可信、server-created snapshot handle、完整 provenance graph、structured action validation、policy arbitration、crash recovery 或 distributed transaction 已实现，也不授权顺带进入 M0.4、M1、remote 或 release 工作。
 
 ### 6.4 Provider 合规预检
 

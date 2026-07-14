@@ -405,7 +405,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Decide on an action using a provided self snapshot.",
+        description = "Return a bounded experimental action-string result using a provided self snapshot and server-side commitments.",
         input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<DecideWithSnapshotParams>>()
     )]
     async fn decide_with_snapshot(
@@ -493,7 +493,7 @@ impl Server {
         let summary = if result.blocked {
             "decision blocked by commitment gate".to_string()
         } else {
-            "decision returned model action".to_string()
+            "decision returned experimental non-authoritative model action".to_string()
         };
         self.runtime.dashboard.record_tool_ok(
             "decide_with_snapshot",
@@ -509,7 +509,11 @@ impl Server {
                     dashboard_namespace,
                     Some(correlation_id),
                 )
-                .with_response_summary(serde_json::json!({ "blocked": result.blocked })),
+                .with_response_summary(serde_json::json!({
+                    "blocked": result.blocked,
+                    "decision_authority": result.decision_authority,
+                    "policy_scope": result.policy_scope,
+                })),
             )
             .await;
         structured(result)
