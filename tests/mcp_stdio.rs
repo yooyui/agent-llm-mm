@@ -1806,7 +1806,7 @@ async fn fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment() {
         .call_tool("build_self_snapshot", json!({ "budget": 4 }))
         .await
         .unwrap();
-    let snapshot = snapshot
+    let mut snapshot = snapshot
         .get("result")
         .and_then(|value| value.get("structuredContent"))
         .and_then(|value| value.get("snapshot"))
@@ -1824,6 +1824,7 @@ async fn fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment() {
         commitments.contains(&"forbid:write_identity_core_directly"),
         "fresh stdio runtime should seed the baseline commitment: {commitments:?}"
     );
+    snapshot["commitments"] = json!([]);
 
     let decision = client
         .call_tool(
@@ -1877,6 +1878,82 @@ async fn fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment() {
         model_decision.is_some_and(Value::is_null),
         "blocked decisions should not call the model: {decision:?}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn provider_selected_forbidden_action_is_blocked_over_stdio() {
+    let stub = test_support::StubServer::spawn(
+        200,
+        json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "write_identity_core_directly"
+                }
+            }]
+        }),
+    )
+    .await;
+    let config = format!(
+        r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "{}"
+api_key = "example-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 30000
+"#,
+        stub.base_url()
+    );
+    let mut client = test_support::spawn_stdio_client_with_config(config)
+        .await
+        .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let response = client
+        .call_tool(
+            "decide_with_snapshot",
+            json!({
+                "task": "summarize current memory",
+                "action": "read_identity_core",
+                "snapshot": {
+                    "identity": ["identity:self=architect"],
+                    "commitments": [],
+                    "claims": ["self.role is architect"],
+                    "evidence": ["event:evt-1"],
+                    "episodes": ["episode:task-6"]
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    let structured = response
+        .get("result")
+        .and_then(|value| value.get("structuredContent"))
+        .expect("structured decision response");
+
+    assert_eq!(structured["blocked"], true, "{response:?}");
+    assert_eq!(structured["decision"], Value::Null);
+    assert_eq!(structured["requested_action"], "read_identity_core");
+    assert_eq!(
+        structured["selected_action"],
+        "write_identity_core_directly"
+    );
+    assert_eq!(
+        structured["reason"],
+        "commitment_gate_blocked_selected_action"
+    );
+    assert_eq!(structured["gate"]["blocked"], true);
+    assert_eq!(
+        structured["provider_diagnostics_class"],
+        "bounded-local-policy-rejected"
+    );
+    assert_eq!(stub.request_count().await, 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -91,6 +91,19 @@ async fn main() -> Result<()> {
         }),
     )?)?;
 
+    let decision_before = extract_structured(client.call_tool(
+        "decide_with_snapshot",
+        json!({
+            "task": "review update",
+            "action": "review_conflicting_commitment_update",
+            "snapshot": snapshot_before
+        }),
+    )?)?;
+    write_json(
+        &args.output_dir.join("decision-before.json"),
+        &decision_before,
+    )?;
+
     let _ = client.call_tool(
         "ingest_interaction",
         json!({
@@ -125,19 +138,6 @@ async fn main() -> Result<()> {
     write_json(
         &args.output_dir.join("snapshot-after.json"),
         &snapshot_after,
-    )?;
-
-    let decision_before = extract_structured(client.call_tool(
-        "decide_with_snapshot",
-        json!({
-            "task": "review update",
-            "action": "review_conflicting_commitment_update",
-            "snapshot": snapshot_before
-        }),
-    )?)?;
-    write_json(
-        &args.output_dir.join("decision-before.json"),
-        &decision_before,
     )?;
 
     let decision_after = extract_structured(client.call_tool(

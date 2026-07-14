@@ -17,7 +17,7 @@
 
 ## 2026-07-14 M0.2 收口
 
-当前状态必须与 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 的七个最小切片及限定退出门已于 2026-07-14 收口，下一执行切片是 M0.3 Governance Correctness。M0.3–M0.5 尚未实现，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
+当前状态必须与 [active project plan](plans/2026-07-10-product-replan.md) 一起阅读。项目仍是 source-only、local-first technical MVP；M0.1 / M0.1.1 的仓库与工具链收束已经完成，M0.2 的七个最小切片及限定退出门已于 2026-07-14 收口，M0.3 已完成 trusted decision commitments + dual gate 首个切片。M0.3 整体及 M0.4–M0.5 尚未完成，Local Alpha、Beta、GA 和 production-ready 均未通过对应 gate。
 
 M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/manifest/time 交集、stable recent-first order、scoped auto-reflection、active reflection 与只读 projection 的 event-ID 等价性，以及 offline demo artifact reference。省略 `namespace` 的 legacy MCP 调用仍是 unscoped 兼容路径；完整 recall contract、repository-wide event-ID 统一、support bundle inventory 和 M0.3 治理能力不属于本次完成声明。
 
@@ -27,7 +27,7 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 - `build_self_snapshot` 已增加 additive `evidence_manifest`：只要显式提供 manifest（包括空数组）就必须同时显式提供 `namespace`，并在 query construction 前限制为最多 256 项；DTO、application 与 store 三层都会拒绝未完整收窄或超限的 manifest 查询，且 snapshot 参数会在可选 auto-reflection 之前完成校验；裸 event ID 与 `event:<id>` 会先规范化并保序线性去重，再与 server-owned owner/namespace scope 在 SQLite 查询中同时约束。越 scope ID 被排除；显式空 manifest 或空交集返回空 evidence，不会回退为全 scope。tool operation log 使用 snapshot namespace，auto-reflection 诊断保留独立 namespace。
 - `build_self_snapshot` 已增加 additive `recorded_after` / `recorded_before`：任一时间边界都要求显式 `namespace`，使用 inclusive 边界，RFC3339 输入归一到 UTC，倒置窗口由 DTO / application fail closed。SQLite evidence 查询在同一条 SQL 中取 owner/namespace、manifest（如有）与时间窗交集；SQL 将项目 canonical timestamp 与旧库常见 `Z` / offset 文本转换为固定宽度 UTC 秒 + 9 位小数秒排序键，避免 SQLite date function 折叠亚毫秒差异，再以 `rowid DESC` 稳定 tie-break。episode 按窗口内最新合格事件元组排序，避免独立 `MAX(recorded_at)` / `MAX(rowid)` 来自不同事件。显式窗口空交集保持为空；claims 没有 recorded timestamp，因此仍只做 scope filtering。legacy unbounded snapshot 继续兼容，但 snapshot evidence / episode SQLite 读取已统一 recent-first；手工写入且超出项目 canonical / 常见 legacy 形式的畸形时间文本会 fail closed，而不是扩大 bounded 查询。
 - automatic self-revision 已从触发 namespace 派生完整 owner + namespace scope：先冻结 trigger window，再取授权 scope 与 trigger manifest 的交集，并以该受限窗口构建 revision snapshot 与 episode read；无有效交集保持 fail-closed，不回退到历史全量。active reflection runtime 的 MCP/application/model proposal evidence 输入均接受裸 event ID 与 `event:<id>`，以底层 raw ID 保序去重；SQLite 查询、evidence links、reflection audit 与 auto-reflection diagnostics 的明确 `*_event_ids` 兼容字段继续存取 raw ID，reference-shaped 输出才使用 canonical `event:<id>`。
-- `decide_with_snapshot` 使用调用方提供的 snapshot，只对 requested action 做一次字面量 commitment gate；provider-selected action 尚未复检。它只返回 action、不执行 action，但不能被描述为可信策略执行器。
+- `decide_with_snapshot` 仍接收调用方 snapshot，但 application 会在 gate 与 provider 调用前用当前服务端 commitment store 覆盖其中的 commitments，并对 requested action 与 provider-selected action 复用同一 commitment gate；selected action 被拒绝时返回 blocked、保留被拒绝的 `selected_action`，且 `decision = null`。identity / claims / evidence / episodes 仍是 caller-provided，尚无 server-created snapshot handle、完整 policy binding 或 provenance join，因此仍不能描述为完整可信策略执行器。
 - cross-episode identity support 当前没有 claim → evidence → episode 的真实 join，不能作为成熟的跨 episode 治理语义。
 - `doctor` 会进入 runtime bootstrap，可能创建目录/数据库、建表、迁移、seed baseline commitment 并补默认 identity。报告中的只读 projection 不代表 `doctor` 执行链无写入。
 - legacy SQLite 表重建缺 schema version、migration ledger 和显式事务恢复门；正式数据迁移前必须先补备份、故障注入、readback 和 rollback。

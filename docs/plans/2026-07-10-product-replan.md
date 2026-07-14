@@ -1,6 +1,6 @@
 # MCP Memory Ledger 全新项目规划
 
-状态：`active / M0.2 complete / M0.3 next`
+状态：`active / M0.2 complete / M0.3 in progress`
 规划日期：`2026-07-10`
 规划输入基线：`dev-work@6fcbb5f`
 主线整理基线：`1f7390d`
@@ -203,8 +203,12 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 
 ### M0.3 Governance Correctness
 
-- [ ] `decide_with_snapshot` 使用服务端可信 commitments / policy。
-- [ ] requested action 与 selected action 都经过同一 policy gate。
+首个最小切片（2026-07-14）已实现：`decide_with_snapshot` 在任何 gate 或 provider 调用前读取当前 `CommitmentStore`，以服务端 commitment descriptions 覆盖 caller snapshot commitments；caller 删除或注入 commitment 都不能改变服务端 policy context。requested action 先 gate，provider-selected action 返回后再经过同一 gate；selected action 被拒绝时结果为 `blocked`、`decision = null`，并以 `commitment_gate_blocked_selected_action` 和 `bounded-local-policy-rejected` 暴露有界解释。现有 input schema 与 `ModelDecision { action }` provider contract 不变；identity / claims / evidence / episodes 仍是 caller-provided，M0.3 整体保持开放。
+
+- [x] **M0.3.1 Trusted decision commitments and dual gate**
+
+- 已完成：`decide_with_snapshot` 使用服务端 commitments 作为当前 policy context。
+- 已完成：requested action 与 provider-selected action 都经过同一 commitment gate。
 - [ ] 如果 selected action 不可结构化验证，则返回 non-authoritative / experimental 结果，不能标记 policy passed。
 - [ ] 用 claim → evidence → episode 的真实 join 计算跨 episode 支持。
 - [ ] 治理失败只产生 rejected audit，不留下部分 identity / commitment 更新。
@@ -424,6 +428,6 @@ M2 退出指标：
 - 未发布、未推送、未运行远程或 live-provider 操作。
 - M0.2 已完成七个连续最小切片：snapshot scope、explicit evidence manifest、time window / stable order、scoped auto-reflection snapshot、active reflection runtime event-ID 等价性、只读 evidence/episode projection event-ID 等价性，以及 offline demo artifact event reference。
 
-尚未完成：repository-wide event-ID 统一仍为 partial；support bundle 仅列入后续 inventory，M0.3–M0.5 尚未开始。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
+尚未完成：repository-wide event-ID 统一仍为 partial；support bundle 仅列入后续 inventory；M0.3 整体仍在进行，M0.4–M0.5 尚未开始。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
 
-下一最小工程动作：进入 M0.3 Governance Correctness 的首个独立切片，先用对抗测试冻结 caller-supplied snapshot 不能移除 baseline commitment、provider-selected action 必须经过同一 policy gate 的失败证据；不要同时进入 M0.4、M1 或 support-bundle 清理。
+下一最小工程动作：继续 M0.3 的 provenance correctness 独立切片，定位当前 cross-episode support 的全局数量推断，先以无关 episode 不得计入支持数的对抗测试冻结边界，再实现 claim → evidence → episode 的真实 join；不要同时进入 M0.4、M1 或 support-bundle 清理。

@@ -386,6 +386,16 @@ cargo test --test status_sync
 
 M0.2 只有在 6.3.1–6.3.6 的行为边界由 `fast` / `core` 当前运行覆盖，且 active plan 的 `M0.2 Scoped Snapshot v2` 完成项与 reality-gate 的 `implemented` 行一致时才算收口。该完成状态不证明省略 `namespace` 的 legacy 调用已隔离，不证明完整 memory recall contract、repository-wide event-ID 统一或 support-bundle inventory 已完成，也不授权进入 M0.4、M1、remote 或 release 工作。
 
+### 6.3A M0.3 trusted decision commitments / dual gate 回归
+
+```zsh
+cargo test --test decision_flow -v
+cargo test --test mcp_stdio fresh_stdio_runtime_blocks_forbidden_action_with_seeded_commitment -- --exact
+cargo test --test mcp_stdio provider_selected_forbidden_action_is_blocked_over_stdio -- --exact
+```
+
+这组回归验证：caller 即使从 snapshot 删除 baseline commitment，application 仍从当前 `CommitmentStore` 恢复服务端 policy context，并在 model call 前阻断 requested action；requested action 允许但 provider-selected action 违反同一 commitment 时，结果仍为 blocked、`decision = null`，并保留被拒绝的 `selected_action` 和有界 reason。允许动作继续保持 v2 response envelope 与 provider action-string contract。它不证明其余 caller snapshot 字段可信、完整 policy arbitration、claim → evidence → episode provenance join 或 M0.3 整体完成。
+
 ### 6.4 Provider 合规预检
 
 新增 provider 前先阅读 [Provider Readiness Checklist](provider-contract.md)。下面这组命令只是当前共享 provider 路径的最小验证；如果 checklist 里仍有 `partial` 或 `gap` 且新 provider 依赖该行为，新增 provider 的同一变更必须补齐对应专用回归或记录明确例外。
@@ -646,6 +656,8 @@ cargo test --test provider_config -v
 - `src/bin/demo_openai_compatible_stub.rs`
 - `src/bin/run_self_revision_demo.rs`
 - `scripts/run-self-revision-demo.sh`
+
+runner 必须按时间顺序在 reflection 前生成 `decision-before.json`、在 reflection 后生成 `decision-after.json`。`decide_with_snapshot` 会在每次调用时读取服务端 commitment store，因此不得依靠修订后回放旧 snapshot commitments 来证明 decision shift。
 - `examples/agent-llm-mm.demo.example.toml`
 - automatic self-revision runtime hook / provider / MCP `stdio` 相关代码
 

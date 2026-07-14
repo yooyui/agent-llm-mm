@@ -5,7 +5,7 @@
 ## 当前计划
 
 - [2026-07-10-product-replan.md](2026-07-10-product-replan.md)
-  - 状态：`active / M0.2 complete / M0.3 next`
+  - 状态：`active / M0.2 complete / M0.3 in progress`
   - 目标：把现有 technical MVP 收束为可信、可检索、可审计、可恢复的本地 MCP Memory Ledger
   - 当前里程碑：`M0 Truth and Safety Reset`
 

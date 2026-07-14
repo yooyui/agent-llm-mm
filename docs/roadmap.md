@@ -40,7 +40,7 @@
 
 - 显式 namespace / manifest / time-window 的 M0.2 scoped snapshot 已收口，但省略 namespace 的 legacy 兼容调用仍未隔离，且尚无完整 recall read model；
 - 没有正式的 memory search / get / history MCP 接口；
-- decision gate 只检查调用方请求动作，模型结果未复检；
+- decision 已改用服务端 commitments，并同时 gate requested / provider-selected action；但其他 snapshot 字段仍由 caller 提供，尚无完整 trusted snapshot handle 或 provenance binding；
 - cross-episode 支持没有真实 provenance join；
 - `doctor` 会 create / migrate / seed 数据库，不是纯只读诊断；
 - legacy migration 缺 schema version、migration ledger 和显式事务恢复门；
@@ -57,8 +57,8 @@
 
 1. 统一 active plan、状态与证据入口，清理仓库卫生问题。
 2. **已完成（M0.2，2026-07-14）**：建立 `MemoryScope`，让显式 scoped snapshot 和 auto-reflection 只读取允许的 namespace / trigger window，并使用 recent-first 稳定排序；完成 active reflection、只读 evidence/episode projection 与 offline demo artifact 的限定 event-ID 收口。省略 namespace 的 legacy unscoped 兼容、repository-wide ID 统一和 support bundle inventory 不计入该退出门。
-3. **下一步（M0.3）**：让 decision 使用服务端可信 policy，同时复检 requested / selected action。
-4. 用 claim → evidence → episode 的真实关系替换全局数量推断。
+3. **已完成首个切片（M0.3，2026-07-14）**：decision 使用服务端 commitment store 覆盖 caller commitments，同时复检 requested / provider-selected action；被拒绝的 selected action 不返回 authoritative decision payload。
+4. **下一步（M0.3）**：用 claim → evidence → episode 的真实关系替换全局数量推断，并保持治理失败无部分写入。
 5. 拆分 `init`、`migrate`、`doctor --read-only` 与显式 bootstrap。
 6. 建立 schema version、事务 migration、备份、故障注入和恢复验证。
 7. 无认证阶段强制 dashboard loopback。

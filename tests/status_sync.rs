@@ -37,6 +37,12 @@ fn active_plan_and_reality_gate_documents_are_in_sync() {
             .contains(&"M0.2 Scoped Snapshot v2".to_string()),
         "active plan must expose the completed M0.2 milestone as a checkbox"
     );
+    assert!(
+        report
+            .completed_plan_items
+            .contains(&"M0.3.1 Trusted decision commitments and dual gate".to_string()),
+        "active plan must expose the completed M0.3.1 slice as a checkbox"
+    );
 
     assert!(
         report.is_in_sync(),

@@ -6,11 +6,13 @@ use std::sync::{
 use agent_llm_mm::{
     application::decide_with_snapshot::{DecideWithSnapshotInput, execute},
     domain::{
+        commitment::Commitment,
         self_revision::{SelfRevisionProposal, SelfRevisionRequest},
         snapshot::SelfSnapshot,
+        types::Owner,
     },
     error::AppError,
-    ports::{ModelDecision, ModelDecisionRequest, ModelPort},
+    ports::{CommitmentStore, ModelDecision, ModelDecisionRequest, ModelPort},
 };
 use async_trait::async_trait;
 use serde_json::json;
@@ -83,6 +85,55 @@ async fn decision_returns_blocked_without_calling_model_when_gate_fails() {
 }
 
 #[tokio::test]
+async fn caller_snapshot_cannot_remove_server_commitment() {
+    let deps = test_support::deps_with_blocking_commitment();
+    let mut input = test_support::blocked_decision_input();
+    input.snapshot.commitments.clear();
+
+    let result = execute(&deps, input).await.unwrap();
+
+    assert!(result.blocked);
+    assert!(result.decision.is_none());
+    assert_eq!(result.requested_action, "write_identity_core_directly");
+    assert_eq!(result.selected_action, None);
+    assert_eq!(deps.model_call_count(), 0);
+}
+
+#[tokio::test]
+async fn provider_selected_action_is_rechecked_against_server_commitments() {
+    let deps = test_support::deps_with_forbidden_selected_action();
+
+    let result = execute(&deps, test_support::decision_input())
+        .await
+        .unwrap();
+
+    assert!(result.blocked);
+    assert!(result.decision.is_none());
+    assert_eq!(result.requested_action, "read_identity_core");
+    assert_eq!(
+        result.selected_action.as_deref(),
+        Some("write_identity_core_directly")
+    );
+    assert_eq!(result.status, "blocked");
+    assert_eq!(
+        result.reason.as_deref(),
+        Some("commitment_gate_blocked_selected_action")
+    );
+    assert!(result.gate.blocked);
+    assert_eq!(
+        result.provider_diagnostics_class,
+        "bounded-local-policy-rejected"
+    );
+    assert_eq!(deps.model_call_count(), 1);
+
+    let request = deps.last_request().expect("model should receive request");
+    assert_eq!(
+        request.snapshot.commitments,
+        vec!["forbid:write_identity_core_directly".to_string()]
+    );
+}
+
+#[tokio::test]
 async fn mock_model_receives_snapshot_context_when_gate_passes() {
     let deps = test_support::deps_with_mock_model();
     let input = test_support::decision_input();
@@ -150,6 +201,11 @@ mod test_support {
             model: Arc::new(MockModel),
             model_calls: Arc::new(AtomicUsize::new(0)),
             last_request: Arc::new(Mutex::new(None)),
+            server_commitments: vec![Commitment::new(
+                Owner::Self_,
+                "forbid:write_identity_core_directly",
+            )],
+            selected_action_override: None,
             snapshot: SelfSnapshot {
                 identity: vec!["identity:self=architect".to_string()],
                 commitments: vec!["forbid:write_identity_core_directly".to_string()],
@@ -165,6 +221,8 @@ mod test_support {
             model: Arc::new(MockModel),
             model_calls: Arc::new(AtomicUsize::new(0)),
             last_request: Arc::new(Mutex::new(None)),
+            server_commitments: Vec::new(),
+            selected_action_override: None,
             snapshot: SelfSnapshot {
                 identity: vec!["identity:self=architect".to_string()],
                 commitments: Vec::new(),
@@ -173,6 +231,13 @@ mod test_support {
                 episodes: vec!["episode:task-6".to_string()],
             },
         }
+    }
+
+    pub fn deps_with_forbidden_selected_action() -> DecisionDeps {
+        let mut deps = deps_with_blocking_commitment();
+        deps.snapshot.commitments.clear();
+        deps.selected_action_override = Some("write_identity_core_directly".to_string());
+        deps
     }
 
     pub fn blocked_decision_input() -> DecideWithSnapshotInput {
@@ -196,6 +261,8 @@ mod test_support {
         pub model: Arc<MockModel>,
         pub model_calls: Arc<AtomicUsize>,
         pub last_request: Arc<Mutex<Option<ModelDecisionRequest>>>,
+        pub server_commitments: Vec<Commitment>,
+        pub selected_action_override: Option<String>,
         pub snapshot: SelfSnapshot,
     }
 
@@ -210,10 +277,20 @@ mod test_support {
     }
 
     #[async_trait]
+    impl CommitmentStore for DecisionDeps {
+        async fn list_commitments(&self) -> Result<Vec<Commitment>, AppError> {
+            Ok(self.server_commitments.clone())
+        }
+    }
+
+    #[async_trait]
     impl ModelPort for DecisionDeps {
         async fn decide(&self, request: ModelDecisionRequest) -> Result<ModelDecision, AppError> {
             self.model_calls.fetch_add(1, Ordering::SeqCst);
             *self.last_request.lock().unwrap() = Some(request.clone());
+            if let Some(selected_action) = &self.selected_action_override {
+                return Ok(ModelDecision::new(selected_action.clone()));
+            }
             self.model.decide(request).await
         }
 

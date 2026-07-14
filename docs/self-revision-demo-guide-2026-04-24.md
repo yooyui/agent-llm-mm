@@ -32,6 +32,8 @@ target/reports/self-revision-demo/<timestamp>/
 
 脚本会先构建本地二进制，再运行 `run_self_revision_demo`。demo runner 会启动本地 deterministic `openai-compatible` stub provider，并通过真实 MCP `stdio` 服务调用现有 4 个 tool。
 
+`decision-before.json` 会在 reflection 写入前通过真实 `decide_with_snapshot` 调用生成；`decision-after.json` 会在 reflection 写入并重新构建 snapshot 后生成。两次调用都读取调用时刻的服务端 commitment store，不依赖在修订后回放旧 snapshot 来制造 before / after 差异。
+
 ## 产物
 
 运行完成后应能看到：
