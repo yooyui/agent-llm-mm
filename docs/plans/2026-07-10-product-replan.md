@@ -1,6 +1,6 @@
 # MCP Memory Ledger 全新项目规划
 
-状态：`active / M0.2-M0.5 complete / M1 active / M1.1.1 complete`
+状态：`active / M0.2-M0.5 complete / M1 active / M1.1.1 and M1.2.1 complete`
 规划日期：`2026-07-10`
 规划输入基线：`dev-work@6fcbb5f`
 主线整理基线：`1f7390d`
@@ -31,7 +31,7 @@ MCP Memory Ledger 已经拥有可运行的 Rust + SQLite + MCP `stdio` 核心、
 ### 2.1 已实现
 
 - 单一 Rust crate，正式 CLI 为 `serve` 与 `doctor`。
-- MCP `stdio` 运行时暴露 5 个工具：`ingest_interaction`、`search_memory`、`build_self_snapshot`、`decide_with_snapshot`、`run_reflection`。其中 `search_memory` 当前只覆盖显式 scope 的 event 读取首片。
+- MCP `stdio` 运行时暴露 6 个工具：`ingest_interaction`、`search_memory`、`get_memory`、`build_self_snapshot`、`decide_with_snapshot`、`run_reflection`。其中 `search_memory` / `get_memory` 当前只覆盖显式 scope 的 event 读取首片。
 - SQLite 持久化 events、claims、evidence links、episode events、reflections、trigger ledger、identity、commitments 和 operation log。
 - ingest 与 reflection 具备事务边界；`run_reflection` 是当前 identity / commitments 的唯一 durable write path。
 - mock、OpenAI-compatible 和 OpenRouter provider 路径存在。
@@ -272,6 +272,11 @@ M0 是唯一允许立即领取的里程碑。没有通过 M0，不能开始新 p
 
 ### M1.2 MCP Memory Contract
 
+- [x] **M1.2.1 Scoped Event Lookup**
+
+- 已完成（2026-07-15）：新增 additive `get_memory(namespace, id)`，按 stable event reference 复用同一显式 scope read service；命中时返回与 `search_memory` 相同的完整 event/provenance record，未命中或 ID 属于其他 scope 时成功返回 `record: null`，不回退全库查询。
+- 该完成项只代表 event-only lookup，不代表 claim/episode/reflection lookup、通用 record union、history 或 correction contract 完成。
+
 第一批建议接口：
 
 - `search_memory`：按 scope、文本/结构过滤、时间范围、类型和 limit 检索。
@@ -456,4 +461,4 @@ M2 退出指标：
 
 M0 已收口。仍属于后续路线图而非本轮完成声明的项目包括：repository-wide event-ID 统一、完整 recall contract、support bundle inventory、server-created snapshot handle、structured action validation、完整 policy arbitration、真实 binary package、fresh-machine 与 Windows runtime parity。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
 
-当前里程碑是 M1 Trustworthy Recall；M1.1.1 event recall 首片已完成，后续仍须按独立最小切片推进。remote、tasks、OAuth、daemon writes、provider 扩张和正式发布仍不因 M0 或该首片完成而获得授权。
+当前里程碑是 M1 Trustworthy Recall；M1.1.1 event recall 与 M1.2.1 event lookup 两个首片已完成，后续仍须按独立最小切片推进。remote、tasks、OAuth、daemon writes、provider 扩张和正式发布仍不因 M0 或这两个首片完成而获得授权。

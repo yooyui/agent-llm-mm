@@ -22,7 +22,7 @@ use crate::{
         auto_reflect_if_needed::{self, AutoReflectInput, RecursionGuard},
         build_self_snapshot,
         daemon::DaemonHandle,
-        decide_with_snapshot, ingest_interaction,
+        decide_with_snapshot, get_memory, ingest_interaction,
         ingest_interaction::IngestInput,
         run_reflection,
         run_reflection::ReflectionInput,
@@ -53,7 +53,7 @@ use crate::{
 };
 
 use super::dto::{
-    BuildSelfSnapshotParams, DecideWithSnapshotParams, IngestInteractionParams,
+    BuildSelfSnapshotParams, DecideWithSnapshotParams, GetMemoryParams, IngestInteractionParams,
     RunReflectionParams, SearchMemoryParams,
 };
 
@@ -340,6 +340,61 @@ impl Server {
                         "record_type": "event",
                         "result_count": result.records.len(),
                     })),
+            )
+            .await;
+        structured(result)
+    }
+
+    #[tool(
+        description = "Get one complete event record by stable ID inside one explicit local memory namespace. A missing or cross-scope record returns null without widening the query.",
+        input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<GetMemoryParams>>()
+    )]
+    async fn get_memory(&self, raw_params: JsonObject) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
+        let params = map_tool_error(
+            &self.runtime,
+            "get_memory",
+            None,
+            Some(correlation_id.clone()),
+            decode_tool_params::<GetMemoryParams>(raw_params),
+        )
+        .await?;
+        let dashboard_namespace = Some(params.namespace.clone());
+        let input = map_tool_error(
+            &self.runtime,
+            "get_memory",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            get_memory::GetMemoryInput::try_from(params),
+        )
+        .await?;
+        let result = map_tool_error(
+            &self.runtime,
+            "get_memory",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            get_memory::execute(&self.runtime, input).await,
+        )
+        .await?;
+        let found = result.record.is_some();
+        self.runtime.dashboard.record_tool_ok(
+            "get_memory",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            if found {
+                "memory lookup found one event record"
+            } else {
+                "memory lookup found no event record"
+            }
+            .to_string(),
+            &serde_json::json!({"record_type": "event", "found": found}),
+        );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok("get_memory", dashboard_namespace, Some(correlation_id))
+                    .with_response_summary(
+                        serde_json::json!({"record_type": "event", "found": found}),
+                    ),
             )
             .await;
         structured(result)

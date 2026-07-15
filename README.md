@@ -12,7 +12,7 @@ The current project is best understood as a technical MVP for local agent memory
 
 ## Features
 
-- **Local MCP memory service**: exposes `ingest_interaction`, `search_memory`, `build_self_snapshot`, `decide_with_snapshot`, and `run_reflection` over MCP `stdio`.
+- **Local MCP memory service**: exposes `ingest_interaction`, `search_memory`, `get_memory`, `build_self_snapshot`, `decide_with_snapshot`, and `run_reflection` over MCP `stdio`.
 - **Scoped event recall**: `search_memory` requires an explicit namespace and returns bounded recent-first event records with stable canonical IDs, timestamps, scope, kind, summary, and persisted claim/episode provenance. The deterministic read path does not call a model provider.
 - **SQLite persistence**: stores events, claims, evidence, reflection audits, trigger ledger entries, and operation logs.
 - **Evidence-gated self-revision**: claim, identity, and commitment updates must be backed by explicit evidence and governance rules. `run_reflection` remains the only durable write path for identity, commitment, and reflection changes.
@@ -90,6 +90,7 @@ Implemented:
 - Explicit SQLite schema version / migration ledger, transactional legacy migration, pre-write backup and restore rehearsal
 - Loopback-only enabled dashboard configuration, stderr-only tracing, and Linux/macOS source CI on pinned Rust `1.95.0`
 - M1.1.1 scoped event recall through the additive `search_memory` MCP tool; cross-namespace exact-ID matches return empty and semantic memory tables remain unchanged by reads
+- M1.2.1 scoped event lookup through additive `get_memory`; a missing or cross-namespace stable ID returns `record: null` without widening
 
 Partially implemented:
 
@@ -114,7 +115,7 @@ Partially implemented:
 Not implemented:
 
 - Full memory layering
-- Complete cross-record memory search, `get_memory`, provenance/reflection history, and audited correction tools
+- Complete cross-record memory search/lookup, provenance/reflection history, and audited correction tools
 - Richer evidence ranking / weighting
 - Production-grade remote, team, or multi-tenant mode
 - Daemon write capabilities and autonomous background operation

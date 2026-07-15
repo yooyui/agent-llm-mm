@@ -39,9 +39,9 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 
 新的优先级是：`Truth and Safety -> Trustworthy Recall -> Local Product Alpha -> Retrieval Quality -> optional Remote/Autonomy`。旧 productization、P1/P2/P3 和 non-MVP plans 保留为历史记录，不再决定下一步。
 
-## 2026-07-15 M1.1.1 scoped event recall 首片
+## 2026-07-15 M1.1.1 / M1.2.1 scoped event read 首片
 
-M1 已开始，但仅有第一个 event-only 读取切片完成。新增的 `search_memory` MCP 工具要求显式 `namespace`，服务端据此派生 owner，并在 SQLite 查询内先按 owner + namespace 过滤，再应用 exact event reference、kind、inclusive RFC3339 time window、recent-first 稳定排序和 `1..=100` limit。返回记录保留 canonical `event:<id>`、recorded_at、owner、namespace、kind、summary，以及从现有 `evidence_links` 和 `episode_events` 批量读取的 claim IDs / episode references。
+M1 已开始，当前完成两个 event-only 读取切片。`search_memory` MCP 工具要求显式 `namespace`，服务端据此派生 owner，并在 SQLite 查询内先按 owner + namespace 过滤，再应用 exact event reference、kind、inclusive RFC3339 time window、recent-first 稳定排序和 `1..=100` limit。`get_memory` 复用同一 read service，按 stable event ID 返回单条记录；未命中或跨 scope ID 返回 `record: null`。记录保留 canonical `event:<id>`、recorded_at、owner、namespace、kind、summary，以及从现有 `evidence_links` 和 `episode_events` 批量读取的 claim IDs / episode references。
 
 该路径使用独立 application/port，不复用 reflection evidence narrowing，不调用 model provider，也不修改 events、claims、evidence、episodes、reflections、identity 或 commitments；MCP handler 只追加不含查询正文的 operation-log metadata。真实 `stdio` 回归覆盖 project/a 与 project/b 干扰、exact-ID no-widening、非法参数 fail-closed、断开重连和不可达 provider。它仍不代表完整 Read Model v2、文本/FTS/向量检索、claim/episode/reflection 统一读取、`get_memory`、历史、supersede/correction、真实客户端 M1 退出门或 Local Alpha。
 
@@ -61,10 +61,11 @@ M1 已开始，但仅有第一个 event-only 读取切片完成。新增的 `sea
 
 `events -> claims -> self_snapshot -> decision -> reflection`
 
-对应到 MCP 工具层，当前可用的 5 个工具是：
+对应到 MCP 工具层，当前可用的 6 个工具是：
 
 - `ingest_interaction`
 - `search_memory`
+- `get_memory`
 - `build_self_snapshot`
 - `decide_with_snapshot`
 - `run_reflection`

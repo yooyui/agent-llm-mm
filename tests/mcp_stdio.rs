@@ -31,6 +31,7 @@ async fn server_exposes_expected_tools_over_stdio() {
         vec![
             "build_self_snapshot".to_string(),
             "decide_with_snapshot".to_string(),
+            "get_memory".to_string(),
             "ingest_interaction".to_string(),
             "run_reflection".to_string(),
             "search_memory".to_string(),
@@ -120,6 +121,80 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
         .and_then(Value::as_array)
         .expect("search_memory schema should expose required fields");
     assert_eq!(search_required, &[json!("namespace")]);
+
+    let get_schema = tools
+        .iter()
+        .find(|tool| tool.name == "get_memory")
+        .map(|tool| &tool.input_schema)
+        .expect("get_memory tool schema");
+    let get_required = get_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .expect("get_memory schema should expose required fields");
+    assert_eq!(get_required, &[json!("namespace"), json!("id")]);
+}
+
+#[tokio::test]
+async fn get_memory_returns_one_scoped_event_or_null_without_widening() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/get-a",
+                    "kind": "Action",
+                    "summary": "lookup this exact event"
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:get-a"
+            }),
+        )
+        .await
+        .unwrap();
+    let event_id = ingest["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap();
+
+    let found = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/get-a",
+                "id": format!("event:{event_id}")
+            }),
+        )
+        .await
+        .unwrap();
+    let result = &found["result"]["structuredContent"];
+    assert_eq!(result["owner"], "World");
+    assert_eq!(result["namespace"], "project/get-a");
+    assert_eq!(result["record"]["id"], format!("event:{event_id}"));
+    assert_eq!(result["record"]["record_type"], "event");
+    assert_eq!(result["record"]["summary"], "lookup this exact event");
+    assert_eq!(
+        result["record"]["provenance"]["episode_references"],
+        json!(["episode:get-a"])
+    );
+
+    let wrong_scope = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/get-b",
+                "id": format!("event:{event_id}")
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(wrong_scope["result"]["structuredContent"]["record"].is_null());
+
+    let invalid = client
+        .call_tool("get_memory", json!({"id": format!("event:{event_id}")}))
+        .await
+        .unwrap();
+    assert_eq!(invalid["error"]["code"], -32602);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3047,7 +3122,7 @@ required = true
         .expect("client");
 
     let tools = client.list_all_tools().await.expect("list tools");
-    assert_eq!(tools.len(), 5);
+    assert_eq!(tools.len(), 6);
 
     let health: serde_json::Value = reqwest::get(format!("http://127.0.0.1:{port}/api/health"))
         .await
@@ -3126,7 +3201,7 @@ max_concurrent_tasks = 1
             .await
             .unwrap();
     let tools = client.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 5);
+    assert_eq!(tools.len(), 6);
 
     client
         .call_tool(

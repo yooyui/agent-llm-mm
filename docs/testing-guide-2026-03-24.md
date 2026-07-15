@@ -451,6 +451,7 @@ M0.4 不证明 remote backup、scheduled backup、cloud sync、production disast
 ```zsh
 cargo test --test sqlite_store sqlite_event_recall -v
 cargo test --test mcp_stdio search_memory -v
+cargo test --test mcp_stdio get_memory_returns_one_scoped_event_or_null_without_widening -v
 cargo test --test mcp_stdio server_exposes_expected_tools_over_stdio -v
 cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -v
 cargo test --test status_sync -v
@@ -459,7 +460,7 @@ cargo test --test status_sync -v
 
 这组回归证明：`search_memory` 只接受显式 namespace；SQLite 在 limit 前执行 owner + namespace 收窄，exact ID 不会跨 scope 命中；完整 event 字段和现有 claim/episode provenance 可读；倒置时间窗、零/超限 limit 和非法 namespace 返回 invalid params；空结果不扩大；断开并重连同一 SQLite 后，即使 provider 不可达，deterministic read path 仍可用；读取不修改 semantic memory tables，operation log 只保存 record type 和 result count。
 
-该证据只完成 `M1.1.1 Scoped Event Recall Read Model`，不证明完整 M1.1/M1、文本检索、跨记录类型统一查询、`get_memory`、history、supersession/correction、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha。
+该证据只完成 `M1.1.1 Scoped Event Recall Read Model` 与 `M1.2.1 Scoped Event Lookup`，不证明完整 M1.1/M1.2/M1、文本检索、跨记录类型统一查询、history、supersession/correction、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha。
 
 ### 6.4 Provider 合规预检
 

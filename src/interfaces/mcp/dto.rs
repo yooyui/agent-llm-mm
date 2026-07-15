@@ -6,6 +6,7 @@ use crate::{
         auto_reflect_if_needed::AutoReflectInput,
         build_self_snapshot::BuildSelfSnapshotInput,
         decide_with_snapshot::DecideWithSnapshotInput,
+        get_memory::GetMemoryInput,
         ingest_interaction::IngestInput,
         run_reflection::ReflectionInput,
         search_memory::{DEFAULT_SEARCH_MEMORY_LIMIT, SearchMemoryInput},
@@ -447,6 +448,23 @@ pub struct SearchMemoryParams {
     pub recorded_after: Option<String>,
     #[serde(default)]
     pub recorded_before: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GetMemoryParams {
+    pub namespace: String,
+    pub id: String,
+}
+
+impl TryFrom<GetMemoryParams> for GetMemoryInput {
+    type Error = AppError;
+
+    fn try_from(value: GetMemoryParams) -> Result<Self, Self::Error> {
+        Ok(Self {
+            namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
+            id: EventReference::parse(value.id).map_err(AppError::from)?,
+        })
+    }
 }
 
 impl TryFrom<SearchMemoryParams> for SearchMemoryInput {
