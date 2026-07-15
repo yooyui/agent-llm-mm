@@ -348,7 +348,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Get one complete event record by stable ID inside one explicit local memory namespace. A missing or cross-scope record returns null without widening the query.",
+        description = "Get one complete event or claim record by stable ID inside one explicit local memory namespace. Omitted record_type preserves Event behavior; Claim lookup requires record_type Claim. Canonical and raw IDs are supported. A missing or cross-scope record returns null without widening the query.",
         input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<GetMemoryParams>>()
     )]
     async fn get_memory(&self, raw_params: JsonObject) -> Result<CallToolResult, McpError> {
@@ -370,6 +370,7 @@ impl Server {
             get_memory::GetMemoryInput::try_from(params),
         )
         .await?;
+        let record_type = input.id.record_type();
         let result = map_tool_error(
             &self.runtime,
             "get_memory",
@@ -384,18 +385,17 @@ impl Server {
             dashboard_namespace.clone(),
             Some(correlation_id.clone()),
             if found {
-                "memory lookup found one event record"
+                format!("memory lookup found one {} record", record_type.as_str())
             } else {
-                "memory lookup found no event record"
-            }
-            .to_string(),
-            &serde_json::json!({"record_type": "event", "found": found}),
+                format!("memory lookup found no {} record", record_type.as_str())
+            },
+            &serde_json::json!({"record_type": record_type.as_str(), "found": found}),
         );
         self.runtime
             .record_tool_operation(
                 ToolOperationRecord::ok("get_memory", dashboard_namespace, Some(correlation_id))
                     .with_response_summary(
-                        serde_json::json!({"record_type": "event", "found": found}),
+                        serde_json::json!({"record_type": record_type.as_str(), "found": found}),
                     ),
             )
             .await;

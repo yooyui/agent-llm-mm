@@ -446,13 +446,14 @@ bash -n scripts/agent-llm-mm.sh scripts/first-run-bootstrap-smoke-local.sh scrip
 
 M0.4 不证明 remote backup、scheduled backup、cloud sync、production disaster recovery，或超出 SQLite 事务语义的 crash/power-loss guarantee。
 
-### 6.3F M1.1.1 / M1.1.2 / M1.2.1 scoped read model 回归
+### 6.3F M1.1.1 / M1.1.2 / M1.2.1 / M1.2.2 scoped read model 回归
 
 ```zsh
 cargo test --test sqlite_store sqlite_event_recall -v
 cargo test --test sqlite_store sqlite_claim_recall_is_scoped_status_aware_and_returns_provenance -v
 cargo test --test domain_snapshot raw_and_prefixed_claim_ids_share_one_canonical_reference -v
 cargo test --test domain_snapshot invalid_claim_references_are_rejected -v
+cargo test --test evidence_query_dto get_memory_dto -v
 cargo test --test mcp_stdio search_memory -v
 cargo test --test mcp_stdio search_memory_returns_scoped_claims_with_revision_provenance_over_stdio -v
 cargo test --test mcp_stdio get_memory_returns_one_scoped_event_or_null_without_widening -v
@@ -462,9 +463,9 @@ cargo test --test status_sync -v
 ./scripts/status-sync-check.sh
 ```
 
-这组回归证明：`search_memory` 只接受显式 namespace，且省略 additive `record_type` 时继续使用 Event；SQLite 在 filter / limit 前执行 owner + namespace 收窄，exact Event/Claim reference 都不会跨 scope 命中。Event 路径保留完整字段与现有 claim/episode provenance；Claim 路径支持 canonical/raw `claim_reference`、`claim_status`、`mode` 和 `1..=100` limit，省略 status 默认 `Active`，并返回 canonical claim/evidence references、episode references 与直接 source/superseded reflection links。Claim 查询拒绝 event/time filters，因为 claims 没有 stored `recorded_at`。空结果不扩大；断开并重连同一 SQLite 后，即使 provider 不可达，deterministic read path 仍可用；读取不修改 semantic memory tables，operation log 只保存 record type 和 result count。
+这组回归证明：`search_memory` 只接受显式 namespace，且省略 additive `record_type` 时继续使用 Event；SQLite 在 filter / limit 前执行 owner + namespace 收窄，exact Event/Claim reference 都不会跨 scope 命中。Event 路径保留完整字段与现有 claim/episode provenance；Claim 路径支持 canonical/raw `claim_reference`、`claim_status`、`mode` 和 `1..=100` limit，省略 status 默认 `Active`，并返回 canonical claim/evidence references、episode references 与直接 source/superseded reflection links。`get_memory` 省略 `record_type` 时保持 canonical/raw Event ID 语义，显式 `record_type = Claim` 时接受 canonical/raw Claim ID；精确 Claim lookup 可返回任意状态，但 missing / cross-scope 仍为 `record: null`。DTO 回归还覆盖 raw Event ID `claim:*` 不被误判为 Claim。Claim 查询拒绝 event/time filters，因为 claims 没有 stored `recorded_at`。空结果不扩大；断开并重连同一 SQLite 后，即使 provider 不可达，deterministic read path 仍可用；读取不修改 semantic memory tables，operation log 只保存 record type 和 result count/found。
 
-该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read` 与 `M1.2.1 Scoped Event Lookup`，不证明 `get_memory` Claim lookup、episode/reflection record union、完整 M1.1/M1.2/M1、文本检索、history、supersession/correction、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha。
+该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.2.1 Scoped Event Lookup` 与 `M1.2.2 Scoped Claim Lookup`，不证明 episode/reflection record union、完整 M1.1/M1.2/M1、文本检索、history、supersession/correction、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha。
 
 ### 6.4 Provider 合规预检
 

@@ -151,7 +151,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 
 - `ingest_interaction`
 - `search_memory`（M1.1.1 Event 与 M1.1.2 Claim recall 首片；显式 `namespace` 必填，provider 离线可用；省略 `record_type` 时仍为 Event）
-- `get_memory`（M1.2.1 event-only 首片；显式 `namespace` + stable `id` 必填，跨 scope 返回 `record: null`）
+- `get_memory`（M1.2.1 Event + M1.2.2 Claim lookup 首片；显式 `namespace` + stable `id` 必填；省略 `record_type` 保持 Event，Claim 要求显式 `record_type = Claim`；跨 scope 返回 `record: null`）
 - `build_self_snapshot`
 - `run_reflection`
 - `doctor` / `serve`
@@ -163,7 +163,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - `search_memory` 的 Event 路径支持 exact event reference、event kind、inclusive RFC3339 time window 和 `1..=100` limit；返回 canonical event ID、scope、时间、摘要和 claim/episode provenance。
 - additive `record_type = Claim` 路径支持 canonical/raw `claim_reference`、`claim_status`、`mode` 和 `1..=100` limit；省略 `claim_status` 时默认 `Active`。结果包含 canonical `claim:<id>`、subject/predicate/object、mode/status、canonical evidence event references、episode references 和直接 source/superseded reflection links。claims 没有 stored `recorded_at`，因此该路径拒绝 event reference、event kind 与时间过滤。
 - 两种 `search_memory` 路径都先在 SQLite 按 server-derived owner + namespace 收窄，再应用 filter/limit；它们只读、provider-free，跨 scope exact reference 返回空结果。当前仍不是完整跨类型 lookup/history/correction 合同。
-- `get_memory` 复用相同 scoped read service 返回单条 event；它不提供 unscoped existence probe，也不代表其他 record type 或 history 已完成。
+- `get_memory` 复用相同 scoped read service 返回单条 Event 或 Claim。省略 `record_type` 时保持原 Event 语义，包括 raw Event ID；Claim 要求显式 `record_type = Claim`，并接受 canonical/raw Claim ID，从而避免 `claim:*` raw Event ID 的判型歧义。精确 Claim lookup 不套用 search 的默认 Active 过滤，因此 Active、Disputed、Superseded 都可按 ID 返回。它不提供 unscoped existence probe，也不代表 episode/reflection lookup 或完整 history 已完成。
 - trigger-ledger-backed automatic self-revision MVP
   - 当前 MCP-wired automatic path 只有 4 条：
     - `ingest_interaction -> failure`

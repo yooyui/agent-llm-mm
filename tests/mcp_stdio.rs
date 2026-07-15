@@ -136,6 +136,10 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
         .and_then(Value::as_array)
         .expect("get_memory schema should expose required fields");
     assert_eq!(get_required, &[json!("namespace"), json!("id")]);
+    assert!(
+        get_schema["properties"].get("record_type").is_some(),
+        "get_memory schema should expose optional record_type: {get_schema:?}"
+    );
 }
 
 #[tokio::test]
@@ -182,6 +186,21 @@ async fn get_memory_returns_one_scoped_event_or_null_without_widening() {
         json!(["episode:get-a"])
     );
 
+    let raw_event_id = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/get-a",
+                "id": event_id
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        raw_event_id["result"]["structuredContent"]["record"]["id"],
+        format!("event:{event_id}")
+    );
+
     let wrong_scope = client
         .call_tool(
             "get_memory",
@@ -199,6 +218,19 @@ async fn get_memory_returns_one_scoped_event_or_null_without_widening() {
         .await
         .unwrap();
     assert_eq!(invalid["error"]["code"], -32602);
+
+    let invalid_claim = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/get-a",
+                "id": "claim:",
+                "record_type": "Claim"
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(invalid_claim["error"]["code"], -32602);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1689,6 +1721,80 @@ async fn search_memory_returns_scoped_claims_with_revision_provenance_over_stdio
         old_record["provenance"]["replacement_claim_reference"],
         format!("claim:{replacement_claim_id}")
     );
+
+    let old_lookup = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/claim-a",
+                "id": format!("claim:{old_claim_id}"),
+                "record_type": "Claim"
+            }),
+        )
+        .await
+        .unwrap();
+    let old_lookup_record = &old_lookup["result"]["structuredContent"]["record"];
+    assert_eq!(old_lookup_record["id"], format!("claim:{old_claim_id}"));
+    assert_eq!(old_lookup_record["status"], "Superseded");
+    assert_eq!(
+        old_lookup_record["provenance"]["replacement_claim_reference"],
+        format!("claim:{replacement_claim_id}")
+    );
+
+    let active_lookup = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/claim-a",
+                "id": replacement_claim_id,
+                "record_type": "Claim"
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        active_lookup["result"]["structuredContent"]["record"]["status"],
+        "Active"
+    );
+
+    let cross_scope_lookup = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/claim-a",
+                "id": format!("claim:{project_b_claim_id}"),
+                "record_type": "Claim"
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        cross_scope_lookup["result"]["structuredContent"]["record"].is_null(),
+        "claim lookup must not widen across namespaces"
+    );
+
+    let missing_lookup = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/claim-a",
+                "id": "claim:missing-claim",
+                "record_type": "Claim"
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(missing_lookup["result"]["structuredContent"]["record"].is_null());
+
+    let get_operation = sqlx::query(
+        "SELECT response_summary_json FROM operation_log WHERE entrypoint = 'get_memory' ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let get_summary: Value =
+        serde_json::from_str(&get_operation.get::<String, _>("response_summary_json")).unwrap();
+    assert_eq!(get_summary, json!({"record_type": "claim", "found": false}));
 
     let cross_scope = client
         .call_tool(

@@ -6,7 +6,7 @@ use crate::{
         auto_reflect_if_needed::AutoReflectInput,
         build_self_snapshot::BuildSelfSnapshotInput,
         decide_with_snapshot::DecideWithSnapshotInput,
-        get_memory::GetMemoryInput,
+        get_memory::{GetMemoryInput, MemoryRecordReference},
         ingest_interaction::IngestInput,
         run_reflection::ReflectionInput,
         search_memory::{DEFAULT_SEARCH_MEMORY_LIMIT, MemoryRecordType, SearchMemoryInput},
@@ -494,15 +494,29 @@ pub struct SearchMemoryParams {
 pub struct GetMemoryParams {
     pub namespace: String,
     pub id: String,
+    #[serde(default)]
+    pub record_type: Option<MemoryRecordTypeDto>,
 }
 
 impl TryFrom<GetMemoryParams> for GetMemoryInput {
     type Error = AppError;
 
     fn try_from(value: GetMemoryParams) -> Result<Self, Self::Error> {
+        let record_type = value
+            .record_type
+            .map(MemoryRecordType::from)
+            .unwrap_or(MemoryRecordType::Event);
+        let id = match record_type {
+            MemoryRecordType::Event => MemoryRecordReference::Event(
+                EventReference::parse(value.id).map_err(AppError::from)?,
+            ),
+            MemoryRecordType::Claim => MemoryRecordReference::Claim(
+                ClaimReference::parse(value.id).map_err(AppError::from)?,
+            ),
+        };
         Ok(Self {
             namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
-            id: EventReference::parse(value.id).map_err(AppError::from)?,
+            id,
         })
     }
 }

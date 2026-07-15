@@ -1,10 +1,51 @@
 use agent_llm_mm::{
-    application::build_self_snapshot::BuildSelfSnapshotInput,
+    application::{
+        build_self_snapshot::BuildSelfSnapshotInput,
+        get_memory::{GetMemoryInput, MemoryRecordReference},
+    },
     domain::{event::MAX_EVIDENCE_MANIFEST_ITEMS, types::Owner},
-    interfaces::mcp::dto::{BuildSelfSnapshotParams, EvidenceQueryDto},
+    interfaces::mcp::dto::{
+        BuildSelfSnapshotParams, EvidenceQueryDto, GetMemoryParams, MemoryRecordTypeDto,
+    },
     ports::EvidenceQuery,
 };
 use chrono::{DateTime, Utc};
+
+#[test]
+fn get_memory_dto_defaults_ambiguous_raw_ids_to_event_for_compatibility() {
+    let input = GetMemoryInput::try_from(GetMemoryParams {
+        namespace: "project/dto".to_string(),
+        id: "claim:legacy-event-id".to_string(),
+        record_type: None,
+    })
+    .expect("omitted record type should preserve Event parsing");
+
+    match input.id {
+        MemoryRecordReference::Event(reference) => {
+            assert_eq!(reference.event_id(), "claim:legacy-event-id");
+        }
+        MemoryRecordReference::Claim(_) => panic!("omitted record type must not select Claim"),
+    }
+}
+
+#[test]
+fn get_memory_dto_uses_explicit_claim_type_for_raw_or_canonical_claim_ids() {
+    for id in ["stored-claim-id", "claim:stored-claim-id"] {
+        let input = GetMemoryInput::try_from(GetMemoryParams {
+            namespace: "project/dto".to_string(),
+            id: id.to_string(),
+            record_type: Some(MemoryRecordTypeDto::Claim),
+        })
+        .expect("explicit Claim record type should parse the claim ID");
+
+        match input.id {
+            MemoryRecordReference::Claim(reference) => {
+                assert_eq!(reference.claim_id(), "stored-claim-id");
+            }
+            MemoryRecordReference::Event(_) => panic!("explicit Claim must not select Event"),
+        }
+    }
+}
 
 #[test]
 fn evidence_query_dto_parses_recency_window_fields() {

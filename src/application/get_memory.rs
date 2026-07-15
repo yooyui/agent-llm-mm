@@ -2,6 +2,7 @@ use serde::Serialize;
 
 use crate::{
     domain::{
+        claim::ClaimReference,
         event::EventReference,
         types::{Namespace, Owner},
     },
@@ -12,9 +13,24 @@ use crate::{
 use super::search_memory::{MemoryRecordType, SearchMemoryInput, SearchMemoryRecord};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MemoryRecordReference {
+    Event(EventReference),
+    Claim(ClaimReference),
+}
+
+impl MemoryRecordReference {
+    pub fn record_type(&self) -> MemoryRecordType {
+        match self {
+            Self::Event(_) => MemoryRecordType::Event,
+            Self::Claim(_) => MemoryRecordType::Claim,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetMemoryInput {
     pub namespace: Namespace,
-    pub id: EventReference,
+    pub id: MemoryRecordReference,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -28,16 +44,21 @@ pub async fn execute<D>(deps: &D, input: GetMemoryInput) -> Result<GetMemoryResu
 where
     D: MemoryReadStore + Sync,
 {
+    let record_type = input.id.record_type();
+    let (event_reference, claim_reference) = match input.id {
+        MemoryRecordReference::Event(reference) => (Some(reference), None),
+        MemoryRecordReference::Claim(reference) => (None, Some(reference)),
+    };
     let result = super::search_memory::execute(
         deps,
         SearchMemoryInput {
             namespace: input.namespace,
-            record_type: MemoryRecordType::Event,
-            event_reference: Some(input.id),
+            record_type,
+            event_reference,
             kind: None,
             recorded_after: None,
             recorded_before: None,
-            claim_reference: None,
+            claim_reference,
             claim_status: None,
             mode: None,
             limit: 1,
