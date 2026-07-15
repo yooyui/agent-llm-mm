@@ -1,4 +1,4 @@
-# 本机 MCP 接入说明（2026-03-26，按 2026-06-08 fresh 验证更新）
+# 本机 MCP 接入说明（2026-03-26，按 2026-07-15 fresh 验证更新）
 
 ## 1. 目标
 
@@ -150,7 +150,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 ### 已实现
 
 - `ingest_interaction`
-- `search_memory`（M1.1.1 event-only 首片；显式 `namespace` 必填，provider 离线可用）
+- `search_memory`（M1.1.1 Event 与 M1.1.2 Claim recall 首片；显式 `namespace` 必填，provider 离线可用；省略 `record_type` 时仍为 Event）
 - `get_memory`（M1.2.1 event-only 首片；显式 `namespace` + stable `id` 必填，跨 scope 返回 `record: null`）
 - `build_self_snapshot`
 - `run_reflection`
@@ -160,7 +160,9 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - `openai-compatible` provider
 - OpenRouter provider（通过 OpenAI-compatible `/chat/completions` transport；配置示例和本地 stub 不是 live evidence，显式 `--live` runner 才能生成 bounded live preflight evidence）
 - 配置文件驱动的 provider 选择
-- `search_memory` 当前支持 exact event reference、event kind、inclusive RFC3339 time window 和 `1..=100` limit；返回 canonical event ID、scope、时间、摘要和 claim/episode provenance。它不是完整跨类型 search/get/history/correction 合同。
+- `search_memory` 的 Event 路径支持 exact event reference、event kind、inclusive RFC3339 time window 和 `1..=100` limit；返回 canonical event ID、scope、时间、摘要和 claim/episode provenance。
+- additive `record_type = Claim` 路径支持 canonical/raw `claim_reference`、`claim_status`、`mode` 和 `1..=100` limit；省略 `claim_status` 时默认 `Active`。结果包含 canonical `claim:<id>`、subject/predicate/object、mode/status、canonical evidence event references、episode references 和直接 source/superseded reflection links。claims 没有 stored `recorded_at`，因此该路径拒绝 event reference、event kind 与时间过滤。
+- 两种 `search_memory` 路径都先在 SQLite 按 server-derived owner + namespace 收窄，再应用 filter/limit；它们只读、provider-free，跨 scope exact reference 返回空结果。当前仍不是完整跨类型 lookup/history/correction 合同。
 - `get_memory` 复用相同 scoped read service 返回单条 event；它不提供 unscoped existence probe，也不代表其他 record type 或 history 已完成。
 - trigger-ledger-backed automatic self-revision MVP
   - 当前 MCP-wired automatic path 只有 4 条：

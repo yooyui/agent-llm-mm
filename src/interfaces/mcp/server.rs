@@ -42,12 +42,12 @@ use crate::{
         OperationStatus, start_dashboard_service_with_operation_log,
     },
     ports::{
-        ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventReadRecord,
-        EventRecordQuery, EventStore, EvidenceQuery, IdGenerator, IdentityStore, IngestTransaction,
-        IngestTransactionRunner, MemoryReadStore, ModelDecision, ModelDecisionRequest, ModelPort,
-        OperationLogStore, ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner,
-        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
-        TriggerLedgerStore,
+        ClaimReadRecord, ClaimRecordQuery, ClaimStatus, ClaimStore, Clock, CommitmentStore,
+        EpisodeStore, EventReadRecord, EventRecordQuery, EventStore, EvidenceQuery, IdGenerator,
+        IdentityStore, IngestTransaction, IngestTransactionRunner, MemoryReadStore, ModelDecision,
+        ModelDecisionRequest, ModelPort, OperationLogStore, ReflectionStore, ReflectionTransaction,
+        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
+        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
     support::config::{AppConfig, ModelConfig, ModelProviderKind, TransportKind},
 };
@@ -290,7 +290,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Search complete event records in one explicit local memory namespace. This first read-model slice supports exact event reference, kind, inclusive time range, and bounded recent-first results.",
+        description = "Search complete event or claim records in one explicit local memory namespace. Event queries support exact reference, kind, inclusive time range, and bounded recent-first results. Claim queries support exact reference, status, and mode; claims have no stored recorded_at timestamp.",
         input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<SearchMemoryParams>>()
     )]
     async fn search_memory(&self, raw_params: JsonObject) -> Result<CallToolResult, McpError> {
@@ -312,6 +312,7 @@ impl Server {
             search_memory::SearchMemoryInput::try_from(params),
         )
         .await?;
+        let record_type = input.record_type;
         let result = map_tool_error(
             &self.runtime,
             "search_memory",
@@ -325,11 +326,12 @@ impl Server {
             dashboard_namespace.clone(),
             Some(correlation_id.clone()),
             format!(
-                "memory search returned {} event records",
-                result.records.len()
+                "memory search returned {} {} records",
+                result.records.len(),
+                record_type.as_str()
             ),
             &serde_json::json!({
-                "record_type": "event",
+                "record_type": record_type.as_str(),
                 "result_count": result.records.len(),
             }),
         );
@@ -337,7 +339,7 @@ impl Server {
             .record_tool_operation(
                 ToolOperationRecord::ok("search_memory", dashboard_namespace, Some(correlation_id))
                     .with_response_summary(serde_json::json!({
-                        "record_type": "event",
+                        "record_type": record_type.as_str(),
                         "result_count": result.records.len(),
                     })),
             )
@@ -993,6 +995,13 @@ impl MemoryReadStore for Runtime {
         query: EventRecordQuery,
     ) -> Result<Vec<EventReadRecord>, AppError> {
         self.store.query_event_records(query).await
+    }
+
+    async fn query_claim_records(
+        &self,
+        query: ClaimRecordQuery,
+    ) -> Result<Vec<ClaimReadRecord>, AppError> {
+        self.store.query_claim_records(query).await
     }
 }
 

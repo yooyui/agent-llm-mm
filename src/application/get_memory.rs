@@ -9,7 +9,7 @@ use crate::{
     ports::MemoryReadStore,
 };
 
-use super::search_memory::{SearchMemoryInput, SearchMemoryRecord};
+use super::search_memory::{MemoryRecordType, SearchMemoryInput, SearchMemoryRecord};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetMemoryInput {
@@ -32,10 +32,14 @@ where
         deps,
         SearchMemoryInput {
             namespace: input.namespace,
+            record_type: MemoryRecordType::Event,
             event_reference: Some(input.id),
             kind: None,
             recorded_after: None,
             recorded_before: None,
+            claim_reference: None,
+            claim_status: None,
+            mode: None,
             limit: 1,
         },
     )

@@ -29,7 +29,7 @@
 
 已实现：
 
-- Rust MCP `stdio` 服务与 6 个工具；新增的 `search_memory` / `get_memory` 当前只覆盖显式 namespace 的 event recall/lookup 首片；
+- Rust MCP `stdio` 服务与 6 个工具；`search_memory` 已覆盖显式 namespace 的 Event 与 Claim recall 首片，`get_memory` 当前仍只覆盖 Event lookup 首片；
 - SQLite 持久化与 ingest / reflection 事务；
 - `run_reflection` 受治理的 durable write path；
 - mock、OpenAI-compatible、OpenRouter 配置路径；
@@ -39,7 +39,7 @@
 当前不能视为完整产品能力：
 
 - 显式 namespace / manifest / time-window 的 M0.2 scoped snapshot 已收口，但省略 namespace 的 legacy 兼容调用仍未隔离，且尚无完整 recall read model；
-- 已有正式的 event-only `search_memory` 与 `get_memory` 首片；跨 record type search/lookup、history 与 correction 接口仍未实现；
+- 已有正式的 Event `search_memory` / `get_memory` 首片，以及 additive Claim `search_memory` 首片；Claim lookup、episode/reflection read model、完整 history 与 correction 接口仍未实现；
 - decision 已改用服务端 commitments，并同时 gate requested / provider-selected action；允许的 action-string 结果显式标记为 `experimental_non_authoritative`，且 policy scope 只覆盖 server commitment gate。但其他 snapshot 字段仍由 caller 提供，尚无完整 trusted snapshot handle 或 provenance binding；
 - cross-episode identity support 已使用 claim → evidence → episode 的真实 distinct join，但仍没有完整 provenance graph；
 - M0.4 已完成：`init` / `migrate` / 默认只读 `doctor` / 显式 `doctor --allow-bootstrap` 已拆分，`serve` 不再隐式改库；
@@ -49,7 +49,7 @@
 - memory layer / evidence relation 等投影尚未形成统一 runtime read path；
 - 已有 Linux/macOS GitHub Actions 与固定 Rust toolchain；仍没有真实二进制交付或 fresh-machine / Windows 完整证据。
 
-## Now — M0 Truth and Safety Reset
+## Complete — M0 Truth and Safety Reset
 
 目标：在继续扩功能前，修正产品可信性和数据安全边界。
 
@@ -83,11 +83,11 @@ M0 未通过前，不开始新 provider、daemon 写能力、remote/team 或正�
 
 目标：完成用户真正需要的本地记忆闭环。
 
-已完成两片（2026-07-15）：`M1.1.1 Scoped Event Recall Read Model` 与 `M1.2.1 Scoped Event Lookup`。它们通过真实 MCP `stdio` 暴露显式 namespace、bounded recent-first event 查询和 stable-ID 单条 lookup，保留 canonical ID、时间、scope、kind、summary 和现有 claim/episode provenance；重连与 provider 离线测试已通过，跨 scope lookup 返回 null 而不扩大。完整 M1、跨类型 read model、reflection history、supersession/correction 和真实客户端退出门仍开放。
+已完成三片（2026-07-15）：`M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read` 与 `M1.2.1 Scoped Event Lookup`。Event 路径通过真实 MCP `stdio` 暴露显式 namespace、bounded recent-first 查询和 stable-ID 单条 lookup；additive Claim 查询支持 canonical/raw claim reference、status、mode 和有界 limit，默认只返回 Active claims，并保留 canonical evidence/episode references 与直接 reflection revision links。两类查询都在 SQL limit 前按 owner + namespace 收窄、保持只读且不依赖 provider；跨 scope exact reference 返回空/null 而不扩大。完整 M1、Claim lookup、episode/reflection read model、完整 history、supersession/correction 和真实客户端退出门仍开放。
 
 计划能力：
 
-- scoped events / claims / episodes / reflections / evidence relation read model；
+- 继续完成 scoped episodes / reflections / evidence relation read model，并把已完成的 Event / Claim 首片收敛到稳定跨类型合同；
 - `search_memory`；
 - `get_memory`；
 - `get_reflection_history`；

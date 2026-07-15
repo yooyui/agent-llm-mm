@@ -1,10 +1,40 @@
 use agent_llm_mm::domain::{
     DomainError,
+    claim::ClaimReference,
     event::EventReference,
     rules::{commitment_gate::gate_decision, snapshot_builder::build_snapshot},
     snapshot::{SnapshotBudget, SnapshotRequest, SnapshotTimeWindow},
 };
 use chrono::{DateTime, Utc};
+
+#[test]
+fn raw_and_prefixed_claim_ids_share_one_canonical_reference() {
+    let raw = ClaimReference::parse("evt-1:claim:0").unwrap();
+    let prefixed = ClaimReference::parse("claim:evt-1:claim:0").unwrap();
+
+    assert_eq!(raw, prefixed);
+    assert_eq!(raw.claim_id(), "evt-1:claim:0");
+    assert_eq!(raw.canonical(), "claim:evt-1:claim:0");
+    assert_eq!(serde_json::to_value(&raw).unwrap(), "claim:evt-1:claim:0");
+
+    let prefixed_raw_id = ClaimReference::parse("claim:claim:legacy").unwrap();
+    assert_eq!(prefixed_raw_id.claim_id(), "claim:legacy");
+    assert_eq!(prefixed_raw_id.canonical(), "claim:claim:legacy");
+}
+
+#[test]
+fn invalid_claim_references_are_rejected() {
+    for value in ["", "claim:", " claim:evt-1", "evt 1"] {
+        assert_eq!(
+            ClaimReference::parse(value).unwrap_err(),
+            DomainError::InvalidClaimReference
+        );
+        assert!(
+            serde_json::from_value::<ClaimReference>(serde_json::json!(value)).is_err(),
+            "serde should reject invalid claim reference {value:?}"
+        );
+    }
+}
 
 #[test]
 fn raw_and_prefixed_event_ids_share_one_canonical_reference() {

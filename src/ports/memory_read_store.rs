@@ -3,13 +3,14 @@ use chrono::{DateTime, Utc};
 
 use crate::{
     domain::{
+        claim::ClaimReference,
         event::EventReference,
-        types::{EventKind, MemoryScope},
+        types::{EventKind, MemoryScope, Mode},
     },
     error::AppError,
 };
 
-use super::StoredEvent;
+use super::{ClaimStatus, StoredClaim, StoredEvent};
 
 pub const MAX_EVENT_RECORD_QUERY_LIMIT: usize = 100;
 
@@ -28,6 +29,47 @@ pub struct EventReadRecord {
     pub event: StoredEvent,
     pub claim_ids: Vec<String>,
     pub episode_references: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimRecordQuery {
+    pub scope: MemoryScope,
+    pub claim_reference: Option<ClaimReference>,
+    pub status: Option<ClaimStatus>,
+    pub mode: Option<Mode>,
+    pub limit: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ClaimRevisionLinks {
+    pub source_reflection_id: Option<String>,
+    pub supersedes_claim_reference: Option<ClaimReference>,
+    pub superseded_by_reflection_id: Option<String>,
+    pub replacement_claim_reference: Option<ClaimReference>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimReadRecord {
+    pub claim: StoredClaim,
+    pub evidence_event_references: Vec<EventReference>,
+    pub episode_references: Vec<String>,
+    pub revision: ClaimRevisionLinks,
+}
+
+impl ClaimReadRecord {
+    pub fn new(
+        claim: StoredClaim,
+        evidence_event_references: Vec<EventReference>,
+        episode_references: Vec<String>,
+        revision: ClaimRevisionLinks,
+    ) -> Self {
+        Self {
+            claim,
+            evidence_event_references,
+            episode_references,
+            revision,
+        }
+    }
 }
 
 impl EventReadRecord {
@@ -50,4 +92,9 @@ pub trait MemoryReadStore {
         &self,
         query: EventRecordQuery,
     ) -> Result<Vec<EventReadRecord>, AppError>;
+
+    async fn query_claim_records(
+        &self,
+        query: ClaimRecordQuery,
+    ) -> Result<Vec<ClaimReadRecord>, AppError>;
 }

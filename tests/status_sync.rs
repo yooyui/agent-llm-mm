@@ -76,6 +76,12 @@ fn active_plan_and_reality_gate_documents_are_in_sync() {
     assert!(
         report
             .completed_plan_items
+            .contains(&"M1.1.2 Scoped Claim Provenance Read".to_string()),
+        "active plan must expose the completed M1.1.2 claim provenance slice as a checkbox"
+    );
+    assert!(
+        report
+            .completed_plan_items
             .contains(&"M1.2.1 Scoped Event Lookup".to_string()),
         "active plan must expose the completed M1.2.1 event lookup slice as a checkbox"
     );

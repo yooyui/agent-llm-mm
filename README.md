@@ -13,7 +13,7 @@ The current project is best understood as a technical MVP for local agent memory
 ## Features
 
 - **Local MCP memory service**: exposes `ingest_interaction`, `search_memory`, `get_memory`, `build_self_snapshot`, `decide_with_snapshot`, and `run_reflection` over MCP `stdio`.
-- **Scoped event recall**: `search_memory` requires an explicit namespace and returns bounded recent-first event records with stable canonical IDs, timestamps, scope, kind, summary, and persisted claim/episode provenance. The deterministic read path does not call a model provider.
+- **Scoped event and claim recall**: `search_memory` requires an explicit namespace. It defaults to bounded recent-first event records, while additive `record_type = Claim` queries return scoped claims filtered by canonical/raw claim reference, status, and mode. Both deterministic read paths are provider-free and fail closed across namespaces.
 - **SQLite persistence**: stores events, claims, evidence, reflection audits, trigger ledger entries, and operation logs.
 - **Evidence-gated self-revision**: claim, identity, and commitment updates must be backed by explicit evidence and governance rules. `run_reflection` remains the only durable write path for identity, commitment, and reflection changes.
 - **Bounded scoped snapshots**: the M0.2 path accepts an explicit namespace, optional evidence manifest, and inclusive time window; it applies owner/namespace filtering and stable recent-first ordering in SQLite, and feeds automatic reflection only from the frozen trigger scope and evidence window.
@@ -90,6 +90,7 @@ Implemented:
 - Explicit SQLite schema version / migration ledger, transactional legacy migration, pre-write backup and restore rehearsal
 - Loopback-only enabled dashboard configuration, stderr-only tracing, and Linux/macOS source CI on pinned Rust `1.95.0`
 - M1.1.1 scoped event recall through the additive `search_memory` MCP tool; cross-namespace exact-ID matches return empty and semantic memory tables remain unchanged by reads
+- M1.1.2 scoped claim recall through additive `search_memory(record_type = Claim)`; omitted `claim_status` defaults to `Active`, claim results retain canonical evidence/episode and direct reflection revision links, and event/time filters are rejected because claims have no stored `recorded_at`
 - M1.2.1 scoped event lookup through additive `get_memory`; a missing or cross-namespace stable ID returns `record: null` without widening
 
 Partially implemented:
@@ -107,7 +108,7 @@ Partially implemented:
 - Governance validation failures write only a rejected trigger audit. Failures while appending the handled trigger ledger or committing the reflection transaction roll back pending identity, commitment, claim/evidence, reflection, and handled-ledger changes; a separate rejected audit is then recorded outside the failed transaction. This is locally verified failure atomicity, not crash-recovery or distributed transaction support.
 - Identity, claims, evidence, and episodes in the decision snapshot are still caller-provided; there is no server-created snapshot handle or complete policy/provenance binding yet.
 - Episodes are currently lightweight projections, not a complete autobiographical memory model.
-- The first runtime read interface covers complete event records plus persisted claim/episode links only. Claims, episodes, reflections, evidence relations, status/mode fields, supersession history, and richer memory-layer projections are not yet unified behind the same contract.
+- The runtime read interface now covers complete event search/lookup records and scoped claim search records with status, mode, evidence/episode provenance, and direct source/supersession reflection links. Claim lookup through `get_memory`, episode/reflection records, complete revision history, correction tools, and richer memory-layer projections are not yet unified behind the same contract.
 - Provider live evidence proves configuration and connectivity only. It does not prove model quality, SLA, or production readiness.
 - Local alpha gates still depend on external evidence such as a real fresh-machine run, Windows parity, and a human release decision.
 - The repository remains on `rmcp 0.5.0`. An isolated `2.2.0` compatibility probe is documented as no-go for an in-place M0.5 bump because one handler error contract regressed; the future upgrade must remain capability-neutral.
@@ -115,7 +116,7 @@ Partially implemented:
 Not implemented:
 
 - Full memory layering
-- Complete cross-record memory search/lookup, provenance/reflection history, and audited correction tools
+- Complete cross-record memory lookup, episode/reflection read models, provenance/reflection history, and audited correction tools
 - Richer evidence ranking / weighting
 - Production-grade remote, team, or multi-tenant mode
 - Daemon write capabilities and autonomous background operation

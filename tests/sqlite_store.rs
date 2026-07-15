@@ -1,7 +1,7 @@
 use agent_llm_mm::{
     application::build_self_snapshot::{BuildSelfSnapshotInput, execute as build_self_snapshot},
     domain::{
-        claim::ClaimDraft,
+        claim::{ClaimDraft, ClaimReference},
         event::{Event, EventReference, MAX_EVIDENCE_MANIFEST_ITEMS},
         identity_core::IdentityCore,
         reflection::Reflection,
@@ -11,9 +11,9 @@ use agent_llm_mm::{
     },
     error::AppError,
     ports::{
-        ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventRecordQuery, EventStore,
-        EvidenceQuery, IdentityStore, IngestTransactionRunner, MemoryReadStore,
-        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
+        ClaimRecordQuery, ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventRecordQuery,
+        EventStore, EvidenceQuery, IdentityStore, IngestTransactionRunner, MemoryReadStore,
+        ReflectionStore, ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
         StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
 };
@@ -2254,6 +2254,27 @@ async fn sqlite_event_recall_is_scoped_recent_first_and_returns_provenance() {
         .unwrap();
     context
         .store
+        .upsert_claim(StoredClaim::new(
+            "claim-b-linked-to-a".to_string(),
+            ClaimDraft::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("b"),
+                "project.b",
+                "must_not",
+                "leak through project a event provenance",
+                Mode::Observed,
+            ),
+            ClaimStatus::Active,
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .link_evidence("claim-b-linked-to-a".to_string(), "a-new".to_string())
+        .await
+        .unwrap();
+    context
+        .store
         .record_event_in_episode("episode-a".to_string(), "a-new".to_string())
         .await
         .unwrap();
@@ -2341,4 +2362,195 @@ async fn sqlite_event_recall_rejects_unscoped_queries_and_never_widens_exact_ids
         .await
         .unwrap();
     assert!(cross_scope.is_empty());
+}
+
+#[tokio::test]
+async fn sqlite_claim_recall_is_scoped_status_aware_and_returns_provenance() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let project_a = Namespace::for_project("a");
+    let project_b = Namespace::for_project("b");
+
+    for (event_id, namespace, summary, episode) in [
+        (
+            "event-a-old",
+            project_a.clone(),
+            "old project a evidence",
+            "episode:a-old",
+        ),
+        (
+            "event-a-new",
+            project_a.clone(),
+            "new project a evidence",
+            "episode:a-new",
+        ),
+        (
+            "event-b",
+            project_b.clone(),
+            "project b interference",
+            "episode:b",
+        ),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                now,
+                Event::new_with_namespace(Owner::World, namespace, EventKind::Observation, summary)
+                    .unwrap(),
+            ))
+            .await
+            .unwrap();
+        context
+            .store
+            .record_event_in_episode(episode.to_string(), event_id.to_string())
+            .await
+            .unwrap();
+    }
+
+    for (claim_id, namespace, object, status, event_id) in [
+        (
+            "claim-a-old",
+            project_a.clone(),
+            "old value",
+            ClaimStatus::Superseded,
+            "event-a-old",
+        ),
+        (
+            "claim-a-new",
+            project_a.clone(),
+            "new value",
+            ClaimStatus::Active,
+            "event-a-new",
+        ),
+        (
+            "claim-b",
+            project_b,
+            "interference",
+            ClaimStatus::Active,
+            "event-b",
+        ),
+    ] {
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                claim_id.to_string(),
+                ClaimDraft::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    "project.fact",
+                    "is",
+                    object,
+                    Mode::Observed,
+                ),
+                status,
+            ))
+            .await
+            .unwrap();
+        context
+            .store
+            .link_evidence(claim_id.to_string(), event_id.to_string())
+            .await
+            .unwrap();
+    }
+    context
+        .store
+        .append_reflection(StoredReflection::new(
+            "reflection-a".to_string(),
+            now,
+            Reflection::new("replace the old project fact"),
+            Some("claim-a-old".to_string()),
+            Some("claim-a-new".to_string()),
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .link_evidence("claim-a-new".to_string(), "event-b".to_string())
+        .await
+        .unwrap();
+
+    let active = context
+        .store
+        .query_claim_records(ClaimRecordQuery {
+            scope: MemoryScope::for_namespace(project_a.clone()),
+            claim_reference: None,
+            status: Some(ClaimStatus::Active),
+            mode: Some(Mode::Observed),
+            limit: 10,
+        })
+        .await
+        .unwrap();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].claim.claim_id, "claim-a-new");
+    assert_eq!(active[0].claim.claim.object(), "new value");
+    assert_eq!(
+        active[0]
+            .evidence_event_references
+            .iter()
+            .map(EventReference::canonical)
+            .collect::<Vec<_>>(),
+        vec!["event:event-a-new"]
+    );
+    assert_eq!(active[0].episode_references, vec!["episode:a-new"]);
+    assert_eq!(
+        active[0].revision.source_reflection_id.as_deref(),
+        Some("reflection-a")
+    );
+    assert_eq!(
+        active[0]
+            .revision
+            .supersedes_claim_reference
+            .as_ref()
+            .map(ClaimReference::canonical)
+            .as_deref(),
+        Some("claim:claim-a-old")
+    );
+
+    let superseded = context
+        .store
+        .query_claim_records(ClaimRecordQuery {
+            scope: MemoryScope::for_namespace(project_a.clone()),
+            claim_reference: Some(ClaimReference::parse("claim:claim-a-old").unwrap()),
+            status: Some(ClaimStatus::Superseded),
+            mode: None,
+            limit: 1,
+        })
+        .await
+        .unwrap();
+    assert_eq!(superseded.len(), 1);
+    assert_eq!(
+        superseded[0]
+            .revision
+            .replacement_claim_reference
+            .as_ref()
+            .map(ClaimReference::canonical)
+            .as_deref(),
+        Some("claim:claim-a-new")
+    );
+
+    let cross_scope = context
+        .store
+        .query_claim_records(ClaimRecordQuery {
+            scope: MemoryScope::for_namespace(project_a),
+            claim_reference: Some(ClaimReference::parse("claim:claim-b").unwrap()),
+            status: None,
+            mode: None,
+            limit: 1,
+        })
+        .await
+        .unwrap();
+    assert!(cross_scope.is_empty());
+
+    let unscoped = context
+        .store
+        .query_claim_records(ClaimRecordQuery {
+            scope: MemoryScope::legacy_unscoped(),
+            claim_reference: None,
+            status: None,
+            mode: None,
+            limit: 10,
+        })
+        .await;
+    assert!(matches!(unscoped, Err(AppError::InvalidParams(_))));
 }

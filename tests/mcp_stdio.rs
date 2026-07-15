@@ -105,10 +105,14 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
         .expect("search_memory schema should expose properties");
     for field in [
         "namespace",
+        "record_type",
         "event_reference",
         "kind",
         "recorded_after",
         "recorded_before",
+        "claim_reference",
+        "claim_status",
+        "mode",
         "limit",
     ] {
         assert!(
@@ -1394,6 +1398,33 @@ async fn search_memory_returns_only_scoped_event_records_and_provenance_over_std
         }
     }
 
+    let mixed_scope = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/a",
+                    "kind": "Observation",
+                    "summary": "project a event with a project b claim link"
+                },
+                "claim_drafts": [{
+                    "owner": "World",
+                    "namespace": "project/b",
+                    "subject": "project.b",
+                    "predicate": "must_not",
+                    "object": "leak through project a event provenance",
+                    "mode": "Observed"
+                }],
+                "episode_reference": "episode:mixed-scope"
+            }),
+        )
+        .await
+        .unwrap();
+    let mixed_scope_event_id = mixed_scope["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap();
+
     let pool = SqlitePool::connect(&database_url).await.unwrap();
     let semantic_counts_before = semantic_memory_counts(&pool).await;
     let response = client
@@ -1455,6 +1486,236 @@ async fn search_memory_returns_only_scoped_event_records_and_provenance_over_std
     let summary: Value =
         serde_json::from_str(&operation.get::<String, _>("response_summary_json")).unwrap();
     assert_eq!(summary, json!({"record_type": "event", "result_count": 1}));
+
+    let mixed_event = client
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/a",
+                "event_reference": format!("event:{mixed_scope_event_id}")
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        mixed_event["result"]["structuredContent"]["records"][0]["provenance"]["claim_ids"],
+        json!([]),
+        "event provenance must not expose a linked claim from another scope"
+    );
+    let mixed_claim = client
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/b",
+                "record_type": "Claim",
+                "claim_reference": format!("claim:{mixed_scope_event_id}:claim:0")
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        mixed_claim["result"]["structuredContent"]["records"][0]["provenance"]["evidence_event_references"],
+        json!([]),
+        "claim provenance must not expose a linked event from another scope"
+    );
+}
+
+#[tokio::test]
+async fn search_memory_returns_scoped_claims_with_revision_provenance_over_stdio() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let project_a = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/claim-a",
+                    "kind": "Observation",
+                    "summary": "old scoped claim evidence"
+                },
+                "claim_drafts": [{
+                    "owner": "World",
+                    "namespace": "project/claim-a",
+                    "subject": "project.claim",
+                    "predicate": "is",
+                    "object": "old",
+                    "mode": "Observed"
+                }],
+                "episode_reference": "episode:claim-a-old"
+            }),
+        )
+        .await
+        .unwrap();
+    let project_a_event_id = project_a["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap();
+    let old_claim_id = format!("{project_a_event_id}:claim:0");
+
+    let project_b = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/claim-b",
+                    "kind": "Observation",
+                    "summary": "cross-scope interference"
+                },
+                "claim_drafts": [{
+                    "owner": "World",
+                    "namespace": "project/claim-b",
+                    "subject": "project.claim",
+                    "predicate": "is",
+                    "object": "interference",
+                    "mode": "Observed"
+                }],
+                "episode_reference": "episode:claim-b"
+            }),
+        )
+        .await
+        .unwrap();
+    let project_b_event_id = project_b["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap();
+    let project_b_claim_id = format!("{project_b_event_id}:claim:0");
+
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {"summary": "replace the old scoped claim"},
+                "supersede_claim_id": old_claim_id,
+                "replacement_claim": {
+                    "owner": "World",
+                    "namespace": "project/claim-a",
+                    "subject": "project.claim",
+                    "predicate": "is",
+                    "object": "new",
+                    "mode": "Observed"
+                },
+                "replacement_evidence_event_ids": [format!("event:{project_a_event_id}")]
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        reflection.get("error").is_none(),
+        "reflection failed: {reflection:?}"
+    );
+    let reflection_id = reflection["result"]["structuredContent"]["reflection_id"]
+        .as_str()
+        .unwrap();
+    let replacement_claim_id = reflection["result"]["structuredContent"]["replacement_claim_id"]
+        .as_str()
+        .unwrap();
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let semantic_counts_before = semantic_memory_counts(&pool).await;
+    let active = client
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/claim-a",
+                "record_type": "Claim",
+                "mode": "Observed",
+                "limit": 10
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        active.get("error").is_none(),
+        "claim search failed: {active:?}"
+    );
+    let records = active["result"]["structuredContent"]["records"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        records.len(),
+        1,
+        "default claim search should return active claims only"
+    );
+    assert_eq!(records[0]["record_type"], "claim");
+    assert_eq!(records[0]["id"], format!("claim:{replacement_claim_id}"));
+    assert_eq!(records[0]["owner"], "World");
+    assert_eq!(records[0]["namespace"], "project/claim-a");
+    assert_eq!(records[0]["subject"], "project.claim");
+    assert_eq!(records[0]["predicate"], "is");
+    assert_eq!(records[0]["object"], "new");
+    assert_eq!(records[0]["mode"], "Observed");
+    assert_eq!(records[0]["status"], "Active");
+    assert!(records[0].get("recorded_at").is_none());
+    assert_eq!(
+        records[0]["provenance"]["evidence_event_references"],
+        json!([format!("event:{project_a_event_id}")])
+    );
+    assert_eq!(
+        records[0]["provenance"]["episode_references"],
+        json!(["episode:claim-a-old"])
+    );
+    assert_eq!(
+        records[0]["provenance"]["source_reflection_id"],
+        reflection_id
+    );
+    assert_eq!(
+        records[0]["provenance"]["supersedes_claim_reference"],
+        format!("claim:{old_claim_id}")
+    );
+
+    let old = client
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/claim-a",
+                "record_type": "Claim",
+                "claim_reference": format!("claim:{old_claim_id}"),
+                "claim_status": "Superseded"
+            }),
+        )
+        .await
+        .unwrap();
+    let old_record = &old["result"]["structuredContent"]["records"][0];
+    assert_eq!(old_record["status"], "Superseded");
+    assert_eq!(
+        old_record["provenance"]["superseded_by_reflection_id"],
+        reflection_id
+    );
+    assert_eq!(
+        old_record["provenance"]["replacement_claim_reference"],
+        format!("claim:{replacement_claim_id}")
+    );
+
+    let cross_scope = client
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/claim-a",
+                "record_type": "Claim",
+                "claim_reference": format!("claim:{project_b_claim_id}")
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        cross_scope["result"]["structuredContent"]["records"],
+        json!([])
+    );
+    assert_eq!(semantic_memory_counts(&pool).await, semantic_counts_before);
+
+    let operation = sqlx::query(
+        "SELECT response_summary_json FROM operation_log WHERE entrypoint = 'search_memory' ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let summary: Value =
+        serde_json::from_str(&operation.get::<String, _>("response_summary_json")).unwrap();
+    assert_eq!(summary, json!({"record_type": "claim", "result_count": 0}));
 }
 
 #[tokio::test]
@@ -1471,6 +1732,20 @@ async fn search_memory_invalid_or_empty_scope_fails_closed_over_stdio() {
             "namespace": "project/a",
             "recorded_after": "2026-07-15T02:00:00Z",
             "recorded_before": "2026-07-15T01:00:00Z"
+        }),
+        json!({
+            "namespace": "project/a",
+            "record_type": "Claim",
+            "claim_reference": "claim:"
+        }),
+        json!({
+            "namespace": "project/a",
+            "record_type": "Claim",
+            "recorded_after": "2026-07-15T02:00:00Z"
+        }),
+        json!({
+            "namespace": "project/a",
+            "mode": "Observed"
         }),
     ] {
         let response = client.call_tool("search_memory", invalid).await.unwrap();

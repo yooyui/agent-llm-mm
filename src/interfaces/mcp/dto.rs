@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 
-use crate::ports::EvidenceQuery;
+use crate::ports::{ClaimStatus, EvidenceQuery};
 use crate::{
     application::{
         auto_reflect_if_needed::AutoReflectInput,
@@ -9,10 +9,10 @@ use crate::{
         get_memory::GetMemoryInput,
         ingest_interaction::IngestInput,
         run_reflection::ReflectionInput,
-        search_memory::{DEFAULT_SEARCH_MEMORY_LIMIT, SearchMemoryInput},
+        search_memory::{DEFAULT_SEARCH_MEMORY_LIMIT, MemoryRecordType, SearchMemoryInput},
     },
     domain::{
-        claim::ClaimDraft,
+        claim::{ClaimDraft, ClaimReference},
         commitment::Commitment,
         event::{Event, EventReference, MAX_EVIDENCE_MANIFEST_ITEMS},
         reflection::{Reflection, ReflectionIdentityUpdate},
@@ -62,6 +62,38 @@ impl From<ModeDto> for Mode {
             ModeDto::Acted => Mode::Acted,
             ModeDto::Inferred => Mode::Inferred,
             ModeDto::Draft => Mode::Draft,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum MemoryRecordTypeDto {
+    Event,
+    Claim,
+}
+
+impl From<MemoryRecordTypeDto> for MemoryRecordType {
+    fn from(value: MemoryRecordTypeDto) -> Self {
+        match value {
+            MemoryRecordTypeDto::Event => Self::Event,
+            MemoryRecordTypeDto::Claim => Self::Claim,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ClaimStatusDto {
+    Active,
+    Disputed,
+    Superseded,
+}
+
+impl From<ClaimStatusDto> for ClaimStatus {
+    fn from(value: ClaimStatusDto) -> Self {
+        match value {
+            ClaimStatusDto::Active => Self::Active,
+            ClaimStatusDto::Disputed => Self::Disputed,
+            ClaimStatusDto::Superseded => Self::Superseded,
         }
     }
 }
@@ -439,6 +471,8 @@ pub struct EvidenceQueryDto {
 pub struct SearchMemoryParams {
     pub namespace: String,
     #[serde(default)]
+    pub record_type: Option<MemoryRecordTypeDto>,
+    #[serde(default)]
     pub event_reference: Option<String>,
     #[serde(default)]
     pub kind: Option<EventKindDto>,
@@ -448,6 +482,12 @@ pub struct SearchMemoryParams {
     pub recorded_after: Option<String>,
     #[serde(default)]
     pub recorded_before: Option<String>,
+    #[serde(default)]
+    pub claim_reference: Option<String>,
+    #[serde(default)]
+    pub claim_status: Option<ClaimStatusDto>,
+    #[serde(default)]
+    pub mode: Option<ModeDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -471,8 +511,13 @@ impl TryFrom<SearchMemoryParams> for SearchMemoryInput {
     type Error = AppError;
 
     fn try_from(value: SearchMemoryParams) -> Result<Self, Self::Error> {
+        let record_type = value
+            .record_type
+            .map(MemoryRecordType::from)
+            .unwrap_or(MemoryRecordType::Event);
         let input = Self {
             namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
+            record_type,
             event_reference: value
                 .event_reference
                 .map(EventReference::parse)
@@ -481,6 +526,15 @@ impl TryFrom<SearchMemoryParams> for SearchMemoryInput {
             kind: value.kind.map(EventKind::from),
             recorded_after: parse_optional_timestamp("recorded_after", value.recorded_after)?,
             recorded_before: parse_optional_timestamp("recorded_before", value.recorded_before)?,
+            claim_reference: value
+                .claim_reference
+                .map(ClaimReference::parse)
+                .transpose()
+                .map_err(AppError::from)?,
+            claim_status: value.claim_status.map(ClaimStatus::from).or_else(|| {
+                (record_type == MemoryRecordType::Claim).then_some(ClaimStatus::Active)
+            }),
+            mode: value.mode.map(Mode::from),
             limit: value.limit.unwrap_or(DEFAULT_SEARCH_MEMORY_LIMIT),
         };
         input.validate()?;

@@ -39,11 +39,13 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 
 新的优先级是：`Truth and Safety -> Trustworthy Recall -> Local Product Alpha -> Retrieval Quality -> optional Remote/Autonomy`。旧 productization、P1/P2/P3 和 non-MVP plans 保留为历史记录，不再决定下一步。
 
-## 2026-07-15 M1.1.1 / M1.2.1 scoped event read 首片
+## 2026-07-15 M1.1.1 / M1.1.2 / M1.2.1 scoped read 首片
 
-M1 已开始，当前完成两个 event-only 读取切片。`search_memory` MCP 工具要求显式 `namespace`，服务端据此派生 owner，并在 SQLite 查询内先按 owner + namespace 过滤，再应用 exact event reference、kind、inclusive RFC3339 time window、recent-first 稳定排序和 `1..=100` limit。`get_memory` 复用同一 read service，按 stable event ID 返回单条记录；未命中或跨 scope ID 返回 `record: null`。记录保留 canonical `event:<id>`、recorded_at、owner、namespace、kind、summary，以及从现有 `evidence_links` 和 `episode_events` 批量读取的 claim IDs / episode references。
+M1 已开始，当前完成两个 `search_memory` 读取切片和一个 event-only `get_memory` 切片。`search_memory` MCP 工具要求显式 `namespace`，省略 additive `record_type` 时继续查询 Event；服务端据此派生 owner，并在 SQLite 查询内先按 owner + namespace 过滤，再应用对应 record type 的过滤与 `1..=100` limit。Event 查询支持 exact event reference、kind、inclusive RFC3339 time window 和 recent-first 稳定排序；`get_memory` 复用同一 read service，按 stable event ID 返回单条 Event，未命中或跨 scope ID 返回 `record: null`。Event 记录保留 canonical `event:<id>`、recorded_at、owner、namespace、kind、summary，以及从现有 `evidence_links` 和 `episode_events` 批量读取的 claim IDs / episode references。
 
-该路径使用独立 application/port，不复用 reflection evidence narrowing，不调用 model provider，也不修改 events、claims、evidence、episodes、reflections、identity 或 commitments；MCP handler 只追加不含查询正文的 operation-log metadata。真实 `stdio` 回归覆盖 project/a 与 project/b 干扰、exact-ID no-widening、非法参数 fail-closed、断开重连和不可达 provider。它仍不代表完整 Read Model v2、文本/FTS/向量检索、claim/episode/reflection 统一读取、`get_memory`、历史、supersede/correction、真实客户端 M1 退出门或 Local Alpha。
+M1.1.2 为 `search_memory` 增加 `record_type = Claim`。Claim 查询要求同一显式 namespace，支持 canonical/raw `claim_reference`、`claim_status`、`mode` 与 `1..=100` limit；DTO 省略 `claim_status` 时默认 `Active`。结果返回 canonical `claim:<id>`、owner、namespace、subject/predicate/object、mode、status，以及 canonical evidence event references、episode references 和直接 source/superseded reflection links。claims 当前没有 `recorded_at`，因此 Claim 查询会拒绝 event reference、event kind 和时间过滤；跨 scope exact claim reference 返回空结果，不扩大查询。
+
+Event 与 Claim 查询共用独立的只读 application/port，不复用 reflection evidence narrowing，不调用 model provider，也不修改 events、claims、evidence、episodes、reflections、identity 或 commitments；MCP handler 只追加不含查询正文的 operation-log metadata。真实 `stdio` 回归覆盖 project/a 与 project/b 干扰、exact-reference no-widening、非法参数 fail-closed、断开重连和不可达 provider。M1.1.2 完成仍不代表 claim/episode/reflection `get_memory`、完整 revision history、supersede/correction、真实客户端 M1 退出门或 Local Alpha。
 
 ## 项目定位
 
@@ -167,7 +169,7 @@ Implementation notes:
 ### 9. self-revision demo package
 
 - 已新增 deterministic `openai-compatible` stub provider binary
-- 已新增 demo runner binary，复用真实 MCP `stdio` 服务和原有 4 个写入/快照/决策/反思工具跑 canonical scenario；新增的 `search_memory` 不在该旧 demo story 内
+- 已新增 demo runner binary，复用真实 MCP `stdio` 服务和原有 4 个写入/快照/决策/反思工具跑 canonical scenario；后续新增的 `search_memory` / `get_memory` 不在该旧 demo story 内
 - 已新增 macOS shell wrapper：`./scripts/run-self-revision-demo.sh`
 - 运行后会生成 `doctor.json`、snapshot before / after、decision before / after、timeline、SQLite summary 和 Markdown report
 - 该 demo 只证明当前 MVP 的可重复证据链，不新增 MCP tool、daemon、Web UI 或新的 durable write path

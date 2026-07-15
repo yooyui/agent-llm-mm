@@ -6,7 +6,7 @@ use sqlx::{QueryBuilder, Row, Sqlite, sqlite::SqlitePool};
 
 use crate::{
     domain::{
-        claim::ClaimDraft,
+        claim::{ClaimDraft, ClaimReference},
         commitment::Commitment,
         event::{Event, EventReference, MAX_EVIDENCE_MANIFEST_ITEMS},
         identity_core::IdentityCore,
@@ -19,8 +19,9 @@ use crate::{
     },
     error::AppError,
     ports::{
-        ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventReadRecord, EventRecordQuery,
-        EventStore, EvidenceQuery, IdentityStore, IngestTransaction, IngestTransactionRunner,
+        ClaimReadRecord, ClaimRecordQuery, ClaimRevisionLinks, ClaimStatus, ClaimStore,
+        CommitmentStore, EpisodeStore, EventReadRecord, EventRecordQuery, EventStore,
+        EvidenceQuery, IdentityStore, IngestTransaction, IngestTransactionRunner,
         MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore, OperationLogQuery, OperationLogStore,
         ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner, StoredClaim,
         StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
@@ -348,7 +349,7 @@ impl MemoryReadStore for SqliteStore {
             .iter()
             .map(|event| event.event_id.as_str())
             .collect::<Vec<_>>();
-        let claim_ids = load_event_claim_ids(&self.pool, &event_ids).await?;
+        let claim_ids = load_event_claim_ids(&self.pool, &event_ids, owner, namespace).await?;
         let episode_references = load_event_episode_references(&self.pool, &event_ids).await?;
 
         Ok(stored_events
@@ -366,20 +367,113 @@ impl MemoryReadStore for SqliteStore {
             })
             .collect())
     }
+
+    async fn query_claim_records(
+        &self,
+        query: ClaimRecordQuery,
+    ) -> Result<Vec<ClaimReadRecord>, AppError> {
+        if !query.scope.is_explicitly_scoped() {
+            return Err(AppError::InvalidParams(
+                "claim record query requires an explicit namespace".to_string(),
+            ));
+        }
+        if query.limit == 0 {
+            return Err(AppError::InvalidParams(
+                "claim record query limit must be at least 1".to_string(),
+            ));
+        }
+        if query.limit > MAX_EVENT_RECORD_QUERY_LIMIT {
+            return Err(AppError::InvalidParams(format!(
+                "claim record query limit must be at most {MAX_EVENT_RECORD_QUERY_LIMIT}"
+            )));
+        }
+
+        let owner = query
+            .scope
+            .owner()
+            .expect("explicit memory scope must have an owner");
+        let namespace = query
+            .scope
+            .namespace()
+            .expect("explicit memory scope must have a namespace");
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            "SELECT claim_id, owner, namespace, subject, predicate, object, mode, status FROM claims WHERE owner = ",
+        );
+        builder
+            .push_bind(owner_as_str(owner))
+            .push(" AND namespace = ")
+            .push_bind(namespace.as_str());
+        if let Some(reference) = query.claim_reference.as_ref() {
+            builder
+                .push(" AND claim_id = ")
+                .push_bind(reference.claim_id());
+        }
+        if let Some(status) = query.status {
+            builder.push(" AND status = ").push_bind(status.as_str());
+        }
+        if let Some(mode) = query.mode {
+            builder.push(" AND mode = ").push_bind(mode_as_str(mode));
+        }
+        builder.push(" ORDER BY claim_id ASC LIMIT ").push_bind(
+            i64::try_from(query.limit).map_err(|_| {
+                AppError::InvalidParams(
+                    "claim record query limit exceeds the supported maximum".to_string(),
+                )
+            })?,
+        );
+
+        let stored_claims = map_sqlite(builder.build().fetch_all(&self.pool).await)?
+            .iter()
+            .map(stored_claim_from_row)
+            .collect::<Result<Vec<_>, _>>()?;
+        if stored_claims.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let claim_ids = stored_claims
+            .iter()
+            .map(|claim| claim.claim_id.as_str())
+            .collect::<Vec<_>>();
+        let evidence =
+            load_claim_evidence_references(&self.pool, &claim_ids, owner, namespace).await?;
+        let episodes =
+            load_claim_episode_references(&self.pool, &claim_ids, owner, namespace).await?;
+        let revisions = load_claim_revision_links(&self.pool, &claim_ids, owner, namespace).await?;
+
+        Ok(stored_claims
+            .into_iter()
+            .map(|claim| {
+                let claim_id = claim.claim_id.clone();
+                ClaimReadRecord::new(
+                    claim,
+                    evidence.get(&claim_id).cloned().unwrap_or_default(),
+                    episodes.get(&claim_id).cloned().unwrap_or_default(),
+                    revisions.get(&claim_id).cloned().unwrap_or_default(),
+                )
+            })
+            .collect())
+    }
 }
 
 async fn load_event_claim_ids(
     pool: &SqlitePool,
     event_ids: &[&str],
+    owner: Owner,
+    namespace: &Namespace,
 ) -> Result<BTreeMap<String, Vec<String>>, AppError> {
     let mut builder = QueryBuilder::<Sqlite>::new(
-        "SELECT event_id, claim_id FROM evidence_links WHERE event_id IN (",
+        "SELECT el.event_id, el.claim_id FROM evidence_links el JOIN claims c ON c.claim_id = el.claim_id WHERE el.event_id IN (",
     );
     let mut separated = builder.separated(", ");
     for event_id in event_ids {
         separated.push_bind(*event_id);
     }
-    separated.push_unseparated(") ORDER BY event_id, claim_id");
+    separated.push_unseparated(") AND c.owner = ");
+    builder
+        .push_bind(owner_as_str(owner))
+        .push(" AND c.namespace = ")
+        .push_bind(namespace.as_str())
+        .push(" ORDER BY el.event_id, el.claim_id");
     let mut grouped = BTreeMap::<String, Vec<String>>::new();
     for row in map_sqlite(builder.build().fetch_all(pool).await)? {
         grouped
@@ -408,6 +502,149 @@ async fn load_event_episode_references(
             .entry(row.get("event_id"))
             .or_default()
             .push(row.get("episode_reference"));
+    }
+    Ok(grouped)
+}
+
+async fn load_claim_evidence_references(
+    pool: &SqlitePool,
+    claim_ids: &[&str],
+    owner: Owner,
+    namespace: &Namespace,
+) -> Result<BTreeMap<String, Vec<EventReference>>, AppError> {
+    let recorded_at_sort_key = sqlite_rfc3339_sort_key("e.recorded_at");
+    let mut builder = QueryBuilder::<Sqlite>::new(
+        "SELECT el.claim_id, e.event_id FROM evidence_links el JOIN events e ON e.event_id = el.event_id WHERE el.claim_id IN (",
+    );
+    let mut separated = builder.separated(", ");
+    for claim_id in claim_ids {
+        separated.push_bind(*claim_id);
+    }
+    separated.push_unseparated(") AND e.owner = ");
+    builder
+        .push_bind(owner_as_str(owner))
+        .push(" AND e.namespace = ")
+        .push_bind(namespace.as_str())
+        .push(" ORDER BY el.claim_id, ")
+        .push(&recorded_at_sort_key)
+        .push(" DESC, e.rowid DESC");
+
+    let mut grouped = BTreeMap::<String, Vec<EventReference>>::new();
+    for row in map_sqlite(builder.build().fetch_all(pool).await)? {
+        grouped
+            .entry(row.get("claim_id"))
+            .or_default()
+            .push(EventReference::parse(row.get::<String, _>("event_id")).map_err(AppError::from)?);
+    }
+    Ok(grouped)
+}
+
+async fn load_claim_episode_references(
+    pool: &SqlitePool,
+    claim_ids: &[&str],
+    owner: Owner,
+    namespace: &Namespace,
+) -> Result<BTreeMap<String, Vec<String>>, AppError> {
+    let mut builder = QueryBuilder::<Sqlite>::new(
+        "SELECT DISTINCT el.claim_id, ee.episode_reference FROM evidence_links el JOIN events e ON e.event_id = el.event_id JOIN episode_events ee ON ee.event_id = e.event_id WHERE el.claim_id IN (",
+    );
+    let mut separated = builder.separated(", ");
+    for claim_id in claim_ids {
+        separated.push_bind(*claim_id);
+    }
+    separated.push_unseparated(") AND e.owner = ");
+    builder
+        .push_bind(owner_as_str(owner))
+        .push(" AND e.namespace = ")
+        .push_bind(namespace.as_str())
+        .push(" ORDER BY el.claim_id, ee.episode_reference");
+
+    let mut grouped = BTreeMap::<String, Vec<String>>::new();
+    for row in map_sqlite(builder.build().fetch_all(pool).await)? {
+        grouped
+            .entry(row.get("claim_id"))
+            .or_default()
+            .push(row.get("episode_reference"));
+    }
+    Ok(grouped)
+}
+
+async fn load_claim_revision_links(
+    pool: &SqlitePool,
+    claim_ids: &[&str],
+    owner: Owner,
+    namespace: &Namespace,
+) -> Result<BTreeMap<String, ClaimRevisionLinks>, AppError> {
+    let recorded_at_sort_key = sqlite_rfc3339_sort_key("r.recorded_at");
+    let mut builder = QueryBuilder::<Sqlite>::new(
+        "SELECT r.reflection_id, r.superseded_claim_id, r.replacement_claim_id, \
+         CASE WHEN superseded.owner = ",
+    );
+    builder
+        .push_bind(owner_as_str(owner))
+        .push(" AND superseded.namespace = ")
+        .push_bind(namespace.as_str())
+        .push(
+            " THEN r.superseded_claim_id END AS scoped_superseded_claim_id, \
+               CASE WHEN replacement.owner = ",
+        )
+        .push_bind(owner_as_str(owner))
+        .push(" AND replacement.namespace = ")
+        .push_bind(namespace.as_str())
+        .push(
+            " THEN r.replacement_claim_id END AS scoped_replacement_claim_id \
+               FROM reflections r \
+               LEFT JOIN claims superseded ON superseded.claim_id = r.superseded_claim_id \
+               LEFT JOIN claims replacement ON replacement.claim_id = r.replacement_claim_id \
+               WHERE r.superseded_claim_id IN (",
+        );
+    let mut superseded = builder.separated(", ");
+    for claim_id in claim_ids {
+        superseded.push_bind(*claim_id);
+    }
+    superseded.push_unseparated(") OR r.replacement_claim_id IN (");
+    let mut replacement = builder.separated(", ");
+    for claim_id in claim_ids {
+        replacement.push_bind(*claim_id);
+    }
+    replacement
+        .push_unseparated(") ORDER BY ")
+        .push_unseparated(&recorded_at_sort_key)
+        .push_unseparated(" DESC, r.rowid DESC");
+
+    let mut grouped = BTreeMap::<String, ClaimRevisionLinks>::new();
+    for row in map_sqlite(builder.build().fetch_all(pool).await)? {
+        let reflection_id = row.get::<String, _>("reflection_id");
+        let superseded_claim_id = row.get::<Option<String>, _>("superseded_claim_id");
+        let replacement_claim_id = row.get::<Option<String>, _>("replacement_claim_id");
+        let scoped_superseded_claim_id = row.get::<Option<String>, _>("scoped_superseded_claim_id");
+        let scoped_replacement_claim_id =
+            row.get::<Option<String>, _>("scoped_replacement_claim_id");
+
+        if let Some(claim_id) = replacement_claim_id
+            && claim_ids.contains(&claim_id.as_str())
+        {
+            let links = grouped.entry(claim_id).or_default();
+            links
+                .source_reflection_id
+                .get_or_insert(reflection_id.clone());
+            if links.supersedes_claim_reference.is_none() {
+                links.supersedes_claim_reference =
+                    scoped_superseded_claim_id.map(ClaimReference::from_claim_id);
+            }
+        }
+        if let Some(claim_id) = superseded_claim_id
+            && claim_ids.contains(&claim_id.as_str())
+        {
+            let links = grouped.entry(claim_id).or_default();
+            links
+                .superseded_by_reflection_id
+                .get_or_insert(reflection_id);
+            if links.replacement_claim_reference.is_none() {
+                links.replacement_claim_reference =
+                    scoped_replacement_claim_id.map(ClaimReference::from_claim_id);
+            }
+        }
     }
     Ok(grouped)
 }
