@@ -56,6 +56,29 @@ pub struct ClaimReadRecord {
     pub revision: ClaimRevisionLinks,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimReflectionHistoryQuery {
+    pub scope: MemoryScope,
+    pub claim_reference: ClaimReference,
+    pub limit: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimReflectionHistoryRecord {
+    pub reflection_id: String,
+    pub recorded_at: DateTime<Utc>,
+    pub summary: String,
+    pub superseded_claim_reference: Option<ClaimReference>,
+    pub replacement_claim_reference: Option<ClaimReference>,
+    pub supporting_evidence_event_references: Vec<EventReference>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimReflectionHistoryPage {
+    pub records: Vec<ClaimReflectionHistoryRecord>,
+    pub has_more: bool,
+}
+
 impl ClaimReadRecord {
     pub fn new(
         claim: StoredClaim,
@@ -97,4 +120,9 @@ pub trait MemoryReadStore {
         &self,
         query: ClaimRecordQuery,
     ) -> Result<Vec<ClaimReadRecord>, AppError>;
+
+    async fn query_claim_reflection_history(
+        &self,
+        query: ClaimReflectionHistoryQuery,
+    ) -> Result<ClaimReflectionHistoryPage, AppError>;
 }

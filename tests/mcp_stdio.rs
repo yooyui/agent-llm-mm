@@ -32,6 +32,7 @@ async fn server_exposes_expected_tools_over_stdio() {
             "build_self_snapshot".to_string(),
             "decide_with_snapshot".to_string(),
             "get_memory".to_string(),
+            "get_reflection_history".to_string(),
             "ingest_interaction".to_string(),
             "run_reflection".to_string(),
             "search_memory".to_string(),
@@ -140,6 +141,21 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
         get_schema["properties"].get("record_type").is_some(),
         "get_memory schema should expose optional record_type: {get_schema:?}"
     );
+
+    let history_schema = tools
+        .iter()
+        .find(|tool| tool.name == "get_reflection_history")
+        .map(|tool| &tool.input_schema)
+        .expect("get_reflection_history tool schema");
+    let history_required = history_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .expect("get_reflection_history schema should expose required fields");
+    assert_eq!(
+        history_required,
+        &[json!("namespace"), json!("claim_reference")]
+    );
+    assert!(history_schema["properties"].get("limit").is_some());
 }
 
 #[tokio::test]
@@ -1648,6 +1664,85 @@ async fn search_memory_returns_scoped_claims_with_revision_provenance_over_stdio
 
     let pool = SqlitePool::connect(&database_url).await.unwrap();
     let semantic_counts_before = semantic_memory_counts(&pool).await;
+
+    for claim_reference in [
+        format!("claim:{old_claim_id}"),
+        replacement_claim_id.to_string(),
+    ] {
+        let history = client
+            .call_tool(
+                "get_reflection_history",
+                json!({
+                    "namespace": "project/claim-a",
+                    "claim_reference": claim_reference,
+                    "limit": 10
+                }),
+            )
+            .await
+            .unwrap();
+        assert!(
+            history.get("error").is_none(),
+            "reflection history failed: {history:?}"
+        );
+        let structured = &history["result"]["structuredContent"];
+        assert_eq!(structured["owner"], "World");
+        assert_eq!(structured["namespace"], "project/claim-a");
+        assert_eq!(structured["limit"], 10);
+        assert_eq!(structured["has_more"], false);
+        let history_records = structured["reflections"].as_array().unwrap();
+        assert_eq!(history_records.len(), 1);
+        assert_eq!(history_records[0]["reflection_id"], reflection_id);
+        assert_eq!(
+            history_records[0]["summary"],
+            "replace the old scoped claim"
+        );
+        assert_eq!(
+            history_records[0]["superseded_claim_reference"],
+            format!("claim:{old_claim_id}")
+        );
+        assert_eq!(
+            history_records[0]["replacement_claim_reference"],
+            format!("claim:{replacement_claim_id}")
+        );
+        assert_eq!(
+            history_records[0]["supporting_evidence_event_references"],
+            json!([format!("event:{project_a_event_id}")])
+        );
+    }
+
+    for claim_reference in [
+        format!("claim:{project_b_claim_id}"),
+        "claim:missing-history-claim".to_string(),
+    ] {
+        let history = client
+            .call_tool(
+                "get_reflection_history",
+                json!({
+                    "namespace": "project/claim-a",
+                    "claim_reference": claim_reference
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            history["result"]["structuredContent"]["reflections"],
+            json!([]),
+            "missing and cross-scope claims must not widen history reads"
+        );
+    }
+    let history_operation = sqlx::query(
+        "SELECT response_summary_json FROM operation_log WHERE entrypoint = 'get_reflection_history' ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let history_summary: Value =
+        serde_json::from_str(&history_operation.get::<String, _>("response_summary_json")).unwrap();
+    assert_eq!(
+        history_summary,
+        json!({"history_type": "claim", "result_count": 0, "has_more": false})
+    );
+
     let active = client
         .call_tool(
             "search_memory",
@@ -1866,6 +1961,23 @@ async fn search_memory_invalid_or_empty_scope_fails_closed_over_stdio() {
         .await
         .unwrap();
     assert_eq!(empty["result"]["structuredContent"]["records"], json!([]));
+
+    for invalid in [
+        json!({}),
+        json!({"namespace": "invalid", "claim_reference": "claim:a"}),
+        json!({"namespace": "project/a", "claim_reference": "claim:"}),
+        json!({"namespace": "project/a", "claim_reference": "claim:a", "limit": 0}),
+        json!({"namespace": "project/a", "claim_reference": "claim:a", "limit": 101}),
+    ] {
+        let response = client
+            .call_tool("get_reflection_history", invalid)
+            .await
+            .unwrap();
+        assert_eq!(
+            response["error"]["code"], -32602,
+            "invalid history read must fail closed: {response:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -1922,6 +2034,24 @@ timeout_ms = 100
     assert_eq!(
         response["result"]["structuredContent"]["records"][0]["summary"],
         "persist across an MCP reconnect"
+    );
+    let history = reader
+        .call_tool(
+            "get_reflection_history",
+            json!({
+                "namespace": "project/reconnect",
+                "claim_reference": "claim:missing-after-reconnect"
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        history.get("error").is_none(),
+        "provider-free reflection history read failed: {history:?}"
+    );
+    assert_eq!(
+        history["result"]["structuredContent"]["reflections"],
+        json!([])
     );
 }
 
@@ -3503,7 +3633,7 @@ required = true
         .expect("client");
 
     let tools = client.list_all_tools().await.expect("list tools");
-    assert_eq!(tools.len(), 6);
+    assert_eq!(tools.len(), 7);
 
     let health: serde_json::Value = reqwest::get(format!("http://127.0.0.1:{port}/api/health"))
         .await
@@ -3582,7 +3712,7 @@ max_concurrent_tasks = 1
             .await
             .unwrap();
     let tools = client.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 6);
+    assert_eq!(tools.len(), 7);
 
     client
         .call_tool(

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -19,13 +19,13 @@ use crate::{
     },
     error::AppError,
     ports::{
-        ClaimReadRecord, ClaimRecordQuery, ClaimRevisionLinks, ClaimStatus, ClaimStore,
-        CommitmentStore, EpisodeStore, EventReadRecord, EventRecordQuery, EventStore,
-        EvidenceQuery, IdentityStore, IngestTransaction, IngestTransactionRunner,
-        MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore, OperationLogQuery, OperationLogStore,
-        ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner, StoredClaim,
-        StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
-        TriggerLedgerStore,
+        ClaimReadRecord, ClaimRecordQuery, ClaimReflectionHistoryPage, ClaimReflectionHistoryQuery,
+        ClaimReflectionHistoryRecord, ClaimRevisionLinks, ClaimStatus, ClaimStore, CommitmentStore,
+        EpisodeStore, EventReadRecord, EventRecordQuery, EventStore, EvidenceQuery, IdentityStore,
+        IngestTransaction, IngestTransactionRunner, MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore,
+        OperationLogQuery, OperationLogStore, ReflectionStore, ReflectionTransaction,
+        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
+        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
 };
 
@@ -453,6 +453,195 @@ impl MemoryReadStore for SqliteStore {
             })
             .collect())
     }
+
+    async fn query_claim_reflection_history(
+        &self,
+        query: ClaimReflectionHistoryQuery,
+    ) -> Result<ClaimReflectionHistoryPage, AppError> {
+        if !query.scope.is_explicitly_scoped() {
+            return Err(AppError::InvalidParams(
+                "claim reflection history query requires an explicit namespace".to_string(),
+            ));
+        }
+        if query.limit == 0 {
+            return Err(AppError::InvalidParams(
+                "claim reflection history query limit must be at least 1".to_string(),
+            ));
+        }
+        if query.limit > MAX_EVENT_RECORD_QUERY_LIMIT {
+            return Err(AppError::InvalidParams(format!(
+                "claim reflection history query limit must be at most {MAX_EVENT_RECORD_QUERY_LIMIT}"
+            )));
+        }
+
+        let owner = query
+            .scope
+            .owner()
+            .expect("explicit memory scope must have an owner");
+        let namespace = query
+            .scope
+            .namespace()
+            .expect("explicit memory scope must have a namespace");
+        let recorded_at_sort_key = sqlite_rfc3339_sort_key("edge.recorded_at");
+        let fetch_limit = query.limit + 1;
+        // Reflections have no stored scope of their own. Derive this read model only from a
+        // scoped superseded Claim and exclude the entire edge when a replacement Claim exists
+        // outside that same scope; returning a redacted edge would still leak its audit text.
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            "WITH RECURSIVE scoped_edges AS (\
+             SELECT r.rowid AS reflection_rowid, r.reflection_id, r.recorded_at, r.summary, \
+                    r.superseded_claim_id, r.replacement_claim_id, \
+                    r.supporting_evidence_event_ids \
+             FROM reflections r \
+             JOIN claims superseded ON superseded.claim_id = r.superseded_claim_id \
+             LEFT JOIN claims replacement ON replacement.claim_id = r.replacement_claim_id \
+             WHERE superseded.owner = ",
+        );
+        builder
+            .push_bind(owner_as_str(owner))
+            .push(" AND superseded.namespace = ")
+            .push_bind(namespace.as_str())
+            .push(" AND (r.replacement_claim_id IS NULL OR (replacement.owner = ")
+            .push_bind(owner_as_str(owner))
+            .push(" AND replacement.namespace = ")
+            .push_bind(namespace.as_str())
+            .push(
+                "))), reachable_claims(claim_id) AS (\
+                 SELECT claim_id FROM claims \
+                 WHERE claim_id = ",
+            )
+            .push_bind(query.claim_reference.claim_id())
+            .push(" AND owner = ")
+            .push_bind(owner_as_str(owner))
+            .push(" AND namespace = ")
+            .push_bind(namespace.as_str())
+            .push(
+                " UNION \
+                 SELECT edge.replacement_claim_id \
+                 FROM scoped_edges edge \
+                 JOIN reachable_claims reachable \
+                   ON edge.superseded_claim_id = reachable.claim_id \
+                 WHERE edge.replacement_claim_id IS NOT NULL \
+                 UNION \
+                 SELECT edge.superseded_claim_id \
+                 FROM scoped_edges edge \
+                 JOIN reachable_claims reachable \
+                   ON edge.replacement_claim_id = reachable.claim_id\
+             ) \
+             SELECT edge.reflection_rowid, edge.reflection_id, edge.recorded_at, edge.summary, \
+                    edge.superseded_claim_id, edge.replacement_claim_id, \
+                    edge.supporting_evidence_event_ids \
+             FROM scoped_edges edge \
+             WHERE edge.superseded_claim_id IN (SELECT claim_id FROM reachable_claims) \
+                OR edge.replacement_claim_id IN (SELECT claim_id FROM reachable_claims) \
+             ORDER BY ",
+            )
+            .push(&recorded_at_sort_key)
+            .push(" DESC, edge.reflection_rowid DESC LIMIT ")
+            .push_bind(i64::try_from(fetch_limit).map_err(|_| {
+                AppError::InvalidParams(
+                    "claim reflection history query limit exceeds the supported maximum"
+                        .to_string(),
+                )
+            })?);
+
+        let mut unfiltered = map_sqlite(builder.build().fetch_all(&self.pool).await)?
+            .into_iter()
+            .map(|row| {
+                Ok(UnfilteredClaimReflectionHistoryRecord {
+                    reflection_id: row.get("reflection_id"),
+                    recorded_at: parse_timestamp(&row.get::<String, _>("recorded_at"))?,
+                    summary: row.get("summary"),
+                    superseded_claim_id: row.get("superseded_claim_id"),
+                    replacement_claim_id: row.get("replacement_claim_id"),
+                    supporting_evidence_event_ids: deserialize_json(
+                        &row.get::<String, _>("supporting_evidence_event_ids"),
+                    )?,
+                })
+            })
+            .collect::<Result<Vec<_>, AppError>>()?;
+        let has_more = unfiltered.len() > query.limit;
+        unfiltered.truncate(query.limit);
+
+        let scoped_evidence_ids = load_scoped_event_id_set(
+            &self.pool,
+            unfiltered
+                .iter()
+                .flat_map(|record| record.supporting_evidence_event_ids.iter())
+                .map(String::as_str),
+            owner,
+            namespace,
+        )
+        .await?;
+        let records = unfiltered
+            .into_iter()
+            .map(|record| record.into_scoped_record(&scoped_evidence_ids))
+            .collect();
+
+        Ok(ClaimReflectionHistoryPage { records, has_more })
+    }
+}
+
+struct UnfilteredClaimReflectionHistoryRecord {
+    reflection_id: String,
+    recorded_at: DateTime<Utc>,
+    summary: String,
+    superseded_claim_id: Option<String>,
+    replacement_claim_id: Option<String>,
+    supporting_evidence_event_ids: Vec<String>,
+}
+
+impl UnfilteredClaimReflectionHistoryRecord {
+    fn into_scoped_record(
+        self,
+        scoped_evidence_ids: &BTreeSet<String>,
+    ) -> ClaimReflectionHistoryRecord {
+        let mut seen = BTreeSet::new();
+        ClaimReflectionHistoryRecord {
+            reflection_id: self.reflection_id,
+            recorded_at: self.recorded_at,
+            summary: self.summary,
+            superseded_claim_reference: self.superseded_claim_id.map(ClaimReference::from_claim_id),
+            replacement_claim_reference: self
+                .replacement_claim_id
+                .map(ClaimReference::from_claim_id),
+            supporting_evidence_event_references: self
+                .supporting_evidence_event_ids
+                .into_iter()
+                .filter(|event_id| {
+                    scoped_evidence_ids.contains(event_id) && seen.insert(event_id.clone())
+                })
+                .map(EventReference::from_event_id)
+                .collect(),
+        }
+    }
+}
+
+async fn load_scoped_event_id_set<'a>(
+    pool: &SqlitePool,
+    event_ids: impl Iterator<Item = &'a str>,
+    owner: Owner,
+    namespace: &Namespace,
+) -> Result<BTreeSet<String>, AppError> {
+    let unique = event_ids.map(str::to_string).collect::<BTreeSet<_>>();
+    let mut scoped = BTreeSet::new();
+    for chunk in unique.iter().collect::<Vec<_>>().chunks(500) {
+        let mut builder = QueryBuilder::<Sqlite>::new("SELECT event_id FROM events WHERE owner = ");
+        builder
+            .push_bind(owner_as_str(owner))
+            .push(" AND namespace = ")
+            .push_bind(namespace.as_str())
+            .push(" AND event_id IN (");
+        let mut separated = builder.separated(", ");
+        for event_id in chunk {
+            separated.push_bind(event_id.as_str());
+        }
+        separated.push_unseparated(")");
+        for row in map_sqlite(builder.build().fetch_all(pool).await)? {
+            scoped.insert(row.get("event_id"));
+        }
+    }
+    Ok(scoped)
 }
 
 async fn load_event_claim_ids(

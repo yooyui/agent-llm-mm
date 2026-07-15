@@ -22,7 +22,7 @@ use crate::{
         auto_reflect_if_needed::{self, AutoReflectInput, RecursionGuard},
         build_self_snapshot,
         daemon::DaemonHandle,
-        decide_with_snapshot, get_memory, ingest_interaction,
+        decide_with_snapshot, get_memory, get_reflection_history, ingest_interaction,
         ingest_interaction::IngestInput,
         run_reflection,
         run_reflection::ReflectionInput,
@@ -42,19 +42,20 @@ use crate::{
         OperationStatus, start_dashboard_service_with_operation_log,
     },
     ports::{
-        ClaimReadRecord, ClaimRecordQuery, ClaimStatus, ClaimStore, Clock, CommitmentStore,
-        EpisodeStore, EventReadRecord, EventRecordQuery, EventStore, EvidenceQuery, IdGenerator,
-        IdentityStore, IngestTransaction, IngestTransactionRunner, MemoryReadStore, ModelDecision,
-        ModelDecisionRequest, ModelPort, OperationLogStore, ReflectionStore, ReflectionTransaction,
-        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
-        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
+        ClaimReadRecord, ClaimRecordQuery, ClaimReflectionHistoryPage, ClaimReflectionHistoryQuery,
+        ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventReadRecord,
+        EventRecordQuery, EventStore, EvidenceQuery, IdGenerator, IdentityStore, IngestTransaction,
+        IngestTransactionRunner, MemoryReadStore, ModelDecision, ModelDecisionRequest, ModelPort,
+        OperationLogStore, ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner,
+        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        TriggerLedgerStore,
     },
     support::config::{AppConfig, ModelConfig, ModelProviderKind, TransportKind},
 };
 
 use super::dto::{
-    BuildSelfSnapshotParams, DecideWithSnapshotParams, GetMemoryParams, IngestInteractionParams,
-    RunReflectionParams, SearchMemoryParams,
+    BuildSelfSnapshotParams, DecideWithSnapshotParams, GetMemoryParams, GetReflectionHistoryParams,
+    IngestInteractionParams, RunReflectionParams, SearchMemoryParams,
 };
 
 pub const AUTO_REFLECTION_RUNTIME_HOOKS: [&str; 4] = [
@@ -397,6 +398,68 @@ impl Server {
                     .with_response_summary(
                         serde_json::json!({"record_type": record_type.as_str(), "found": found}),
                     ),
+            )
+            .await;
+        structured(result)
+    }
+
+    #[tool(
+        description = "Read the newest claim-linked reflection records reachable from one exact claim inside an explicit local memory namespace. Missing and cross-scope claims return an empty history; mixed-scope revision edges are excluded. This first slice does not expose identity or commitment history.",
+        input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<GetReflectionHistoryParams>>()
+    )]
+    async fn get_reflection_history(
+        &self,
+        raw_params: JsonObject,
+    ) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
+        let params = map_tool_error(
+            &self.runtime,
+            "get_reflection_history",
+            None,
+            Some(correlation_id.clone()),
+            decode_tool_params::<GetReflectionHistoryParams>(raw_params),
+        )
+        .await?;
+        let dashboard_namespace = Some(params.namespace.clone());
+        let input = map_tool_error(
+            &self.runtime,
+            "get_reflection_history",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            get_reflection_history::GetReflectionHistoryInput::try_from(params),
+        )
+        .await?;
+        let result = map_tool_error(
+            &self.runtime,
+            "get_reflection_history",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            get_reflection_history::execute(&self.runtime, input).await,
+        )
+        .await?;
+        let response_summary = serde_json::json!({
+            "history_type": "claim",
+            "result_count": result.reflections.len(),
+            "has_more": result.has_more,
+        });
+        self.runtime.dashboard.record_tool_ok(
+            "get_reflection_history",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            format!(
+                "claim reflection history returned {} record(s)",
+                result.reflections.len()
+            ),
+            &response_summary,
+        );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok(
+                    "get_reflection_history",
+                    dashboard_namespace,
+                    Some(correlation_id),
+                )
+                .with_response_summary(response_summary),
             )
             .await;
         structured(result)
@@ -1002,6 +1065,13 @@ impl MemoryReadStore for Runtime {
         query: ClaimRecordQuery,
     ) -> Result<Vec<ClaimReadRecord>, AppError> {
         self.store.query_claim_records(query).await
+    }
+
+    async fn query_claim_reflection_history(
+        &self,
+        query: ClaimReflectionHistoryQuery,
+    ) -> Result<ClaimReflectionHistoryPage, AppError> {
+        self.store.query_claim_reflection_history(query).await
     }
 }
 

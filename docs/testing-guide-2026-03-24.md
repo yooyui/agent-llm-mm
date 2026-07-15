@@ -446,7 +446,7 @@ bash -n scripts/agent-llm-mm.sh scripts/first-run-bootstrap-smoke-local.sh scrip
 
 M0.4 不证明 remote backup、scheduled backup、cloud sync、production disaster recovery，或超出 SQLite 事务语义的 crash/power-loss guarantee。
 
-### 6.3F M1.1.1 / M1.1.2 / M1.2.1 / M1.2.2 scoped read model 回归
+### 6.3F M1.1.1 / M1.1.2 / M1.2.1 / M1.2.2 / M1.2.3 scoped read model 回归
 
 ```zsh
 cargo test --test sqlite_store sqlite_event_recall -v
@@ -454,18 +454,26 @@ cargo test --test sqlite_store sqlite_claim_recall_is_scoped_status_aware_and_re
 cargo test --test domain_snapshot raw_and_prefixed_claim_ids_share_one_canonical_reference -v
 cargo test --test domain_snapshot invalid_claim_references_are_rejected -v
 cargo test --test evidence_query_dto get_memory_dto -v
+cargo test --test evidence_query_dto get_reflection_history -v
+cargo test --test sqlite_store sqlite_claim_reflection_history -v
 cargo test --test mcp_stdio search_memory -v
 cargo test --test mcp_stdio search_memory_returns_scoped_claims_with_revision_provenance_over_stdio -v
+cargo test --test mcp_stdio search_memory_invalid_or_empty_scope_fails_closed_over_stdio -v
+cargo test --test mcp_stdio search_memory_survives_stdio_reconnect_with_offline_provider -v
 cargo test --test mcp_stdio get_memory_returns_one_scoped_event_or_null_without_widening -v
 cargo test --test mcp_stdio server_exposes_expected_tools_over_stdio -v
 cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -v
+./scripts/test-tier.sh fast
+./scripts/test-tier.sh core
 cargo test --test status_sync -v
 ./scripts/status-sync-check.sh
 ```
 
-这组回归证明：`search_memory` 只接受显式 namespace，且省略 additive `record_type` 时继续使用 Event；SQLite 在 filter / limit 前执行 owner + namespace 收窄，exact Event/Claim reference 都不会跨 scope 命中。Event 路径保留完整字段与现有 claim/episode provenance；Claim 路径支持 canonical/raw `claim_reference`、`claim_status`、`mode` 和 `1..=100` limit，省略 status 默认 `Active`，并返回 canonical claim/evidence references、episode references 与直接 source/superseded reflection links。`get_memory` 省略 `record_type` 时保持 canonical/raw Event ID 语义，显式 `record_type = Claim` 时接受 canonical/raw Claim ID；精确 Claim lookup 可返回任意状态，但 missing / cross-scope 仍为 `record: null`。DTO 回归还覆盖 raw Event ID `claim:*` 不被误判为 Claim。Claim 查询拒绝 event/time filters，因为 claims 没有 stored `recorded_at`。空结果不扩大；断开并重连同一 SQLite 后，即使 provider 不可达，deterministic read path 仍可用；读取不修改 semantic memory tables，operation log 只保存 record type 和 result count/found。
+这组回归证明：`search_memory` 只接受显式 namespace，且省略 additive `record_type` 时继续使用 Event；SQLite 在 filter / limit 前执行 owner + namespace 收窄，exact Event/Claim reference 都不会跨 scope 命中。Event 路径保留完整字段与现有 claim/episode provenance；Claim 路径支持 canonical/raw `claim_reference`、`claim_status`、`mode` 和 `1..=100` limit，省略 status 默认 `Active`，并返回 canonical claim/evidence references、episode references 与直接 source/superseded reflection links。`get_memory` 省略 `record_type` 时保持 canonical/raw Event ID 语义，显式 `record_type = Claim` 时接受 canonical/raw Claim ID；精确 Claim lookup 可返回任意状态，但 missing / cross-scope 仍为 `record: null`。DTO 回归还覆盖 raw Event ID `claim:*` 不被误判为 Claim。
 
-该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.2.1 Scoped Event Lookup` 与 `M1.2.2 Scoped Claim Lookup`，不证明 episode/reflection record union、完整 M1.1/M1.2/M1、文本检索、history、supersession/correction、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha。
+M1.2.3 回归另外证明：`get_reflection_history` 要求显式 namespace 与 exact Claim anchor，接受 canonical/raw Claim ID，limit 默认 20 且只允许 `1..=100`；SQLite 递归读取 superseded/replacement 双向 chain，并按 newest-first 返回有界结果与 `has_more`。missing/cross-scope Claim 返回空；mixed-scope edge 整条隐藏；supporting evidence 只返回同 scope canonical references；malformed legacy evidence fail closed。断开重连且 provider 不可达时历史读取仍可用，semantic memory tables 不变，operation log metadata 只保存 `history_type`、`result_count`、`has_more`。
+
+该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup` 与 `M1.2.3 Scoped Claim Reflection History`。它不证明 identity/commitment history、record-only reflection、episode/reflection `get_memory`、correction、完整 M1.1/M1.2/M1、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha；本切片也没有 schema migration/index 或规模化性能证明，当前仍是 MVP 表扫描边界。
 
 ### 6.4 Provider 合规预检
 

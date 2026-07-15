@@ -7,6 +7,7 @@ use crate::{
         build_self_snapshot::BuildSelfSnapshotInput,
         decide_with_snapshot::DecideWithSnapshotInput,
         get_memory::{GetMemoryInput, MemoryRecordReference},
+        get_reflection_history::{DEFAULT_REFLECTION_HISTORY_LIMIT, GetReflectionHistoryInput},
         ingest_interaction::IngestInput,
         run_reflection::ReflectionInput,
         search_memory::{DEFAULT_SEARCH_MEMORY_LIMIT, MemoryRecordType, SearchMemoryInput},
@@ -496,6 +497,29 @@ pub struct GetMemoryParams {
     pub id: String,
     #[serde(default)]
     pub record_type: Option<MemoryRecordTypeDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GetReflectionHistoryParams {
+    pub namespace: String,
+    pub claim_reference: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+impl TryFrom<GetReflectionHistoryParams> for GetReflectionHistoryInput {
+    type Error = AppError;
+
+    fn try_from(value: GetReflectionHistoryParams) -> Result<Self, Self::Error> {
+        let input = Self {
+            namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
+            claim_reference: ClaimReference::parse(value.claim_reference)
+                .map_err(AppError::from)?,
+            limit: value.limit.unwrap_or(DEFAULT_REFLECTION_HISTORY_LIMIT),
+        };
+        input.validate()?;
+        Ok(input)
+    }
 }
 
 impl TryFrom<GetMemoryParams> for GetMemoryInput {

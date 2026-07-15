@@ -11,10 +11,11 @@ use agent_llm_mm::{
     },
     error::AppError,
     ports::{
-        ClaimRecordQuery, ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventRecordQuery,
-        EventStore, EvidenceQuery, IdentityStore, IngestTransactionRunner, MemoryReadStore,
-        ReflectionStore, ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
-        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
+        ClaimRecordQuery, ClaimReflectionHistoryQuery, ClaimStatus, ClaimStore, CommitmentStore,
+        EpisodeStore, EventRecordQuery, EventStore, EvidenceQuery, IdentityStore,
+        IngestTransactionRunner, MemoryReadStore, ReflectionStore, ReflectionTransactionRunner,
+        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        TriggerLedgerStore,
     },
 };
 use chrono::{DateTime, Utc};
@@ -2553,4 +2554,241 @@ async fn sqlite_claim_recall_is_scoped_status_aware_and_returns_provenance() {
         })
         .await;
     assert!(matches!(unscoped, Err(AppError::InvalidParams(_))));
+}
+
+#[tokio::test]
+async fn sqlite_claim_reflection_history_is_scoped_reachable_bounded_and_evidence_filtered() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let project_a = Namespace::for_project("history-a");
+    let project_b = Namespace::for_project("history-b");
+
+    for (event_id, namespace) in [
+        ("history-event-a-1", project_a.clone()),
+        ("history-event-a-2", project_a.clone()),
+        ("history-event-b", project_b.clone()),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                now,
+                Event::new_with_namespace(Owner::World, namespace, EventKind::Reflection, event_id)
+                    .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+
+    for (claim_id, namespace, status) in [
+        (
+            "history-claim-old",
+            project_a.clone(),
+            ClaimStatus::Superseded,
+        ),
+        (
+            "history-claim-middle",
+            project_a.clone(),
+            ClaimStatus::Superseded,
+        ),
+        (
+            "history-claim-new",
+            project_a.clone(),
+            ClaimStatus::Disputed,
+        ),
+        ("history-claim-b", project_b.clone(), ClaimStatus::Active),
+    ] {
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                claim_id.to_string(),
+                ClaimDraft::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    "history.fact",
+                    "is",
+                    claim_id,
+                    Mode::Observed,
+                ),
+                status,
+            ))
+            .await
+            .unwrap();
+    }
+
+    for reflection in [
+        StoredReflection::new(
+            "history-reflection-old".to_string(),
+            now,
+            Reflection::new("replace old with middle"),
+            Some("history-claim-old".to_string()),
+            Some("history-claim-middle".to_string()),
+        )
+        .with_supporting_evidence_event_ids(vec![
+            "history-event-a-1".to_string(),
+            "history-event-b".to_string(),
+            "history-event-a-1".to_string(),
+        ]),
+        StoredReflection::new(
+            "history-reflection-new".to_string(),
+            now + chrono::Duration::seconds(1),
+            Reflection::new("replace middle with new"),
+            Some("history-claim-middle".to_string()),
+            Some("history-claim-new".to_string()),
+        )
+        .with_supporting_evidence_event_ids(vec!["history-event-a-2".to_string()]),
+        StoredReflection::new(
+            "history-reflection-cycle".to_string(),
+            now + chrono::Duration::seconds(1),
+            Reflection::new("malformed legacy cycle remains bounded"),
+            Some("history-claim-new".to_string()),
+            Some("history-claim-old".to_string()),
+        ),
+        StoredReflection::new(
+            "history-reflection-dispute".to_string(),
+            now + chrono::Duration::seconds(2),
+            Reflection::new("dispute the newest claim"),
+            Some("history-claim-new".to_string()),
+            None,
+        )
+        .with_supporting_evidence_event_ids(vec!["history-event-a-2".to_string()]),
+        StoredReflection::new(
+            "history-reflection-cross-scope".to_string(),
+            now + chrono::Duration::seconds(3),
+            Reflection::new("must remain hidden"),
+            Some("history-claim-old".to_string()),
+            Some("history-claim-b".to_string()),
+        ),
+        StoredReflection::new(
+            "history-reflection-record-only".to_string(),
+            now + chrono::Duration::seconds(4),
+            Reflection::new("not claim-linked"),
+            None,
+            None,
+        ),
+    ] {
+        context.store.append_reflection(reflection).await.unwrap();
+    }
+
+    for anchor in [
+        "history-claim-old",
+        "history-claim-middle",
+        "history-claim-new",
+    ] {
+        let page = context
+            .store
+            .query_claim_reflection_history(ClaimReflectionHistoryQuery {
+                scope: MemoryScope::for_namespace(project_a.clone()),
+                claim_reference: ClaimReference::parse(anchor).unwrap(),
+                limit: 10,
+            })
+            .await
+            .unwrap();
+        assert!(!page.has_more);
+        assert_eq!(
+            page.records
+                .iter()
+                .map(|record| record.reflection_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "history-reflection-dispute",
+                "history-reflection-cycle",
+                "history-reflection-new",
+                "history-reflection-old",
+            ]
+        );
+        assert_eq!(
+            page.records[3]
+                .supporting_evidence_event_references
+                .iter()
+                .map(EventReference::canonical)
+                .collect::<Vec<_>>(),
+            vec!["event:history-event-a-1"]
+        );
+    }
+
+    let bounded = context
+        .store
+        .query_claim_reflection_history(ClaimReflectionHistoryQuery {
+            scope: MemoryScope::for_namespace(project_a.clone()),
+            claim_reference: ClaimReference::parse("claim:history-claim-middle").unwrap(),
+            limit: 2,
+        })
+        .await
+        .unwrap();
+    assert!(bounded.has_more);
+    assert_eq!(bounded.records.len(), 2);
+
+    for reference in ["history-claim-b", "history-claim-missing"] {
+        let empty = context
+            .store
+            .query_claim_reflection_history(ClaimReflectionHistoryQuery {
+                scope: MemoryScope::for_namespace(project_a.clone()),
+                claim_reference: ClaimReference::parse(reference).unwrap(),
+                limit: 10,
+            })
+            .await
+            .unwrap();
+        assert!(empty.records.is_empty());
+        assert!(!empty.has_more);
+    }
+
+    let unscoped = context
+        .store
+        .query_claim_reflection_history(ClaimReflectionHistoryQuery {
+            scope: MemoryScope::legacy_unscoped(),
+            claim_reference: ClaimReference::parse("history-claim-old").unwrap(),
+            limit: 10,
+        })
+        .await;
+    assert!(matches!(unscoped, Err(AppError::InvalidParams(_))));
+}
+
+#[tokio::test]
+async fn sqlite_claim_reflection_history_rejects_malformed_legacy_evidence_json() {
+    let context = test_support::new_sqlite_store().await;
+    let namespace = Namespace::for_project("history-malformed");
+    context
+        .store
+        .upsert_claim(StoredClaim::new(
+            "history-malformed-claim".to_string(),
+            ClaimDraft::new_with_namespace(
+                Owner::World,
+                namespace.clone(),
+                "history.fact",
+                "is",
+                "malformed",
+                Mode::Observed,
+            ),
+            ClaimStatus::Disputed,
+        ))
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"
+        INSERT INTO reflections (
+            reflection_id, recorded_at, summary, superseded_claim_id,
+            replacement_claim_id, supporting_evidence_event_ids
+        ) VALUES (?, ?, ?, ?, NULL, ?)
+        "#,
+    )
+    .bind("history-reflection-malformed")
+    .bind(test_support::fixed_now().to_rfc3339())
+    .bind("malformed legacy evidence must fail closed")
+    .bind("history-malformed-claim")
+    .bind("not-json")
+    .execute(&context.pool)
+    .await
+    .unwrap();
+
+    let result = context
+        .store
+        .query_claim_reflection_history(ClaimReflectionHistoryQuery {
+            scope: MemoryScope::for_namespace(namespace),
+            claim_reference: ClaimReference::parse("history-malformed-claim").unwrap(),
+            limit: 10,
+        })
+        .await;
+
+    assert!(matches!(result, Err(AppError::Message(_))));
 }

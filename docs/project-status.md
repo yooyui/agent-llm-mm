@@ -39,13 +39,15 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 
 新的优先级是：`Truth and Safety -> Trustworthy Recall -> Local Product Alpha -> Retrieval Quality -> optional Remote/Autonomy`。旧 productization、P1/P2/P3 和 non-MVP plans 保留为历史记录，不再决定下一步。
 
-## 2026-07-15 M1.1.1 / M1.1.2 / M1.2.1 / M1.2.2 scoped read 首片
+## 2026-07-15 M1.1.1 / M1.1.2 / M1.2.1 / M1.2.2 / M1.2.3 scoped read 首片
 
 M1 已开始，当前完成两个 `search_memory` 读取切片和 Event / Claim 两个 `get_memory` lookup 切片。`search_memory` MCP 工具要求显式 `namespace`，省略 additive `record_type` 时继续查询 Event；服务端据此派生 owner，并在 SQLite 查询内先按 owner + namespace 过滤，再应用对应 record type 的过滤与 `1..=100` limit。Event 查询支持 exact event reference、kind、inclusive RFC3339 time window 和 recent-first 稳定排序；`get_memory` 复用同一 read service，按 stable ID 返回单条 Event 或 Claim，未命中或跨 scope ID 返回 `record: null`。Event 记录保留 canonical `event:<id>`、recorded_at、owner、namespace、kind、summary，以及从现有 `evidence_links` 和 `episode_events` 批量读取的 claim IDs / episode references。
 
 M1.1.2 为 `search_memory` 增加 `record_type = Claim`。Claim 查询要求同一显式 namespace，支持 canonical/raw `claim_reference`、`claim_status`、`mode` 与 `1..=100` limit；DTO 省略 `claim_status` 时默认 `Active`。结果返回 canonical `claim:<id>`、owner、namespace、subject/predicate/object、mode、status，以及 canonical evidence event references、episode references 和直接 source/superseded reflection links。claims 当前没有 `recorded_at`，因此 Claim 查询会拒绝 event reference、event kind 和时间过滤；跨 scope exact claim reference 返回空结果，不扩大查询。M1.2.2 又让 `get_memory` 在显式 `record_type = Claim` 时接受 canonical/raw Claim ID；省略类型仍保持 Event 语义，避免历史 raw Event ID 的判型回归。精确 Claim lookup 不套用 search 的默认 Active 过滤，因而可返回任意状态 Claim。
 
-Event 与 Claim 查询共用独立的只读 application/port，不复用 reflection evidence narrowing，不调用 model provider，也不修改 events、claims、evidence、episodes、reflections、identity 或 commitments；MCP handler 只追加不含查询正文的 operation-log metadata。真实 `stdio` 回归覆盖 project/a 与 project/b 干扰、exact-reference no-widening、非法参数 fail-closed、断开重连和不可达 provider。四个首片完成仍不代表 episode/reflection `get_memory`、完整 revision history、supersede/correction、真实客户端 M1 退出门或 Local Alpha。
+M1.2.3 新增第 7 个 MCP 工具 `get_reflection_history(namespace, claim_reference, limit?)`。它接受 canonical/raw Claim ID，以 exact scoped Claim 为锚点，递归沿 superseded/replacement 双向关系读取同一 revision chain，并按 `recorded_at DESC, reflection rowid DESC` 返回 newest-first 结果；limit 默认 20，合法范围为 `1..=100`，并用 `has_more` 表示截断。missing/cross-scope Claim 返回空历史；只要 revision edge 任一端不属于请求 scope，整条 mixed-scope edge 就隐藏。每条 reflection 只返回同 scope 的 canonical evidence event references；operation metadata 仅含 `history_type`、`result_count`、`has_more`。
+
+Event、Claim 与 Claim history 查询共用独立的只读 application/port，不复用 reflection evidence narrowing，不调用 model provider，也不修改 events、claims、evidence、episodes、reflections、identity 或 commitments。真实 `stdio` 回归覆盖跨 scope 干扰、exact-reference no-widening、非法参数 fail-closed、断开重连和不可达 provider。M1.2.3 没有 schema migration 或新 index，当前 SQLite 实现保留 technical-MVP 表扫描性能边界。五个首片完成仍不代表 identity/commitment history、record-only reflection、episode/reflection `get_memory`、supersede/correction、真实客户端 M1 退出门或 Local Alpha。
 
 ## 项目定位
 
@@ -63,11 +65,12 @@ Event 与 Claim 查询共用独立的只读 application/port，不复用 reflect
 
 `events -> claims -> self_snapshot -> decision -> reflection`
 
-对应到 MCP 工具层，当前可用的 6 个工具是：
+对应到 MCP 工具层，当前可用的 7 个工具是：
 
 - `ingest_interaction`
 - `search_memory`
 - `get_memory`
+- `get_reflection_history`
 - `build_self_snapshot`
 - `decide_with_snapshot`
 - `run_reflection`
@@ -169,7 +172,7 @@ Implementation notes:
 ### 9. self-revision demo package
 
 - 已新增 deterministic `openai-compatible` stub provider binary
-- 已新增 demo runner binary，复用真实 MCP `stdio` 服务和原有 4 个写入/快照/决策/反思工具跑 canonical scenario；后续新增的 `search_memory` / `get_memory` 不在该旧 demo story 内
+- 已新增 demo runner binary，复用真实 MCP `stdio` 服务和原有 4 个写入/快照/决策/反思工具跑 canonical scenario；后续新增的 `search_memory` / `get_memory` / `get_reflection_history` 不在该旧 demo story 内
 - 已新增 macOS shell wrapper：`./scripts/run-self-revision-demo.sh`
 - 运行后会生成 `doctor.json`、snapshot before / after、decision before / after、timeline、SQLite summary 和 Markdown report
 - 该 demo 只证明当前 MVP 的可重复证据链，不新增 MCP tool、daemon、Web UI 或新的 durable write path

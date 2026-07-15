@@ -2,10 +2,12 @@ use agent_llm_mm::{
     application::{
         build_self_snapshot::BuildSelfSnapshotInput,
         get_memory::{GetMemoryInput, MemoryRecordReference},
+        get_reflection_history::{DEFAULT_REFLECTION_HISTORY_LIMIT, GetReflectionHistoryInput},
     },
     domain::{event::MAX_EVIDENCE_MANIFEST_ITEMS, types::Owner},
     interfaces::mcp::dto::{
-        BuildSelfSnapshotParams, EvidenceQueryDto, GetMemoryParams, MemoryRecordTypeDto,
+        BuildSelfSnapshotParams, EvidenceQueryDto, GetMemoryParams, GetReflectionHistoryParams,
+        MemoryRecordTypeDto,
     },
     ports::EvidenceQuery,
 };
@@ -44,6 +46,35 @@ fn get_memory_dto_uses_explicit_claim_type_for_raw_or_canonical_claim_ids() {
             }
             MemoryRecordReference::Event(_) => panic!("explicit Claim must not select Event"),
         }
+    }
+}
+
+#[test]
+fn get_reflection_history_dto_requires_claim_type_and_defaults_limit() {
+    for claim_reference in ["stored-claim-id", "claim:stored-claim-id"] {
+        let input = GetReflectionHistoryInput::try_from(GetReflectionHistoryParams {
+            namespace: "project/dto".to_string(),
+            claim_reference: claim_reference.to_string(),
+            limit: None,
+        })
+        .expect("raw and canonical claim references should parse");
+
+        assert_eq!(input.claim_reference.claim_id(), "stored-claim-id");
+        assert_eq!(input.limit, DEFAULT_REFLECTION_HISTORY_LIMIT);
+    }
+}
+
+#[test]
+fn get_reflection_history_dto_rejects_invalid_limits() {
+    for limit in [0, 101] {
+        let error = GetReflectionHistoryInput::try_from(GetReflectionHistoryParams {
+            namespace: "project/dto".to_string(),
+            claim_reference: "claim:stored-claim-id".to_string(),
+            limit: Some(limit),
+        })
+        .expect_err("out-of-range history limit should fail");
+
+        assert!(error.to_string().contains("limit"));
     }
 }
 

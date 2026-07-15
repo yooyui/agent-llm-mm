@@ -3,6 +3,7 @@ pub mod build_self_snapshot;
 pub mod daemon;
 pub mod decide_with_snapshot;
 pub mod get_memory;
+pub mod get_reflection_history;
 pub mod ingest_interaction;
 pub mod run_reflection;
 pub mod search_memory;
