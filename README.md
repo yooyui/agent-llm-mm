@@ -12,7 +12,8 @@ The current project is best understood as a technical MVP for local agent memory
 
 ## Features
 
-- **Local MCP memory service**: exposes `ingest_interaction`, `build_self_snapshot`, `decide_with_snapshot`, and `run_reflection` over MCP `stdio`.
+- **Local MCP memory service**: exposes `ingest_interaction`, `search_memory`, `build_self_snapshot`, `decide_with_snapshot`, and `run_reflection` over MCP `stdio`.
+- **Scoped event recall**: `search_memory` requires an explicit namespace and returns bounded recent-first event records with stable canonical IDs, timestamps, scope, kind, summary, and persisted claim/episode provenance. The deterministic read path does not call a model provider.
 - **SQLite persistence**: stores events, claims, evidence, reflection audits, trigger ledger entries, and operation logs.
 - **Evidence-gated self-revision**: claim, identity, and commitment updates must be backed by explicit evidence and governance rules. `run_reflection` remains the only durable write path for identity, commitment, and reflection changes.
 - **Bounded scoped snapshots**: the M0.2 path accepts an explicit namespace, optional evidence manifest, and inclusive time window; it applies owner/namespace filtering and stable recent-first ordering in SQLite, and feeds automatic reflection only from the frozen trigger scope and evidence window.
@@ -88,6 +89,7 @@ Implemented:
 - Read-only dashboard, `doctor`, local support bundle, and local gate summary scripts
 - Explicit SQLite schema version / migration ledger, transactional legacy migration, pre-write backup and restore rehearsal
 - Loopback-only enabled dashboard configuration, stderr-only tracing, and Linux/macOS source CI on pinned Rust `1.95.0`
+- M1.1.1 scoped event recall through the additive `search_memory` MCP tool; cross-namespace exact-ID matches return empty and semantic memory tables remain unchanged by reads
 
 Partially implemented:
 
@@ -104,7 +106,7 @@ Partially implemented:
 - Governance validation failures write only a rejected trigger audit. Failures while appending the handled trigger ledger or committing the reflection transaction roll back pending identity, commitment, claim/evidence, reflection, and handled-ledger changes; a separate rejected audit is then recorded outside the failed transaction. This is locally verified failure atomicity, not crash-recovery or distributed transaction support.
 - Identity, claims, evidence, and episodes in the decision snapshot are still caller-provided; there is no server-created snapshot handle or complete policy/provenance binding yet.
 - Episodes are currently lightweight projections, not a complete autobiographical memory model.
-- Evidence relation, episode summary, and memory-layer projections are not yet unified behind a runtime memory read interface.
+- The first runtime read interface covers complete event records plus persisted claim/episode links only. Claims, episodes, reflections, evidence relations, status/mode fields, supersession history, and richer memory-layer projections are not yet unified behind the same contract.
 - Provider live evidence proves configuration and connectivity only. It does not prove model quality, SLA, or production readiness.
 - Local alpha gates still depend on external evidence such as a real fresh-machine run, Windows parity, and a human release decision.
 - The repository remains on `rmcp 0.5.0`. An isolated `2.2.0` compatibility probe is documented as no-go for an in-place M0.5 bump because one handler error contract regressed; the future upgrade must remain capability-neutral.
@@ -112,7 +114,7 @@ Partially implemented:
 Not implemented:
 
 - Full memory layering
-- User-facing scoped memory search, record lookup, provenance history, and audited correction tools
+- Complete cross-record memory search, `get_memory`, provenance/reflection history, and audited correction tools
 - Richer evidence ranking / weighting
 - Production-grade remote, team, or multi-tenant mode
 - Daemon write capabilities and autonomous background operation

@@ -33,6 +33,7 @@ async fn server_exposes_expected_tools_over_stdio() {
             "decide_with_snapshot".to_string(),
             "ingest_interaction".to_string(),
             "run_reflection".to_string(),
+            "search_memory".to_string(),
         ]
     );
 }
@@ -91,6 +92,34 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
             .iter()
             .any(|field| { matches!(field.as_str(), Some("recorded_after" | "recorded_before")) })
     );
+
+    let search_schema = tools
+        .iter()
+        .find(|tool| tool.name == "search_memory")
+        .map(|tool| &tool.input_schema)
+        .expect("search_memory tool schema");
+    let search_properties = search_schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("search_memory schema should expose properties");
+    for field in [
+        "namespace",
+        "event_reference",
+        "kind",
+        "recorded_after",
+        "recorded_before",
+        "limit",
+    ] {
+        assert!(
+            search_properties.contains_key(field),
+            "search_memory schema missing {field}: {search_schema:?}"
+        );
+    }
+    let search_required = search_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .expect("search_memory schema should expose required fields");
+    assert_eq!(search_required, &[json!("namespace")]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1235,6 +1264,230 @@ async fn stdio_tools_share_runtime_state_across_calls() {
         episodes.contains(&"episode:task-7"),
         "snapshot episodes missing ingested episode: {episodes:?}"
     );
+}
+
+#[tokio::test]
+async fn search_memory_returns_only_scoped_event_records_and_provenance_over_stdio() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let mut project_a_event_id = String::new();
+    for (namespace, summary, episode_reference, with_claim) in [
+        ("project/a", "project a durable memory", "episode:a", true),
+        ("project/b", "project b interference", "episode:b", false),
+    ] {
+        let claim_drafts = if with_claim {
+            json!([{
+                "owner": "World",
+                "namespace": namespace,
+                "subject": "project.a",
+                "predicate": "has",
+                "object": "durable memory",
+                "mode": "Observed"
+            }])
+        } else {
+            json!([])
+        };
+        let response = client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "World",
+                        "namespace": namespace,
+                        "kind": "Observation",
+                        "summary": summary
+                    },
+                    "claim_drafts": claim_drafts,
+                    "episode_reference": episode_reference
+                }),
+            )
+            .await
+            .unwrap();
+        assert!(
+            response.get("error").is_none(),
+            "ingest failed: {response:?}"
+        );
+        if with_claim {
+            project_a_event_id = response["result"]["structuredContent"]["event_id"]
+                .as_str()
+                .unwrap()
+                .to_string();
+        }
+    }
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let semantic_counts_before = semantic_memory_counts(&pool).await;
+    let response = client
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/a",
+                "kind": "Observation",
+                "event_reference": format!("event:{project_a_event_id}"),
+                "recorded_after": "2000-01-01T00:00:00Z",
+                "recorded_before": "2100-01-01T00:00:00Z",
+                "limit": 10
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        response.get("error").is_none(),
+        "search failed: {response:?}"
+    );
+    let result = &response["result"]["structuredContent"];
+    assert_eq!(result["owner"], "World");
+    assert_eq!(result["namespace"], "project/a");
+    assert_eq!(result["limit"], 10);
+    let records = result["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1, "unexpected scoped search: {result:?}");
+    assert_eq!(records[0]["record_type"], "event");
+    assert_eq!(records[0]["id"], format!("event:{project_a_event_id}"));
+    assert_eq!(records[0]["owner"], "World");
+    assert_eq!(records[0]["namespace"], "project/a");
+    assert_eq!(records[0]["kind"], "Observation");
+    assert_eq!(records[0]["summary"], "project a durable memory");
+    assert!(records[0]["recorded_at"].as_str().is_some());
+    assert_eq!(
+        records[0]["provenance"]["evidence_event_reference"],
+        format!("event:{project_a_event_id}")
+    );
+    assert_eq!(
+        records[0]["provenance"]["episode_references"],
+        json!(["episode:a"])
+    );
+    assert_eq!(
+        records[0]["provenance"]["claim_ids"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(semantic_memory_counts(&pool).await, semantic_counts_before);
+
+    let operation = sqlx::query(
+        "SELECT namespace, status, response_summary_json FROM operation_log WHERE entrypoint = 'search_memory' ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(operation.get::<String, _>("namespace"), "project/a");
+    assert_eq!(operation.get::<String, _>("status"), "ok");
+    let summary: Value =
+        serde_json::from_str(&operation.get::<String, _>("response_summary_json")).unwrap();
+    assert_eq!(summary, json!({"record_type": "event", "result_count": 1}));
+}
+
+#[tokio::test]
+async fn search_memory_invalid_or_empty_scope_fails_closed_over_stdio() {
+    let mut client = test_support::spawn_stdio_client().await.unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    for invalid in [
+        json!({}),
+        json!({"namespace": "invalid"}),
+        json!({"namespace": "project/a", "limit": 0}),
+        json!({"namespace": "project/a", "limit": 101}),
+        json!({
+            "namespace": "project/a",
+            "recorded_after": "2026-07-15T02:00:00Z",
+            "recorded_before": "2026-07-15T01:00:00Z"
+        }),
+    ] {
+        let response = client.call_tool("search_memory", invalid).await.unwrap();
+        assert_eq!(
+            response["error"]["code"], -32602,
+            "invalid search must fail closed: {response:?}"
+        );
+    }
+
+    let empty = client
+        .call_tool("search_memory", json!({"namespace": "project/empty"}))
+        .await
+        .unwrap();
+    assert_eq!(empty["result"]["structuredContent"]["records"], json!([]));
+}
+
+#[tokio::test]
+async fn search_memory_survives_stdio_reconnect_with_offline_provider() {
+    let (mut writer, database_url, database_dir) = test_support::spawn_stdio_client_with_database()
+        .await
+        .unwrap();
+    let ingest = writer
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/reconnect",
+                    "kind": "Conversation",
+                    "summary": "persist across an MCP reconnect"
+                },
+                "claim_drafts": [],
+                "episode_reference": "episode:reconnect"
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(ingest.get("error").is_none(), "ingest failed: {ingest:?}");
+    drop(writer);
+
+    let config = r#"
+transport = "stdio"
+database_url = "__DATABASE_URL__"
+
+[model]
+provider = "openai-compatible"
+
+[model.openai_compatible]
+base_url = "http://127.0.0.1:9/v1"
+api_key = "offline-provider-test-key"
+model = "gpt-4o-mini"
+timeout_ms = 100
+"#;
+    let mut reader = test_support::spawn_stdio_client_for_existing_database_with_config(
+        config,
+        &database_url,
+        database_dir.path(),
+    )
+    .unwrap();
+    let response = reader
+        .call_tool("search_memory", json!({"namespace": "project/reconnect"}))
+        .await
+        .unwrap();
+    assert!(
+        response.get("error").is_none(),
+        "search failed: {response:?}"
+    );
+    assert_eq!(
+        response["result"]["structuredContent"]["records"][0]["summary"],
+        "persist across an MCP reconnect"
+    );
+}
+
+async fn semantic_memory_counts(pool: &SqlitePool) -> Vec<i64> {
+    let mut counts = Vec::new();
+    for table in [
+        "events",
+        "claims",
+        "evidence_links",
+        "episode_events",
+        "reflections",
+        "identity_claims",
+        "commitments",
+    ] {
+        counts.push(
+            sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM {table}"))
+                .fetch_one(pool)
+                .await
+                .unwrap(),
+        );
+    }
+    counts
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2794,7 +3047,7 @@ required = true
         .expect("client");
 
     let tools = client.list_all_tools().await.expect("list tools");
-    assert_eq!(tools.len(), 4);
+    assert_eq!(tools.len(), 5);
 
     let health: serde_json::Value = reqwest::get(format!("http://127.0.0.1:{port}/api/health"))
         .await
@@ -2873,7 +3126,7 @@ max_concurrent_tasks = 1
             .await
             .unwrap();
     let tools = client.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 4);
+    assert_eq!(tools.len(), 5);
 
     client
         .call_tool(
@@ -4334,6 +4587,23 @@ mod test_support {
         let temp_dir = database.temp_dir;
         let client = StdioClient::spawn(&url, None)?;
         Ok((client, url, temp_dir))
+    }
+
+    pub fn spawn_stdio_client_for_existing_database_with_config(
+        config_template: &str,
+        database_url: &str,
+        config_dir: &Path,
+    ) -> io::Result<StdioClient> {
+        let config_path = config_dir.join("agent-llm-mm.reconnect.toml");
+        let config = config_template.replace("__DATABASE_URL__", database_url);
+        std::fs::write(&config_path, config)?;
+        StdioClient::spawn_with_env(
+            None,
+            &[(
+                CONFIG_PATH_ENV_VAR,
+                config_path.to_string_lossy().into_owned(),
+            )],
+        )
     }
 
     struct DatabaseOverride {

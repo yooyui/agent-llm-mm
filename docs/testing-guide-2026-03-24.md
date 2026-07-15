@@ -446,6 +446,21 @@ bash -n scripts/agent-llm-mm.sh scripts/first-run-bootstrap-smoke-local.sh scrip
 
 M0.4 不证明 remote backup、scheduled backup、cloud sync、production disaster recovery，或超出 SQLite 事务语义的 crash/power-loss guarantee。
 
+### 6.3F M1.1.1 scoped event recall read model 回归
+
+```zsh
+cargo test --test sqlite_store sqlite_event_recall -v
+cargo test --test mcp_stdio search_memory -v
+cargo test --test mcp_stdio server_exposes_expected_tools_over_stdio -v
+cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -v
+cargo test --test status_sync -v
+./scripts/status-sync-check.sh
+```
+
+这组回归证明：`search_memory` 只接受显式 namespace；SQLite 在 limit 前执行 owner + namespace 收窄，exact ID 不会跨 scope 命中；完整 event 字段和现有 claim/episode provenance 可读；倒置时间窗、零/超限 limit 和非法 namespace 返回 invalid params；空结果不扩大；断开并重连同一 SQLite 后，即使 provider 不可达，deterministic read path 仍可用；读取不修改 semantic memory tables，operation log 只保存 record type 和 result count。
+
+该证据只完成 `M1.1.1 Scoped Event Recall Read Model`，不证明完整 M1.1/M1、文本检索、跨记录类型统一查询、`get_memory`、history、supersession/correction、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha。
+
 ### 6.4 Provider 合规预检
 
 新增 provider 前先阅读 [Provider Readiness Checklist](provider-contract.md)。下面这组命令只是当前共享 provider 路径的最小验证；如果 checklist 里仍有 `partial` 或 `gap` 且新 provider 依赖该行为，新增 provider 的同一变更必须补齐对应专用回归或记录明确例外。

@@ -11,10 +11,10 @@ use agent_llm_mm::{
     },
     error::AppError,
     ports::{
-        ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
-        IdentityStore, IngestTransactionRunner, ReflectionTransactionRunner, StoredClaim,
-        StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
-        TriggerLedgerStore,
+        ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventRecordQuery, EventStore,
+        EvidenceQuery, IdentityStore, IngestTransactionRunner, MemoryReadStore,
+        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
+        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
 };
 use chrono::{DateTime, Utc};
@@ -2195,4 +2195,150 @@ async fn query_evidence_filters_by_event_id_prefix() {
         .unwrap();
 
     assert_eq!(matched, vec!["alpha-1"]);
+}
+
+#[tokio::test]
+async fn sqlite_event_recall_is_scoped_recent_first_and_returns_provenance() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let project_a = Namespace::for_project("a");
+    let project_b = Namespace::for_project("b");
+
+    for (event_id, namespace, recorded_at, summary) in [
+        ("a-old", project_a.clone(), now, "project a old"),
+        (
+            "b-newest",
+            project_b,
+            now + chrono::Duration::seconds(120),
+            "project b interference",
+        ),
+        (
+            "a-new",
+            project_a.clone(),
+            now + chrono::Duration::seconds(60),
+            "project a new",
+        ),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                recorded_at,
+                Event::new_with_namespace(Owner::World, namespace, EventKind::Observation, summary)
+                    .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+
+    context
+        .store
+        .upsert_claim(StoredClaim::new(
+            "claim-a".to_string(),
+            ClaimDraft::new_with_namespace(
+                Owner::World,
+                project_a.clone(),
+                "project.a",
+                "has",
+                "new evidence",
+                Mode::Observed,
+            ),
+            ClaimStatus::Active,
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .link_evidence("claim-a".to_string(), "a-new".to_string())
+        .await
+        .unwrap();
+    context
+        .store
+        .record_event_in_episode("episode-a".to_string(), "a-new".to_string())
+        .await
+        .unwrap();
+
+    let records = context
+        .store
+        .query_event_records(EventRecordQuery {
+            scope: MemoryScope::for_namespace(project_a),
+            event_reference: None,
+            kind: Some(EventKind::Observation),
+            recorded_after: Some(now),
+            recorded_before: Some(now + chrono::Duration::seconds(60)),
+            limit: 10,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.event.event_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["a-new", "a-old"]
+    );
+    assert_eq!(
+        records[0].event.recorded_at,
+        now + chrono::Duration::seconds(60)
+    );
+    assert_eq!(records[0].event.event.owner(), Owner::World);
+    assert_eq!(
+        records[0].event.event.namespace(),
+        &Namespace::for_project("a")
+    );
+    assert_eq!(records[0].event.event.kind(), EventKind::Observation);
+    assert_eq!(records[0].event.event.summary(), "project a new");
+    assert_eq!(records[0].claim_ids, vec!["claim-a"]);
+    assert_eq!(records[0].episode_references, vec!["episode-a"]);
+    assert!(records[1].claim_ids.is_empty());
+    assert!(records[1].episode_references.is_empty());
+}
+
+#[tokio::test]
+async fn sqlite_event_recall_rejects_unscoped_queries_and_never_widens_exact_ids() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "project-b-only".to_string(),
+            now,
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("b"),
+                EventKind::Conversation,
+                "belongs only to project b",
+            )
+            .unwrap(),
+        ))
+        .await
+        .unwrap();
+
+    let unscoped = context
+        .store
+        .query_event_records(EventRecordQuery {
+            scope: MemoryScope::legacy_unscoped(),
+            event_reference: None,
+            kind: None,
+            recorded_after: None,
+            recorded_before: None,
+            limit: 10,
+        })
+        .await;
+    assert!(matches!(unscoped, Err(AppError::InvalidParams(_))));
+
+    let cross_scope = context
+        .store
+        .query_event_records(EventRecordQuery {
+            scope: MemoryScope::for_namespace(Namespace::for_project("a")),
+            event_reference: Some(EventReference::parse("event:project-b-only").unwrap()),
+            kind: None,
+            recorded_after: None,
+            recorded_before: None,
+            limit: 10,
+        })
+        .await
+        .unwrap();
+    assert!(cross_scope.is_empty());
 }

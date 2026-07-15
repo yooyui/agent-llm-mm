@@ -3,9 +3,12 @@ use std::collections::{BTreeSet, HashSet};
 use crate::ports::EvidenceQuery;
 use crate::{
     application::{
-        auto_reflect_if_needed::AutoReflectInput, build_self_snapshot::BuildSelfSnapshotInput,
-        decide_with_snapshot::DecideWithSnapshotInput, ingest_interaction::IngestInput,
+        auto_reflect_if_needed::AutoReflectInput,
+        build_self_snapshot::BuildSelfSnapshotInput,
+        decide_with_snapshot::DecideWithSnapshotInput,
+        ingest_interaction::IngestInput,
         run_reflection::ReflectionInput,
+        search_memory::{DEFAULT_SEARCH_MEMORY_LIMIT, SearchMemoryInput},
     },
     domain::{
         claim::ClaimDraft,
@@ -429,6 +432,42 @@ pub struct EvidenceQueryDto {
     pub recorded_before: Option<String>,
     #[serde(default)]
     pub event_id_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SearchMemoryParams {
+    pub namespace: String,
+    #[serde(default)]
+    pub event_reference: Option<String>,
+    #[serde(default)]
+    pub kind: Option<EventKindDto>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub recorded_after: Option<String>,
+    #[serde(default)]
+    pub recorded_before: Option<String>,
+}
+
+impl TryFrom<SearchMemoryParams> for SearchMemoryInput {
+    type Error = AppError;
+
+    fn try_from(value: SearchMemoryParams) -> Result<Self, Self::Error> {
+        let input = Self {
+            namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
+            event_reference: value
+                .event_reference
+                .map(EventReference::parse)
+                .transpose()
+                .map_err(AppError::from)?,
+            kind: value.kind.map(EventKind::from),
+            recorded_after: parse_optional_timestamp("recorded_after", value.recorded_after)?,
+            recorded_before: parse_optional_timestamp("recorded_before", value.recorded_before)?,
+            limit: value.limit.unwrap_or(DEFAULT_SEARCH_MEMORY_LIMIT),
+        };
+        input.validate()?;
+        Ok(input)
+    }
 }
 
 impl TryFrom<EvidenceQueryDto> for EvidenceQuery {

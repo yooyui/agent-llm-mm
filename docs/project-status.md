@@ -39,6 +39,12 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 
 新的优先级是：`Truth and Safety -> Trustworthy Recall -> Local Product Alpha -> Retrieval Quality -> optional Remote/Autonomy`。旧 productization、P1/P2/P3 和 non-MVP plans 保留为历史记录，不再决定下一步。
 
+## 2026-07-15 M1.1.1 scoped event recall 首片
+
+M1 已开始，但仅有第一个 event-only 读取切片完成。新增的 `search_memory` MCP 工具要求显式 `namespace`，服务端据此派生 owner，并在 SQLite 查询内先按 owner + namespace 过滤，再应用 exact event reference、kind、inclusive RFC3339 time window、recent-first 稳定排序和 `1..=100` limit。返回记录保留 canonical `event:<id>`、recorded_at、owner、namespace、kind、summary，以及从现有 `evidence_links` 和 `episode_events` 批量读取的 claim IDs / episode references。
+
+该路径使用独立 application/port，不复用 reflection evidence narrowing，不调用 model provider，也不修改 events、claims、evidence、episodes、reflections、identity 或 commitments；MCP handler 只追加不含查询正文的 operation-log metadata。真实 `stdio` 回归覆盖 project/a 与 project/b 干扰、exact-ID no-widening、非法参数 fail-closed、断开重连和不可达 provider。它仍不代表完整 Read Model v2、文本/FTS/向量检索、claim/episode/reflection 统一读取、`get_memory`、历史、supersede/correction、真实客户端 M1 退出门或 Local Alpha。
+
 ## 项目定位
 
 当前仓库更准确的定位是：
@@ -55,9 +61,10 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 
 `events -> claims -> self_snapshot -> decision -> reflection`
 
-对应到 MCP 工具层，当前可用的 4 个工具是：
+对应到 MCP 工具层，当前可用的 5 个工具是：
 
 - `ingest_interaction`
+- `search_memory`
 - `build_self_snapshot`
 - `decide_with_snapshot`
 - `run_reflection`
@@ -159,7 +166,7 @@ Implementation notes:
 ### 9. self-revision demo package
 
 - 已新增 deterministic `openai-compatible` stub provider binary
-- 已新增 demo runner binary，复用真实 MCP `stdio` 服务和现有 4 个 MCP tool 跑 canonical scenario
+- 已新增 demo runner binary，复用真实 MCP `stdio` 服务和原有 4 个写入/快照/决策/反思工具跑 canonical scenario；新增的 `search_memory` 不在该旧 demo story 内
 - 已新增 macOS shell wrapper：`./scripts/run-self-revision-demo.sh`
 - 运行后会生成 `doctor.json`、snapshot before / after、decision before / after、timeline、SQLite summary 和 Markdown report
 - 该 demo 只证明当前 MVP 的可重复证据链，不新增 MCP tool、daemon、Web UI 或新的 durable write path

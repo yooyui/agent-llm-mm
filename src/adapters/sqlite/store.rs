@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{QueryBuilder, Row, Sqlite, sqlite::SqlitePool};
@@ -17,10 +19,11 @@ use crate::{
     },
     error::AppError,
     ports::{
-        ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
-        IdentityStore, IngestTransaction, IngestTransactionRunner, OperationLogQuery,
-        OperationLogStore, ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner,
-        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        ClaimStatus, ClaimStore, CommitmentStore, EpisodeStore, EventReadRecord, EventRecordQuery,
+        EventStore, EvidenceQuery, IdentityStore, IngestTransaction, IngestTransactionRunner,
+        MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore, OperationLogQuery, OperationLogStore,
+        ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner, StoredClaim,
+        StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
         TriggerLedgerStore,
     },
 };
@@ -250,6 +253,163 @@ impl EventStore for SqliteStore {
 
         Ok(count > 0)
     }
+}
+
+#[async_trait]
+impl MemoryReadStore for SqliteStore {
+    async fn query_event_records(
+        &self,
+        query: EventRecordQuery,
+    ) -> Result<Vec<EventReadRecord>, AppError> {
+        if !query.scope.is_explicitly_scoped() {
+            return Err(AppError::InvalidParams(
+                "event record query requires an explicit namespace".to_string(),
+            ));
+        }
+        if query.limit == 0 {
+            return Err(AppError::InvalidParams(
+                "event record query limit must be at least 1".to_string(),
+            ));
+        }
+        if query.limit > MAX_EVENT_RECORD_QUERY_LIMIT {
+            return Err(AppError::InvalidParams(format!(
+                "event record query limit must be at most {MAX_EVENT_RECORD_QUERY_LIMIT}"
+            )));
+        }
+        if query
+            .recorded_after
+            .zip(query.recorded_before)
+            .is_some_and(|(after, before)| after > before)
+        {
+            return Err(AppError::InvalidParams(
+                "recorded_after must be less than or equal to recorded_before".to_string(),
+            ));
+        }
+
+        let owner = query
+            .scope
+            .owner()
+            .expect("explicit memory scope must have an owner");
+        let namespace = query
+            .scope
+            .namespace()
+            .expect("explicit memory scope must have a namespace");
+        let recorded_at_sort_key = sqlite_rfc3339_sort_key("recorded_at");
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            "SELECT event_id, recorded_at, owner, namespace, kind, summary FROM events WHERE owner = ",
+        );
+        builder
+            .push_bind(owner_as_str(owner))
+            .push(" AND namespace = ")
+            .push_bind(namespace.as_str());
+        if let Some(reference) = query.event_reference.as_ref() {
+            builder
+                .push(" AND event_id = ")
+                .push_bind(reference.event_id());
+        }
+        if let Some(kind) = query.kind {
+            builder
+                .push(" AND kind = ")
+                .push_bind(event_kind_as_str(kind));
+        }
+        if let Some(after) = query.recorded_after {
+            builder
+                .push(" AND ")
+                .push(&recorded_at_sort_key)
+                .push(" >= ")
+                .push_bind(utc_timestamp_sort_key(&after));
+        }
+        if let Some(before) = query.recorded_before {
+            builder
+                .push(" AND ")
+                .push(&recorded_at_sort_key)
+                .push(" <= ")
+                .push_bind(utc_timestamp_sort_key(&before));
+        }
+        builder
+            .push(" ORDER BY ")
+            .push(&recorded_at_sort_key)
+            .push(" DESC, rowid DESC LIMIT ")
+            .push_bind(i64::try_from(query.limit).map_err(|_| {
+                AppError::InvalidParams(
+                    "event record query limit exceeds the supported maximum".to_string(),
+                )
+            })?);
+
+        let stored_events = map_sqlite(builder.build().fetch_all(&self.pool).await)?
+            .iter()
+            .map(stored_event_from_row)
+            .collect::<Result<Vec<_>, _>>()?;
+        if stored_events.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let event_ids = stored_events
+            .iter()
+            .map(|event| event.event_id.as_str())
+            .collect::<Vec<_>>();
+        let claim_ids = load_event_claim_ids(&self.pool, &event_ids).await?;
+        let episode_references = load_event_episode_references(&self.pool, &event_ids).await?;
+
+        Ok(stored_events
+            .into_iter()
+            .map(|event| {
+                let event_id = event.event_id.clone();
+                EventReadRecord::new(
+                    event,
+                    claim_ids.get(&event_id).cloned().unwrap_or_default(),
+                    episode_references
+                        .get(&event_id)
+                        .cloned()
+                        .unwrap_or_default(),
+                )
+            })
+            .collect())
+    }
+}
+
+async fn load_event_claim_ids(
+    pool: &SqlitePool,
+    event_ids: &[&str],
+) -> Result<BTreeMap<String, Vec<String>>, AppError> {
+    let mut builder = QueryBuilder::<Sqlite>::new(
+        "SELECT event_id, claim_id FROM evidence_links WHERE event_id IN (",
+    );
+    let mut separated = builder.separated(", ");
+    for event_id in event_ids {
+        separated.push_bind(*event_id);
+    }
+    separated.push_unseparated(") ORDER BY event_id, claim_id");
+    let mut grouped = BTreeMap::<String, Vec<String>>::new();
+    for row in map_sqlite(builder.build().fetch_all(pool).await)? {
+        grouped
+            .entry(row.get("event_id"))
+            .or_default()
+            .push(row.get("claim_id"));
+    }
+    Ok(grouped)
+}
+
+async fn load_event_episode_references(
+    pool: &SqlitePool,
+    event_ids: &[&str],
+) -> Result<BTreeMap<String, Vec<String>>, AppError> {
+    let mut builder = QueryBuilder::<Sqlite>::new(
+        "SELECT event_id, episode_reference FROM episode_events WHERE event_id IN (",
+    );
+    let mut separated = builder.separated(", ");
+    for event_id in event_ids {
+        separated.push_bind(*event_id);
+    }
+    separated.push_unseparated(") ORDER BY event_id, episode_reference");
+    let mut grouped = BTreeMap::<String, Vec<String>>::new();
+    for row in map_sqlite(builder.build().fetch_all(pool).await)? {
+        grouped
+            .entry(row.get("event_id"))
+            .or_default()
+            .push(row.get("episode_reference"));
+    }
+    Ok(grouped)
 }
 
 async fn query_evidence_event_ids_with_limit(

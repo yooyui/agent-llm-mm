@@ -26,6 +26,7 @@ use crate::{
         ingest_interaction::IngestInput,
         run_reflection,
         run_reflection::ReflectionInput,
+        search_memory,
     },
     domain::event::EventReference,
     domain::identity_core::IdentityCore,
@@ -41,17 +42,19 @@ use crate::{
         OperationStatus, start_dashboard_service_with_operation_log,
     },
     ports::{
-        ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventStore, EvidenceQuery,
-        IdGenerator, IdentityStore, IngestTransaction, IngestTransactionRunner, ModelDecision,
-        ModelDecisionRequest, ModelPort, OperationLogStore, ReflectionStore, ReflectionTransaction,
-        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
-        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
+        ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventReadRecord,
+        EventRecordQuery, EventStore, EvidenceQuery, IdGenerator, IdentityStore, IngestTransaction,
+        IngestTransactionRunner, MemoryReadStore, ModelDecision, ModelDecisionRequest, ModelPort,
+        OperationLogStore, ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner,
+        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        TriggerLedgerStore,
     },
     support::config::{AppConfig, ModelConfig, ModelProviderKind, TransportKind},
 };
 
 use super::dto::{
-    BuildSelfSnapshotParams, DecideWithSnapshotParams, IngestInteractionParams, RunReflectionParams,
+    BuildSelfSnapshotParams, DecideWithSnapshotParams, IngestInteractionParams,
+    RunReflectionParams, SearchMemoryParams,
 };
 
 pub const AUTO_REFLECTION_RUNTIME_HOOKS: [&str; 4] = [
@@ -281,6 +284,62 @@ impl Server {
                     Some(correlation_id),
                 )
                 .with_response_summary(serde_json::json!({ "event_id": result.event_id })),
+            )
+            .await;
+        structured(result)
+    }
+
+    #[tool(
+        description = "Search complete event records in one explicit local memory namespace. This first read-model slice supports exact event reference, kind, inclusive time range, and bounded recent-first results.",
+        input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<SearchMemoryParams>>()
+    )]
+    async fn search_memory(&self, raw_params: JsonObject) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
+        let params = map_tool_error(
+            &self.runtime,
+            "search_memory",
+            None,
+            Some(correlation_id.clone()),
+            decode_tool_params::<SearchMemoryParams>(raw_params),
+        )
+        .await?;
+        let dashboard_namespace = Some(params.namespace.clone());
+        let input = map_tool_error(
+            &self.runtime,
+            "search_memory",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            search_memory::SearchMemoryInput::try_from(params),
+        )
+        .await?;
+        let result = map_tool_error(
+            &self.runtime,
+            "search_memory",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            search_memory::execute(&self.runtime, input).await,
+        )
+        .await?;
+        self.runtime.dashboard.record_tool_ok(
+            "search_memory",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            format!(
+                "memory search returned {} event records",
+                result.records.len()
+            ),
+            &serde_json::json!({
+                "record_type": "event",
+                "result_count": result.records.len(),
+            }),
+        );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok("search_memory", dashboard_namespace, Some(correlation_id))
+                    .with_response_summary(serde_json::json!({
+                        "record_type": "event",
+                        "result_count": result.records.len(),
+                    })),
             )
             .await;
         structured(result)
@@ -869,6 +928,16 @@ impl EventStore for Runtime {
 
     async fn has_event(&self, event_id: &str) -> Result<bool, AppError> {
         self.store.has_event(event_id).await
+    }
+}
+
+#[async_trait]
+impl MemoryReadStore for Runtime {
+    async fn query_event_records(
+        &self,
+        query: EventRecordQuery,
+    ) -> Result<Vec<EventReadRecord>, AppError> {
+        self.store.query_event_records(query).await
     }
 }
 

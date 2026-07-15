@@ -150,6 +150,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 ### 已实现
 
 - `ingest_interaction`
+- `search_memory`（M1.1.1 event-only 首片；显式 `namespace` 必填，provider 离线可用）
 - `build_self_snapshot`
 - `run_reflection`
 - `doctor` / `serve`
@@ -158,6 +159,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - `openai-compatible` provider
 - OpenRouter provider（通过 OpenAI-compatible `/chat/completions` transport；配置示例和本地 stub 不是 live evidence，显式 `--live` runner 才能生成 bounded live preflight evidence）
 - 配置文件驱动的 provider 选择
+- `search_memory` 当前支持 exact event reference、event kind、inclusive RFC3339 time window 和 `1..=100` limit；返回 canonical event ID、scope、时间、摘要和 claim/episode provenance。它不是完整跨类型 search/get/history/correction 合同。
 - trigger-ledger-backed automatic self-revision MVP
   - 当前 MCP-wired automatic path 只有 4 条：
     - `ingest_interaction -> failure`
