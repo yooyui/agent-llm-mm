@@ -2,15 +2,17 @@ use agent_llm_mm::{
     application::{
         build_self_snapshot::{BuildSelfSnapshotInput, execute as build_self_snapshot},
         get_evidence_relation::{GetEvidenceRelationInput, execute as get_evidence_relation},
+        get_self_model_history::{GetSelfModelHistoryInput, execute as get_self_model_history},
         search_memory::{
             MemoryRecordType, SearchMemoryInput, SearchMemoryRecord, execute as search_memory,
         },
     },
     domain::{
         claim::{ClaimDraft, ClaimReference},
+        commitment::Commitment,
         event::{Event, EventReference, MAX_EVIDENCE_MANIFEST_ITEMS},
         identity_core::IdentityCore,
-        reflection::Reflection,
+        reflection::{Reflection, ReflectionIdentityUpdate},
         self_revision::TriggerType,
         snapshot::{SnapshotBudget, SnapshotTimeWindow},
         types::{EventKind, MemoryScope, Mode, Namespace, Owner},
@@ -21,8 +23,8 @@ use agent_llm_mm::{
         CommitmentStore, EpisodeRecordQuery, EpisodeStore, EventRecordQuery, EventStore,
         EvidenceQuery, IdentityStore, IngestTransactionRunner, MemoryReadStore,
         ReflectionRecordQuery, ReflectionStore, ReflectionTransactionRunner, ScopedEventIdQuery,
-        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
-        TriggerLedgerStore,
+        SelfModelHistoryKind, SelfModelHistoryQuery, StoredClaim, StoredEvent, StoredReflection,
+        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
 };
 use chrono::{DateTime, Utc};
@@ -3735,6 +3737,245 @@ async fn sqlite_search_memory_union_is_scoped_stable_sorted_and_hides_cross_scop
             .collect::<Vec<_>>(),
         vec!["event:union-event-new", "event:union-event-old"]
     );
+}
+
+#[tokio::test]
+async fn sqlite_self_model_history_is_scoped_claim_attributed_and_hides_record_only_rows() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let project_a = Namespace::for_project("self-model-a");
+    let project_b = Namespace::for_project("self-model-b");
+
+    for (event_id, namespace) in [
+        ("self-model-event-a", project_a.clone()),
+        ("self-model-event-b", project_b.clone()),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                now,
+                Event::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    EventKind::Observation,
+                    event_id,
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+    for (claim_id, namespace) in [
+        ("self-model-claim-a", project_a.clone()),
+        ("self-model-claim-b", project_b.clone()),
+    ] {
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                claim_id.to_string(),
+                ClaimDraft::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    "self.role",
+                    "is",
+                    claim_id,
+                    Mode::Observed,
+                ),
+                ClaimStatus::Superseded,
+            ))
+            .await
+            .unwrap();
+    }
+
+    context
+        .store
+        .append_reflection(
+            StoredReflection::new(
+                "self-model-identity-a".to_string(),
+                now + chrono::Duration::seconds(2),
+                Reflection::new("scoped identity update"),
+                Some("self-model-claim-a".to_string()),
+                None,
+            )
+            .with_supporting_evidence_event_ids(vec!["self-model-event-a".to_string()])
+            .with_requested_identity_update(Some(ReflectionIdentityUpdate::new(vec![
+                "identity:self=scoped".to_string(),
+            ]))),
+        )
+        .await
+        .unwrap();
+    context
+        .store
+        .append_reflection(
+            StoredReflection::new(
+                "self-model-identity-a-old".to_string(),
+                now,
+                Reflection::new("older scoped identity update"),
+                Some("self-model-claim-a".to_string()),
+                None,
+            )
+            .with_requested_identity_update(Some(ReflectionIdentityUpdate::new(vec![
+                "identity:self=older".to_string(),
+            ]))),
+        )
+        .await
+        .unwrap();
+    context
+        .store
+        .append_reflection(
+            StoredReflection::new(
+                "self-model-mixed-edge".to_string(),
+                now + chrono::Duration::seconds(6),
+                Reflection::new("mixed-scope replacement hides identity audit"),
+                Some("self-model-claim-a".to_string()),
+                Some("self-model-claim-b".to_string()),
+            )
+            .with_requested_identity_update(Some(ReflectionIdentityUpdate::new(vec![
+                "identity:self=mixed".to_string(),
+            ]))),
+        )
+        .await
+        .unwrap();
+    context
+        .store
+        .append_reflection(
+            StoredReflection::new(
+                "self-model-commitment-a".to_string(),
+                now + chrono::Duration::seconds(1),
+                Reflection::new("scoped commitment update"),
+                Some("self-model-claim-a".to_string()),
+                None,
+            )
+            .with_requested_commitment_updates(Some(vec![Commitment::new(
+                Owner::Self_,
+                "prefer:scoped_history",
+            )])),
+        )
+        .await
+        .unwrap();
+    context
+        .store
+        .append_reflection(StoredReflection::new(
+            "self-model-claim-only-a".to_string(),
+            now + chrono::Duration::seconds(3),
+            Reflection::new("claim revision without self-model patch"),
+            Some("self-model-claim-a".to_string()),
+            None,
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .append_reflection(
+            StoredReflection::new(
+                "self-model-record-only".to_string(),
+                now + chrono::Duration::seconds(4),
+                Reflection::new("record-only identity update"),
+                None,
+                None,
+            )
+            .with_requested_identity_update(Some(ReflectionIdentityUpdate::new(vec![
+                "identity:self=hidden".to_string(),
+            ]))),
+        )
+        .await
+        .unwrap();
+    context
+        .store
+        .append_reflection(
+            StoredReflection::new(
+                "self-model-identity-b".to_string(),
+                now + chrono::Duration::seconds(5),
+                Reflection::new("other namespace"),
+                Some("self-model-claim-b".to_string()),
+                None,
+            )
+            .with_requested_identity_update(Some(ReflectionIdentityUpdate::new(vec![
+                "identity:self=other".to_string(),
+            ]))),
+        )
+        .await
+        .unwrap();
+
+    let identity = get_self_model_history(
+        &context.store,
+        GetSelfModelHistoryInput {
+            namespace: project_a.clone(),
+            history_kind: SelfModelHistoryKind::Identity,
+            limit: 10,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(identity.history_type, "identity");
+    assert_eq!(
+        identity
+            .records
+            .iter()
+            .map(|record| record.reflection_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["self-model-identity-a", "self-model-identity-a-old"]
+    );
+    assert_eq!(
+        identity.records[0]
+            .identity_update
+            .as_ref()
+            .map(|update| update.canonical_claims.clone()),
+        Some(vec!["identity:self=scoped".to_string()])
+    );
+    assert!(identity.records[0].commitment_updates.is_none());
+    assert_eq!(
+        identity.records[0].supporting_evidence_event_references,
+        vec!["event:self-model-event-a"]
+    );
+
+    let commitments = context
+        .store
+        .query_self_model_history(SelfModelHistoryQuery {
+            scope: MemoryScope::for_namespace(project_a.clone()),
+            history_kind: SelfModelHistoryKind::Commitment,
+            limit: 10,
+        })
+        .await
+        .unwrap();
+    assert_eq!(commitments.records.len(), 1);
+    assert_eq!(
+        commitments.records[0].reflection_id,
+        "self-model-commitment-a"
+    );
+    assert!(commitments.records[0].identity_update.is_none());
+    assert_eq!(
+        commitments.records[0]
+            .commitment_updates
+            .as_ref()
+            .map(|updates| updates[0].description()),
+        Some("prefer:scoped_history")
+    );
+
+    let bounded = get_self_model_history(
+        &context.store,
+        GetSelfModelHistoryInput {
+            namespace: project_a,
+            history_kind: SelfModelHistoryKind::Identity,
+            limit: 1,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(bounded.records.len(), 1);
+    assert_eq!(bounded.records[0].reflection_id, "self-model-identity-a");
+    assert!(bounded.has_more);
+
+    let unscoped = context
+        .store
+        .query_self_model_history(SelfModelHistoryQuery {
+            scope: MemoryScope::legacy_unscoped(),
+            history_kind: SelfModelHistoryKind::Identity,
+            limit: 10,
+        })
+        .await;
+    assert!(matches!(unscoped, Err(AppError::InvalidParams(_))));
 }
 
 #[tokio::test]

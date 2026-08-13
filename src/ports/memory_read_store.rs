@@ -6,7 +6,9 @@ use chrono::{DateTime, Utc};
 use crate::{
     domain::{
         claim::ClaimReference,
+        commitment::Commitment,
         event::EventReference,
+        reflection::ReflectionIdentityUpdate,
         types::{EventKind, MemoryScope, Mode, Namespace, Owner},
     },
     error::AppError,
@@ -229,4 +231,49 @@ pub trait MemoryReadStore {
         &self,
         query: ClaimReflectionHistoryQuery,
     ) -> Result<ClaimReflectionHistoryPage, AppError>;
+
+    async fn query_self_model_history(
+        &self,
+        query: SelfModelHistoryQuery,
+    ) -> Result<SelfModelHistoryPage, AppError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelfModelHistoryKind {
+    Identity,
+    Commitment,
+}
+
+impl SelfModelHistoryKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Identity => "identity",
+            Self::Commitment => "commitment",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelfModelHistoryQuery {
+    pub scope: MemoryScope,
+    pub history_kind: SelfModelHistoryKind,
+    pub limit: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelfModelHistoryRecord {
+    pub reflection_id: String,
+    pub recorded_at: DateTime<Utc>,
+    pub summary: String,
+    pub superseded_claim_reference: Option<ClaimReference>,
+    pub replacement_claim_reference: Option<ClaimReference>,
+    pub supporting_evidence_event_references: Vec<EventReference>,
+    pub identity_update: Option<ReflectionIdentityUpdate>,
+    pub commitment_updates: Option<Vec<Commitment>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelfModelHistoryPage {
+    pub records: Vec<SelfModelHistoryRecord>,
+    pub has_more: bool,
 }

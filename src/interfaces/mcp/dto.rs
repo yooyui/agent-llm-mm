@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 
-use crate::ports::{ClaimStatus, EvidenceQuery};
+use crate::ports::{ClaimStatus, EvidenceQuery, SelfModelHistoryKind};
 use crate::{
     application::{
         auto_reflect_if_needed::AutoReflectInput,
@@ -9,6 +9,7 @@ use crate::{
         get_evidence_relation::GetEvidenceRelationInput,
         get_memory::{GetMemoryInput, MemoryRecordReference},
         get_reflection_history::{DEFAULT_REFLECTION_HISTORY_LIMIT, GetReflectionHistoryInput},
+        get_self_model_history::{DEFAULT_SELF_MODEL_HISTORY_LIMIT, GetSelfModelHistoryInput},
         ingest_interaction::IngestInput,
         run_reflection::ReflectionInput,
         search_memory::{DEFAULT_SEARCH_MEMORY_LIMIT, MemoryRecordType, SearchMemoryInput},
@@ -593,6 +594,43 @@ pub struct GetReflectionHistoryParams {
     pub claim_reference: String,
     #[serde(default)]
     pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum SelfModelHistoryTypeDto {
+    Identity,
+    Commitment,
+}
+
+impl From<SelfModelHistoryTypeDto> for SelfModelHistoryKind {
+    fn from(value: SelfModelHistoryTypeDto) -> Self {
+        match value {
+            SelfModelHistoryTypeDto::Identity => Self::Identity,
+            SelfModelHistoryTypeDto::Commitment => Self::Commitment,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GetSelfModelHistoryParams {
+    pub namespace: String,
+    pub history_type: SelfModelHistoryTypeDto,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+impl TryFrom<GetSelfModelHistoryParams> for GetSelfModelHistoryInput {
+    type Error = AppError;
+
+    fn try_from(value: GetSelfModelHistoryParams) -> Result<Self, Self::Error> {
+        let input = Self {
+            namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
+            history_kind: SelfModelHistoryKind::from(value.history_type),
+            limit: value.limit.unwrap_or(DEFAULT_SELF_MODEL_HISTORY_LIMIT),
+        };
+        input.validate()?;
+        Ok(input)
+    }
 }
 
 impl TryFrom<GetReflectionHistoryParams> for GetReflectionHistoryInput {

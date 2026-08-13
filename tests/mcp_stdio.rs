@@ -34,6 +34,7 @@ async fn server_exposes_expected_tools_over_stdio() {
             "get_evidence_relation".to_string(),
             "get_memory".to_string(),
             "get_reflection_history".to_string(),
+            "get_self_model_history".to_string(),
             "ingest_interaction".to_string(),
             "run_reflection".to_string(),
             "search_memory".to_string(),
@@ -170,6 +171,24 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
         &[json!("namespace"), json!("claim_reference")]
     );
     assert!(history_schema["properties"].get("limit").is_some());
+
+    let self_model_schema = tools
+        .iter()
+        .find(|tool| tool.name == "get_self_model_history")
+        .map(|tool| &tool.input_schema)
+        .expect("get_self_model_history tool schema");
+    let self_model_required = self_model_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .expect("get_self_model_history schema should expose required fields");
+    assert_eq!(
+        self_model_required,
+        &[json!("namespace"), json!("history_type")]
+    );
+    assert_eq!(
+        self_model_schema["definitions"]["SelfModelHistoryTypeDto"]["enum"],
+        json!(["Identity", "Commitment"])
+    );
 
     let relation_schema = tools
         .iter()
@@ -2526,6 +2545,171 @@ async fn search_memory_returns_scoped_reflection_provenance_and_hides_record_onl
 }
 
 #[tokio::test]
+async fn get_self_model_history_returns_scoped_identity_and_commitment_audits_over_stdio() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/self-model-stdio-a",
+                    "kind": "Observation",
+                    "summary": "scoped evidence for self-model history"
+                },
+                "claim_drafts": [{
+                    "owner": "World",
+                    "namespace": "project/self-model-stdio-a",
+                    "subject": "project.role",
+                    "predicate": "is",
+                    "object": "old",
+                    "mode": "Observed"
+                }]
+            }),
+        )
+        .await
+        .unwrap();
+    let event_id = ingest["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap();
+    let old_claim_id = format!("{event_id}:claim:0");
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {"summary": "update identity and commitments in this scope"},
+                "supersede_claim_id": old_claim_id,
+                "replacement_claim": {
+                    "owner": "World",
+                    "namespace": "project/self-model-stdio-a",
+                    "subject": "project.role",
+                    "predicate": "is",
+                    "object": "new",
+                    "mode": "Observed"
+                },
+                "replacement_evidence_event_ids": [format!("event:{event_id}")],
+                "identity_update": {
+                    "canonical_claims": ["identity:self=scoped_history"]
+                },
+                "commitment_updates": [{
+                    "owner": "Self_",
+                    "description": "prefer:scoped_self_model_history"
+                }]
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        reflection.get("error").is_none(),
+        "self-model reflection failed: {reflection:?}"
+    );
+    let reflection_id = reflection["result"]["structuredContent"]["reflection_id"]
+        .as_str()
+        .unwrap();
+
+    let identity = client
+        .call_tool(
+            "get_self_model_history",
+            json!({
+                "namespace": "project/self-model-stdio-a",
+                "history_type": "Identity"
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        identity.get("error").is_none(),
+        "identity history failed: {identity:?}"
+    );
+    let identity_result = &identity["result"]["structuredContent"];
+    assert_eq!(identity_result["history_type"], "identity");
+    assert_eq!(identity_result["has_more"], false);
+    assert_eq!(
+        identity_result["records"][0]["reflection_id"],
+        reflection_id
+    );
+    assert_eq!(
+        identity_result["records"][0]["identity_update"]["canonical_claims"],
+        json!(["identity:self=scoped_history"])
+    );
+    assert!(
+        identity_result["records"][0]
+            .get("commitment_updates")
+            .is_none()
+    );
+
+    let commitments = client
+        .call_tool(
+            "get_self_model_history",
+            json!({
+                "namespace": "project/self-model-stdio-a",
+                "history_type": "Commitment",
+                "limit": 10
+            }),
+        )
+        .await
+        .unwrap();
+    let commitment_records = &commitments["result"]["structuredContent"]["records"];
+    assert_eq!(commitment_records[0]["reflection_id"], reflection_id);
+    assert_eq!(
+        commitment_records[0]["commitment_updates"][0]["description"],
+        "prefer:scoped_self_model_history"
+    );
+    assert!(commitment_records[0].get("identity_update").is_none());
+
+    for invalid in [
+        json!({}),
+        json!({"namespace": "invalid", "history_type": "Identity"}),
+        json!({"namespace": "project/self-model-stdio-a"}),
+        json!({
+            "namespace": "project/self-model-stdio-a",
+            "history_type": "Identity",
+            "limit": 0
+        }),
+    ] {
+        let response = client
+            .call_tool("get_self_model_history", invalid)
+            .await
+            .unwrap();
+        assert_eq!(
+            response["error"]["code"], -32602,
+            "invalid self-model history must fail closed: {response:?}"
+        );
+    }
+
+    let empty = client
+        .call_tool(
+            "get_self_model_history",
+            json!({
+                "namespace": "project/self-model-stdio-empty",
+                "history_type": "Identity"
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(empty["result"]["structuredContent"]["records"], json!([]));
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let operation = sqlx::query(
+        "SELECT response_summary_json FROM operation_log WHERE entrypoint = 'get_self_model_history' ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let summary: Value =
+        serde_json::from_str(&operation.get::<String, _>("response_summary_json")).unwrap();
+    assert_eq!(
+        summary,
+        json!({"history_type": "identity", "result_count": 0, "has_more": false})
+    );
+}
+
+#[tokio::test]
 async fn get_evidence_relation_returns_scoped_window_and_hides_cross_scope_ids_over_stdio() {
     let (mut client, database_url, _database_dir) =
         test_support::spawn_stdio_client_with_database()
@@ -4650,7 +4834,7 @@ required = true
         .expect("client");
 
     let tools = client.list_all_tools().await.expect("list tools");
-    assert_eq!(tools.len(), 8);
+    assert_eq!(tools.len(), 9);
 
     let health: serde_json::Value = reqwest::get(format!("http://127.0.0.1:{port}/api/health"))
         .await
@@ -4729,7 +4913,7 @@ max_concurrent_tasks = 1
             .await
             .unwrap();
     let tools = client.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 8);
+    assert_eq!(tools.len(), 9);
 
     client
         .call_tool(

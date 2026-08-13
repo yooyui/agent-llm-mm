@@ -5,10 +5,10 @@
 ## 当前计划
 
 - [2026-07-10-product-replan.md](2026-07-10-product-replan.md)
-  - 状态：`active / M0 complete / M1 active / M1.0.1, M1.0.2, M1.0.3, M1.1.1, M1.1.2, M1.1.3, M1.1.4, M1.1.5, M1.1.6, M1.2.1, M1.2.2, M1.2.3, M1.2.4 and M1.2.5 complete`
+  - 状态：`active / M0 complete / M1 active / M1.0.1, M1.0.2, M1.0.3, M1.1.1, M1.1.2, M1.1.3, M1.1.4, M1.1.5, M1.1.6, M1.2.1, M1.2.2, M1.2.3, M1.2.4, M1.2.5 and M1.2.6 complete`
   - 目标：把现有 technical MVP 收束为可信、可检索、可审计、可恢复的本地 MCP Memory Ledger
   - 当前里程碑：`M1 Trustworthy Recall`
-  - 下一领取顺序：`M1.2.6 Identity and Commitment History`
+  - 下一领取顺序：`M1.2.7 Audited Supersede Contract`
 
 ## 权威层级
 

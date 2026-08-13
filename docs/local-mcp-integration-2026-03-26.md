@@ -153,6 +153,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - `search_memory`（M1.1.1 Event、M1.1.2 Claim、M1.1.3 Episode、M1.1.4 Reflection provenance recall 与 M1.1.6 跨类型 union 首片；显式 `namespace` 必填，provider 离线可用；省略 `record_type` / `record_types` 时仍为 Event）
 - `get_memory`（M1.2.1 Event + M1.2.2 Claim + M1.2.4 Episode + M1.2.5 Reflection lookup 首片；显式 `namespace` + stable `id` 必填；省略 `record_type` 保持 Event，其余类型要求显式 `record_type`；跨 scope / record-only Reflection 返回 `record: null`）
 - `get_reflection_history`（M1.2.3 exact scoped Claim revision chain 首片；显式 `namespace` + `claim_reference` 必填，limit 默认 20、范围 `1..=100`）
+- `get_self_model_history`（M1.2.6 scoped identity/commitment revision audit 首片；显式 `namespace` + `history_type` 必填，limit 默认 20、范围 `1..=100`）
 - `get_evidence_relation`（M1.1.5 scoped evidence-relation runtime 首片；显式 `namespace` + `trigger_window_event_ids` 必填，`selected_evidence_event_ids` / `selection_basis` 可选）
 - `build_self_snapshot`
 - `run_reflection`
@@ -165,12 +166,13 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - `search_memory` 的 Event 路径支持 exact event reference、event kind、inclusive RFC3339 time window 和 `1..=100` limit；返回 canonical event ID、scope、时间、摘要和 claim/episode provenance。
 - additive `record_type = Claim` 路径支持 canonical/raw `claim_reference`、`claim_status`、`mode` 和 `1..=100` limit；省略 `claim_status` 时默认 `Active`。结果包含 canonical `claim:<id>`、subject/predicate/object、mode/status、canonical evidence event references、episode references 和直接 source/superseded reflection links。claims 没有 stored `recorded_at`，因此该路径拒绝 event reference、event kind 与时间过滤。
 - additive `record_type = Episode` 路径支持 exact opaque `episode_reference` 与 `1..=100` limit。SQLite 先通过同 scope Event membership 收窄，再按最新 scoped Event 元组稳定排序；结果原样返回持久化 Episode reference，并包含由同 scope 数据证明的 canonical Event/Claim provenance。该首片不规范化 `episode:` 前缀，也不返回未持久化的 objective/outcome/lesson。
-- additive `record_type = Reflection` 路径支持 exact persisted `reflection_reference` 与 `1..=100` limit。一条 Reflection 只在 superseded Claim 属于请求 scope、且 replacement 为空或同 scope 时可见；record-only 行没有 Claim anchor，不能推断 namespace。mixed-scope edge 整条隐藏。`get_memory` 仍不接受 Reflection。
-- 四种 `search_memory` 路径都先在 SQLite 按 server-derived owner + namespace 或等价 scope attribution 收窄，再应用类型专属 filter/limit；它们只读、provider-free，跨 scope exact reference 返回空结果。additive `record_types` 可在同一 scope 内合并这些已有 tagged record，并按 recorded_at / type / id 稳定收口；union 拒绝类型专属 filter。当前仍不是完整 lookup/history/correction 合同。
-- `get_memory` 复用相同 scoped read service 返回单条 Event、Claim、Episode 或 scoped Reflection。省略 `record_type` 时保持原 Event 语义，包括 raw Event ID；Claim 要求显式 `record_type = Claim`，并接受 canonical/raw Claim ID，从而避免 `claim:*` raw Event ID 的判型歧义。精确 Claim lookup 不套用 search 的默认 Active 过滤，因此 Active、Disputed、Superseded 都可按 ID 返回。Episode / Reflection 要求显式类型，并把 `id` 当作 opaque exact persisted reference。Reflection lookup 复用 M1.1.4 归属：record-only / missing / cross-scope 都返回 `record: null`。它不提供 unscoped existence probe，也不代表 identity/commitment 或 record-only history 已完成。
+- additive `record_type = Reflection` 路径支持 exact persisted `reflection_reference` 与 `1..=100` limit。一条 Reflection 只在 superseded Claim 属于请求 scope、且 replacement 为空或同 scope 时可见；record-only 行没有 Claim anchor，不能推断 namespace。mixed-scope edge 整条隐藏。`get_memory` 已接受 scoped Reflection lookup。
+- 四种 `search_memory` 路径都先在 SQLite 按 server-derived owner + namespace 或等价 scope attribution 收窄，再应用类型专属 filter/limit；它们只读、provider-free，跨 scope exact reference 返回空结果。additive `record_types` 可在同一 scope 内合并这些已有 tagged record，并按 recorded_at / type / id 稳定收口；union 拒绝类型专属 filter。当前仍不是完整 versioned ledger / correction 合同。
+- `get_memory` 复用相同 scoped read service 返回单条 Event、Claim、Episode 或 scoped Reflection。省略 `record_type` 时保持原 Event 语义，包括 raw Event ID；Claim 要求显式 `record_type = Claim`，并接受 canonical/raw Claim ID，从而避免 `claim:*` raw Event ID 的判型歧义。精确 Claim lookup 不套用 search 的默认 Active 过滤，因此 Active、Disputed、Superseded 都可按 ID 返回。Episode / Reflection 要求显式类型，并把 `id` 当作 opaque exact persisted reference。Reflection lookup 复用 M1.1.4 归属：record-only / missing / cross-scope 都返回 `record: null`。它不提供 unscoped existence probe，也不代表 versioned identity/commitment ledger 或 record-only history 已完成。
 - `get_reflection_history` 接受 canonical/raw Claim ID，以 exact scoped Claim 为锚点递归读取 superseded/replacement 双向链，并按 newest-first 返回 reflection ID、时间、摘要、canonical superseded/replacement Claim references 与同 scope canonical evidence references。missing/cross-scope anchor 返回空，mixed-scope edge 整条隐藏；读取只读且不依赖 provider，operation metadata 仅含 `history_type`、`result_count`、`has_more`。
+- `get_self_model_history` 按 `history_type = Identity` 或 `Commitment` 读取现有 reflection 审计列，只返回能通过同 scope Claim 归属的 newest-first 修订。record-only 更新与 mixed-scope edge 保持不可见。limit 默认 20、范围 `1..=100`，并用 `has_more` 表示截断。该首片不是 versioned identity/commitment ledger，也不提供 rollback。
 - `get_evidence_relation` 接受裸 ID 或 `event:<id>` 组成的 trigger window，先保序去重再与请求 owner+namespace 做 intersect-only 收窄。missing / cross-scope trigger ID 从窗口省略；selected 必须是 scoped window 的子集，否则 fail closed。结果返回 canonical `event:<id>`、window_rank、selected / available-not-selected、binary weight 与 rejection reason。路径只读、provider-free，operation metadata 仅含 `report_type`、`trigger_window_size`、`selected_count`、`result_count`。它不引入 ranking 或 widening。
-- 当前 Episode search 首片与 Claim history 首片都不覆盖 identity/commitment history、record-only reflection、Episode/Reflection `get_memory` 或 correction。Episode reference 仍是 opaque persisted string；两片都没有 schema migration/index，保留 technical-MVP 表扫描性能边界。
+- Episode / Reflection lookup、Claim history 与 self-model audit 首片都不覆盖 versioned identity/commitment ledger、record-only reflection history 或 correction。Episode reference 仍是 opaque persisted string；这些切片都没有 schema migration/index，保留 technical-MVP 表扫描性能边界。
 - trigger-ledger-backed automatic self-revision MVP
   - 当前 MCP-wired automatic path 只有 4 条：
     - `ingest_interaction -> failure`
@@ -204,7 +206,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 
 ### 未实现
 
-- identity/commitment 和 record-only Reflection history
+- versioned identity/commitment ledger 和 record-only Reflection history
 - audited `supersede_memory` correction 与真实客户端 M1 退出故事
 - richer 自动 evidence lookup
 - richer evidence weighting / relation / ranking

@@ -23,7 +23,7 @@ use crate::{
         build_self_snapshot,
         daemon::DaemonHandle,
         decide_with_snapshot, get_evidence_relation, get_memory, get_reflection_history,
-        ingest_interaction,
+        get_self_model_history, ingest_interaction,
         ingest_interaction::IngestInput,
         run_reflection,
         run_reflection::ReflectionInput,
@@ -49,15 +49,16 @@ use crate::{
         IdentityStore, IngestTransaction, IngestTransactionRunner, MemoryReadStore, ModelDecision,
         ModelDecisionRequest, ModelPort, OperationLogStore, ReflectionReadRecord,
         ReflectionRecordQuery, ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner,
-        ScopedEventIdQuery, StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry,
-        TriggerLedgerStatus, TriggerLedgerStore,
+        ScopedEventIdQuery, SelfModelHistoryPage, SelfModelHistoryQuery, StoredClaim, StoredEvent,
+        StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
     support::config::{AppConfig, ModelConfig, ModelProviderKind, TransportKind},
 };
 
 use super::dto::{
     BuildSelfSnapshotParams, DecideWithSnapshotParams, GetEvidenceRelationParams, GetMemoryParams,
-    GetReflectionHistoryParams, IngestInteractionParams, RunReflectionParams, SearchMemoryParams,
+    GetReflectionHistoryParams, GetSelfModelHistoryParams, IngestInteractionParams,
+    RunReflectionParams, SearchMemoryParams,
 };
 
 pub const AUTO_REFLECTION_RUNTIME_HOOKS: [&str; 4] = [
@@ -410,7 +411,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Read the newest claim-linked reflection records reachable from one exact claim inside an explicit local memory namespace. Missing and cross-scope claims return an empty history; mixed-scope revision edges are excluded. This first slice does not expose identity or commitment history.",
+        description = "Read the newest claim-linked reflection records reachable from one exact claim inside an explicit local memory namespace. Missing and cross-scope claims return an empty history; mixed-scope revision edges are excluded. Identity and commitment revision audits are read through get_self_model_history.",
         input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<GetReflectionHistoryParams>>()
     )]
     async fn get_reflection_history(
@@ -462,6 +463,69 @@ impl Server {
             .record_tool_operation(
                 ToolOperationRecord::ok(
                     "get_reflection_history",
+                    dashboard_namespace,
+                    Some(correlation_id),
+                )
+                .with_response_summary(response_summary),
+            )
+            .await;
+        structured(result)
+    }
+
+    #[tool(
+        description = "Read scoped identity or commitment revision audits persisted on reflections inside one explicit local memory namespace. Only claim-attributed reflections are visible. Record-only identity or commitment updates stay hidden. This first slice does not version identity_claims or commitments tables and does not provide rollback.",
+        input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<GetSelfModelHistoryParams>>()
+    )]
+    async fn get_self_model_history(
+        &self,
+        raw_params: JsonObject,
+    ) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
+        let params = map_tool_error(
+            &self.runtime,
+            "get_self_model_history",
+            None,
+            Some(correlation_id.clone()),
+            decode_tool_params::<GetSelfModelHistoryParams>(raw_params),
+        )
+        .await?;
+        let dashboard_namespace = Some(params.namespace.clone());
+        let input = map_tool_error(
+            &self.runtime,
+            "get_self_model_history",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            get_self_model_history::GetSelfModelHistoryInput::try_from(params),
+        )
+        .await?;
+        let history_type = input.history_kind.as_str().to_string();
+        let result = map_tool_error(
+            &self.runtime,
+            "get_self_model_history",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            get_self_model_history::execute(&self.runtime, input).await,
+        )
+        .await?;
+        let response_summary = serde_json::json!({
+            "history_type": history_type,
+            "result_count": result.records.len(),
+            "has_more": result.has_more,
+        });
+        self.runtime.dashboard.record_tool_ok(
+            "get_self_model_history",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            format!(
+                "{history_type} history returned {} record(s)",
+                result.records.len()
+            ),
+            &response_summary,
+        );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok(
+                    "get_self_model_history",
                     dashboard_namespace,
                     Some(correlation_id),
                 )
@@ -1162,6 +1226,13 @@ impl MemoryReadStore for Runtime {
         query: ClaimReflectionHistoryQuery,
     ) -> Result<ClaimReflectionHistoryPage, AppError> {
         self.store.query_claim_reflection_history(query).await
+    }
+
+    async fn query_self_model_history(
+        &self,
+        query: SelfModelHistoryQuery,
+    ) -> Result<SelfModelHistoryPage, AppError> {
+        self.store.query_self_model_history(query).await
     }
 }
 

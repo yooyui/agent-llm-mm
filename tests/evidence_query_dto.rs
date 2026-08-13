@@ -4,6 +4,7 @@ use agent_llm_mm::{
         get_evidence_relation::GetEvidenceRelationInput,
         get_memory::{GetMemoryInput, MemoryRecordReference},
         get_reflection_history::{DEFAULT_REFLECTION_HISTORY_LIMIT, GetReflectionHistoryInput},
+        get_self_model_history::{DEFAULT_SELF_MODEL_HISTORY_LIMIT, GetSelfModelHistoryInput},
         search_memory::{MemoryRecordType, SearchMemoryInput},
     },
     domain::{
@@ -14,9 +15,10 @@ use agent_llm_mm::{
     interfaces::mcp::dto::{
         BuildSelfSnapshotParams, ClaimDraftDto, EventDto, EventKindDto, EvidenceQueryDto,
         GetEvidenceRelationParams, GetMemoryParams, GetReflectionHistoryParams,
-        MemoryRecordTypeDto, ModeDto, OwnerDto, SearchMemoryParams,
+        GetSelfModelHistoryParams, MemoryRecordTypeDto, ModeDto, OwnerDto, SearchMemoryParams,
+        SelfModelHistoryTypeDto,
     },
-    ports::{ClaimStatus, EvidenceQuery},
+    ports::{ClaimStatus, EvidenceQuery, SelfModelHistoryKind},
 };
 use chrono::{DateTime, Utc};
 
@@ -425,6 +427,48 @@ fn get_evidence_relation_dto_rejects_invalid_scope_ids_and_limits() {
     })
     .expect_err("blank selection_basis must fail closed");
     assert!(blank_basis.to_string().contains("selection_basis"));
+}
+
+#[test]
+fn get_self_model_history_dto_requires_history_type_and_defaults_limit() {
+    let input = GetSelfModelHistoryInput::try_from(GetSelfModelHistoryParams {
+        namespace: "project/dto".to_string(),
+        history_type: SelfModelHistoryTypeDto::Identity,
+        limit: None,
+    })
+    .expect("identity history should parse");
+    assert_eq!(input.history_kind, SelfModelHistoryKind::Identity);
+    assert_eq!(input.limit, DEFAULT_SELF_MODEL_HISTORY_LIMIT);
+
+    let commitment = GetSelfModelHistoryInput::try_from(GetSelfModelHistoryParams {
+        namespace: "self".to_string(),
+        history_type: SelfModelHistoryTypeDto::Commitment,
+        limit: Some(7),
+    })
+    .expect("commitment history should parse");
+    assert_eq!(commitment.history_kind, SelfModelHistoryKind::Commitment);
+    assert_eq!(commitment.limit, 7);
+}
+
+#[test]
+fn get_self_model_history_dto_rejects_invalid_scope_and_limits() {
+    let invalid_namespace = GetSelfModelHistoryInput::try_from(GetSelfModelHistoryParams {
+        namespace: "invalid".to_string(),
+        history_type: SelfModelHistoryTypeDto::Identity,
+        limit: None,
+    })
+    .expect_err("invalid namespace should fail closed");
+    assert!(invalid_namespace.to_string().contains("InvalidNamespace"));
+
+    for limit in [0, 101] {
+        let error = GetSelfModelHistoryInput::try_from(GetSelfModelHistoryParams {
+            namespace: "project/dto".to_string(),
+            history_type: SelfModelHistoryTypeDto::Commitment,
+            limit: Some(limit),
+        })
+        .expect_err("out-of-range self-model history limit should fail");
+        assert!(error.to_string().contains("limit"));
+    }
 }
 
 #[test]

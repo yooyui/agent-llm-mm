@@ -12,10 +12,11 @@ The current project is best understood as a technical MVP for local agent memory
 
 ## Features
 
-- **Local MCP memory service**: exposes `ingest_interaction`, `search_memory`, `get_memory`, `get_reflection_history`, `get_evidence_relation`, `build_self_snapshot`, `decide_with_snapshot`, and `run_reflection` over MCP `stdio`.
+- **Local MCP memory service**: exposes `ingest_interaction`, `search_memory`, `get_memory`, `get_reflection_history`, `get_self_model_history`, `get_evidence_relation`, `build_self_snapshot`, `decide_with_snapshot`, and `run_reflection` over MCP `stdio`.
 - **Scoped event, claim, episode, and reflection recall**: `search_memory` requires an explicit namespace. It defaults to bounded recent-first event records; additive `record_type = Claim` returns scoped claims, `record_type = Episode` returns a scope-projected episode record, and `record_type = Reflection` returns reflections attributed only through same-scope Claim endpoints. Record-only reflections stay invisible. Additive `record_types` can request a scoped union of those existing tagged records with a stable recorded_at / type / id order. All deterministic paths are provider-free and scope-filter exact records; mixed-scope Claim revision edges are hidden in full.
 - **Scoped stable-ID lookup**: `get_memory(namespace, id, record_type?)` returns one complete Event, Claim, Episode, or scoped Reflection record. Omitting `record_type` preserves Event behavior. Claim, Episode, and Reflection lookup require their explicit type. Episode and Reflection treat `id` as an opaque exact persisted reference. Event and Claim accept canonical or raw IDs. Missing, cross-namespace, and record-only Reflection IDs return `record: null` without widening.
 - **Scoped Claim reflection history**: `get_reflection_history(namespace, claim_reference, limit?)` walks the bidirectional revision chain reachable from one exact scoped Claim and returns newest-first reflection records. Missing, cross-scope, or mixed-scope paths stay empty/hidden; the provider-free read remains bounded to 1–100 records.
+- **Scoped identity/commitment revision audit**: `get_self_model_history(namespace, history_type, limit?)` returns newest-first identity or commitment patches persisted on claim-attributed reflections. Record-only updates stay hidden. This is an audit trail, not a versioned identity/commitment ledger.
 - **Scoped evidence-relation runtime**: `get_evidence_relation(namespace, trigger_window_event_ids, selected_evidence_event_ids?, selection_basis?)` intersects a caller-provided trigger window with same-scope events, then reports selected versus available-not-selected rows. Missing and cross-scope trigger IDs are omitted; selected IDs outside the scoped window fail closed. The path does not rank or widen.
 - **SQLite persistence**: stores events, claims, evidence, reflection audits, trigger ledger entries, and operation logs.
 - **Evidence-gated self-revision**: claim, identity, and commitment updates must be backed by explicit evidence and governance rules. `run_reflection` remains the only durable write path for identity, commitment, and reflection changes.
@@ -103,6 +104,7 @@ Implemented:
 - M1.1.6 scoped cross-type union through additive `search_memory.record_types`; omitted type still searches Event, union rejects type-specific filters, and mixed results keep the existing tagged record JSON
 - M1.2.4 scoped Episode lookup through explicit `get_memory(record_type = Episode)`; the persisted episode reference stays opaque, and missing or cross-scope IDs return `record: null`
 - M1.2.5 scoped Reflection lookup through explicit `get_memory(record_type = Reflection)`; missing, cross-scope, and record-only IDs all return `record: null`
+- M1.2.6 scoped identity/commitment revision audit through the ninth MCP tool, `get_self_model_history`; it reads existing reflection audit columns and does not version the current-state tables
 - M1.0.1 scoped identity evidence-to-Episode counting: supporting-Episode lookup now requires an explicit `MemoryScope` and keeps only Claim/Event endpoints that match that owner + namespace before any identity-revision count
 - M1.0.2 mixed-scope Claim revision-edge redaction: Claim search/get hide the whole edge when either endpoint leaves the requested scope, so Reflection IDs and the other Claim ID cannot leak as metadata
 - M1.0.3 owner/namespace write-read reachability: new writes use the namespace-derived owner matrix and reject `Owner::Unknown`; read-only doctor inventories leftover Unknown rows without rewriting them
@@ -122,7 +124,7 @@ Partially implemented:
 - Governance validation failures write only a rejected trigger audit. Failures while appending the handled trigger ledger or committing the reflection transaction roll back pending identity, commitment, claim/evidence, reflection, and handled-ledger changes; a separate rejected audit is then recorded outside the failed transaction. This is locally verified failure atomicity, not crash-recovery or distributed transaction support.
 - Identity, claims, evidence, and episodes in the decision snapshot are still caller-provided; there is no server-created snapshot handle or complete policy/provenance binding yet.
 - Episodes are still lightweight scope-projected records over `episode_events -> events`, not a durable Episode entity or complete autobiographical memory model. The new search slice does not persist or claim `objective`, `outcome`, or `lesson` fields.
-- The runtime read interface now covers complete Event/Claim search and lookup records, scoped Episode search and lookup, scoped Reflection search and lookup, a scoped cross-type union, a bounded Claim-linked reflection-history slice, and a scoped evidence-relation report. These paths remain read-only/provider-free, but they do not cover identity/commitment or record-only reflection history, or correction tools. Record-only reflections stay invisible because they have no Claim scope. The Episode, Reflection, evidence-relation, and union slices add no schema migration or index and retain an MVP table-scan performance boundary.
+- The runtime read interface now covers complete Event/Claim search and lookup records, scoped Episode search and lookup, scoped Reflection search and lookup, a scoped cross-type union, a bounded Claim-linked reflection-history slice, a scoped identity/commitment revision audit, and a scoped evidence-relation report. These paths remain read-only/provider-free, but they do not cover a versioned identity/commitment ledger, record-only reflection history, or correction tools. Record-only reflections stay invisible because they have no Claim scope. The Episode, Reflection, self-model audit, evidence-relation, and union slices add no schema migration or index and retain an MVP table-scan performance boundary.
 - M1.0 scope/data-integrity gates are complete for new writes. Leftover `Owner::Unknown` rows remain schema-legal but invisible to namespace-derived scoped reads until a separately approved rewrite.
 - Provider live evidence proves configuration and connectivity only. It does not prove model quality, SLA, or production readiness.
 - Local alpha gates still depend on external evidence such as a real fresh-machine run, Windows parity, and a human release decision.
@@ -131,7 +133,7 @@ Partially implemented:
 Not implemented:
 
 - Full memory layering
-- Identity/commitment and record-only reflection history, and audited correction tools
+- Versioned identity/commitment ledger, record-only reflection history, and audited correction tools
 - Richer evidence ranking / weighting
 - Production-grade remote, team, or multi-tenant mode
 - Daemon write capabilities and autonomous background operation

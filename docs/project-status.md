@@ -55,7 +55,7 @@ M1.1.3 为现有 `search_memory` 增加显式 `record_type = Episode` 与 option
 
 SQLite 从 `episode_events -> events` 出发，在 exact filter、分组、排序和 `1..=100` limit 之前按 server-derived owner + namespace 收窄。同一个 reference 即使关联多个 namespace，也只返回请求 scope 的 membership，不暴露其他 scope 的计数或存在性。结果的 `recorded_at` 由该 scope 内最新 Event 派生，provenance 返回 canonical recent-first Event references 与 canonical same-scope Claim references；路径只读、provider-free，operation metadata 仅记录 record type 与结果数。
 
-该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1.1.4 / M1.1.5 / M1.1.6 / M1.2.4 / M1.2.5 已补上 scoped Reflection search/lookup、evidence-relation runtime、跨类型 union 与 Episode lookup，但 identity/commitment history、record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
+该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1.1.4 / M1.1.5 / M1.1.6 / M1.2.4 / M1.2.5 / M1.2.6 已补上 scoped Reflection search/lookup、evidence-relation runtime、跨类型 union、Episode lookup 与 scoped identity/commitment revision audit，但 versioned identity/commitment ledger、record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
 
 同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan。2026-08-13 已完成全部三项：identity supporting-Episode 查询现在同时限制 Claim 与 Event scope；Claim search/get 对 mixed-scope revision edge 整边隐藏；新写入拒绝 `Owner::Unknown`，只读 doctor 盘点 legacy Unknown 行且不改写。它们不回滚本切片已验证的 scope-first Episode projection。
 
@@ -103,6 +103,10 @@ M1.2.4 让 `get_memory(namespace, id, record_type?)` 在显式 `record_type = Ep
 
 M1.2.5 让 `get_memory(record_type = Reflection)` 接受 opaque persisted reflection ID，并以 `limit = 1` 复用同一 scoped search。归属与 M1.1.4 相同：必须存在同 scope superseded Claim，replacement 为空或同 scope。missing、cross-scope 与 record-only 都返回 `record: null`，三者不可区分。record-only 行没有 Claim anchor，因此不能进入 scoped lookup 或 history；本片不新增第二条 history 工具。
 
+## 2026-08-13 M1.2.6 Identity and Commitment History
+
+M1.2.6 新增第 9 个 MCP 工具 `get_self_model_history(namespace, history_type, limit?)`。`history_type` 为 Identity 或 Commitment；limit 默认 20、范围 `1..=100`，并用 `has_more` 表示截断。结果来自现有 reflection 审计列，只包含能通过同 scope Claim 归属的行。record-only identity/commitment 更新保持不可见。该首片没有 schema migration、新写路径或 rollback，也不把现态 `identity_claims` / `commitments` 表变成版本账本。
+
 ## 项目定位
 
 当前仓库更准确的定位是：
@@ -119,12 +123,13 @@ M1.2.5 让 `get_memory(record_type = Reflection)` 接受 opaque persisted reflec
 
 `events -> claims -> self_snapshot -> decision -> reflection`
 
-对应到 MCP 工具层，当前可用的 8 个工具是：
+对应到 MCP 工具层，当前可用的 9 个工具是：
 
 - `ingest_interaction`
 - `search_memory`
 - `get_memory`
 - `get_reflection_history`
+- `get_self_model_history`
 - `get_evidence_relation`
 - `build_self_snapshot`
 - `decide_with_snapshot`
@@ -372,7 +377,7 @@ Implementation notes:
 
 ## 未实现
 
-- identity/commitment history 与 record-only Reflection history
+- versioned identity/commitment ledger 与 record-only Reflection history
 - current-schema structural readback，以及 exclusive init/migration lifecycle gate
 - 受审计的 `supersede_memory` correction 合同，以及真实 MCP 客户端“记录 → 重连 → 检索 → 查看证据 → supersede → 回看历史”退出证据
 - richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / inclusive recency window / limit 的窄化 evidence-oriented 查询基础；只读 relation projection 已有首片，但不是 full ranking/weighting engine）
@@ -386,7 +391,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-08-13`，测试与工具链已完成分层减重；M1.2.5 继续复用以下运行入口：
+截至 `2026-08-13`，测试与工具链已完成分层减重；M1.2.6 继续复用以下运行入口：
 
 - `cargo fmt --check`
 - `git diff --check`

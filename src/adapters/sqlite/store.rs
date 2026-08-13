@@ -13,6 +13,7 @@ use crate::{
         operation_log::{
             ActorKind, OperationLogEntry, OperationLogKind, OperationLogStatus, redact_secrets,
         },
+        reflection::ReflectionIdentityUpdate,
         self_revision::TriggerType,
         snapshot::SnapshotTimeWindow,
         types::{EventKind, MemoryScope, Mode, Namespace, Owner},
@@ -25,8 +26,9 @@ use crate::{
         EventStore, EvidenceQuery, IdentityStore, IngestTransaction, IngestTransactionRunner,
         MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore, OperationLogQuery, OperationLogStore,
         ReflectionProvenanceLinks, ReflectionReadRecord, ReflectionRecordQuery, ReflectionStore,
-        ReflectionTransaction, ReflectionTransactionRunner, ScopedEventIdQuery, StoredClaim,
-        StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        ReflectionTransaction, ReflectionTransactionRunner, ScopedEventIdQuery,
+        SelfModelHistoryKind, SelfModelHistoryPage, SelfModelHistoryQuery, SelfModelHistoryRecord,
+        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
         TriggerLedgerStore,
     },
 };
@@ -866,6 +868,120 @@ impl MemoryReadStore for SqliteStore {
 
         Ok(ClaimReflectionHistoryPage { records, has_more })
     }
+
+    async fn query_self_model_history(
+        &self,
+        query: SelfModelHistoryQuery,
+    ) -> Result<SelfModelHistoryPage, AppError> {
+        if !query.scope.is_explicitly_scoped() {
+            return Err(AppError::InvalidParams(
+                "self-model history query requires an explicit namespace".to_string(),
+            ));
+        }
+        if query.limit == 0 {
+            return Err(AppError::InvalidParams(
+                "self-model history query limit must be at least 1".to_string(),
+            ));
+        }
+        if query.limit > MAX_EVENT_RECORD_QUERY_LIMIT {
+            return Err(AppError::InvalidParams(format!(
+                "self-model history query limit must be at most {MAX_EVENT_RECORD_QUERY_LIMIT}"
+            )));
+        }
+
+        let owner = query
+            .scope
+            .owner()
+            .expect("explicit memory scope must have an owner");
+        let namespace = query
+            .scope
+            .namespace()
+            .expect("explicit memory scope must have a namespace");
+        let recorded_at_sort_key = sqlite_rfc3339_sort_key("r.recorded_at");
+        let fetch_limit = query.limit + 1;
+        let audit_column = match query.history_kind {
+            SelfModelHistoryKind::Identity => "r.requested_identity_update",
+            SelfModelHistoryKind::Commitment => "r.requested_commitment_updates",
+        };
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            "SELECT r.reflection_id, r.recorded_at, r.summary, r.superseded_claim_id, \
+             r.replacement_claim_id, r.supporting_evidence_event_ids, \
+             r.requested_identity_update, r.requested_commitment_updates \
+             FROM reflections r \
+             JOIN claims superseded ON superseded.claim_id = r.superseded_claim_id \
+             LEFT JOIN claims replacement ON replacement.claim_id = r.replacement_claim_id \
+             WHERE superseded.owner = ",
+        );
+        builder
+            .push_bind(owner_as_str(owner))
+            .push(" AND superseded.namespace = ")
+            .push_bind(namespace.as_str())
+            .push(" AND (r.replacement_claim_id IS NULL OR (replacement.owner = ")
+            .push_bind(owner_as_str(owner))
+            .push(" AND replacement.namespace = ")
+            .push_bind(namespace.as_str())
+            .push(")) AND ")
+            .push(audit_column)
+            .push(" IS NOT NULL ORDER BY ")
+            .push(&recorded_at_sort_key)
+            .push(" DESC, r.rowid DESC LIMIT ")
+            .push_bind(i64::try_from(fetch_limit).map_err(|_| {
+                AppError::InvalidParams(
+                    "self-model history query limit exceeds the supported maximum".to_string(),
+                )
+            })?);
+
+        let mut unfiltered = map_sqlite(builder.build().fetch_all(&self.pool).await)?
+            .into_iter()
+            .map(|row| {
+                Ok(UnfilteredSelfModelHistoryRecord {
+                    base: UnfilteredClaimReflectionHistoryRecord {
+                        reflection_id: row.get("reflection_id"),
+                        recorded_at: parse_timestamp(&row.get::<String, _>("recorded_at"))?,
+                        summary: row.get("summary"),
+                        superseded_claim_id: row.get("superseded_claim_id"),
+                        replacement_claim_id: row.get("replacement_claim_id"),
+                        supporting_evidence_event_ids: deserialize_json(
+                            &row.get::<String, _>("supporting_evidence_event_ids"),
+                        )?,
+                    },
+                    identity_update: row
+                        .get::<Option<String>, _>("requested_identity_update")
+                        .as_deref()
+                        .map(deserialize_json)
+                        .transpose()?,
+                    commitment_updates: row
+                        .get::<Option<String>, _>("requested_commitment_updates")
+                        .as_deref()
+                        .map(deserialize_json)
+                        .transpose()?,
+                })
+            })
+            .collect::<Result<Vec<_>, AppError>>()?;
+        let has_more = unfiltered.len() > query.limit;
+        unfiltered.truncate(query.limit);
+        if unfiltered.is_empty() {
+            return Ok(SelfModelHistoryPage {
+                records: Vec::new(),
+                has_more,
+            });
+        }
+        let scoped_evidence_ids = load_scoped_event_id_set(
+            &self.pool,
+            unfiltered
+                .iter()
+                .flat_map(|record| record.base.supporting_evidence_event_ids.iter())
+                .map(String::as_str),
+            owner,
+            namespace,
+        )
+        .await?;
+        let records = unfiltered
+            .into_iter()
+            .map(|record| record.into_scoped_record(query.history_kind, &scoped_evidence_ids))
+            .collect();
+        Ok(SelfModelHistoryPage { records, has_more })
+    }
 }
 
 struct UnfilteredClaimReflectionHistoryRecord {
@@ -875,6 +991,36 @@ struct UnfilteredClaimReflectionHistoryRecord {
     superseded_claim_id: Option<String>,
     replacement_claim_id: Option<String>,
     supporting_evidence_event_ids: Vec<String>,
+}
+
+struct UnfilteredSelfModelHistoryRecord {
+    base: UnfilteredClaimReflectionHistoryRecord,
+    identity_update: Option<ReflectionIdentityUpdate>,
+    commitment_updates: Option<Vec<Commitment>>,
+}
+
+impl UnfilteredSelfModelHistoryRecord {
+    fn into_scoped_record(
+        self,
+        history_kind: SelfModelHistoryKind,
+        scoped_evidence_ids: &BTreeSet<String>,
+    ) -> SelfModelHistoryRecord {
+        let scoped = self.base.into_scoped_record(scoped_evidence_ids);
+        SelfModelHistoryRecord {
+            reflection_id: scoped.reflection_id,
+            recorded_at: scoped.recorded_at,
+            summary: scoped.summary,
+            superseded_claim_reference: scoped.superseded_claim_reference,
+            replacement_claim_reference: scoped.replacement_claim_reference,
+            supporting_evidence_event_references: scoped.supporting_evidence_event_references,
+            identity_update: matches!(history_kind, SelfModelHistoryKind::Identity)
+                .then_some(self.identity_update)
+                .flatten(),
+            commitment_updates: matches!(history_kind, SelfModelHistoryKind::Commitment)
+                .then_some(self.commitment_updates)
+                .flatten(),
+        }
+    }
 }
 
 impl UnfilteredClaimReflectionHistoryRecord {

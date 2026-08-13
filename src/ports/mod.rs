@@ -34,6 +34,7 @@ pub use memory_read_store::{
     ClaimReflectionHistoryRecord, ClaimRevisionLinks, EpisodeReadRecord, EpisodeRecordQuery,
     EventReadRecord, EventRecordQuery, MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore,
     ReflectionProvenanceLinks, ReflectionReadRecord, ReflectionRecordQuery, ScopedEventIdQuery,
+    SelfModelHistoryKind, SelfModelHistoryPage, SelfModelHistoryQuery, SelfModelHistoryRecord,
 };
 pub use model_port::{ModelDecision, ModelDecisionRequest, ModelInput, ModelPort};
 pub use operation_log_store::{OperationLogQuery, OperationLogStore};
