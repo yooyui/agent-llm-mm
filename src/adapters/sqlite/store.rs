@@ -25,8 +25,9 @@ use crate::{
         EventStore, EvidenceQuery, IdentityStore, IngestTransaction, IngestTransactionRunner,
         MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore, OperationLogQuery, OperationLogStore,
         ReflectionProvenanceLinks, ReflectionReadRecord, ReflectionRecordQuery, ReflectionStore,
-        ReflectionTransaction, ReflectionTransactionRunner, StoredClaim, StoredEvent,
-        StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
+        ReflectionTransaction, ReflectionTransactionRunner, ScopedEventIdQuery, StoredClaim,
+        StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        TriggerLedgerStore,
     },
 };
 
@@ -617,6 +618,40 @@ impl MemoryReadStore for SqliteStore {
                 )
             })
             .collect())
+    }
+
+    async fn query_scoped_event_ids(
+        &self,
+        query: ScopedEventIdQuery,
+    ) -> Result<BTreeSet<String>, AppError> {
+        if !query.scope.is_explicitly_scoped() {
+            return Err(AppError::InvalidParams(
+                "scoped event-id query requires an explicit namespace".to_string(),
+            ));
+        }
+        if query.event_ids.len() > MAX_EVIDENCE_MANIFEST_ITEMS {
+            return Err(AppError::InvalidParams(format!(
+                "scoped event-id query must contain at most {MAX_EVIDENCE_MANIFEST_ITEMS} entries"
+            )));
+        }
+        if query.event_ids.is_empty() {
+            return Ok(BTreeSet::new());
+        }
+        let owner = query
+            .scope
+            .owner()
+            .expect("explicit memory scope must have an owner");
+        let namespace = query
+            .scope
+            .namespace()
+            .expect("explicit memory scope must have a namespace");
+        load_scoped_event_id_set(
+            &self.pool,
+            query.event_ids.iter().map(String::as_str),
+            owner,
+            namespace,
+        )
+        .await
     }
 
     async fn query_claim_records(

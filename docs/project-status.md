@@ -33,7 +33,7 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 - `doctor` 默认执行只读检查；missing / old / read-only 数据库只报告状态，不创建、迁移或 seed。只有显式 `init`、`migrate` 或 `doctor --allow-bootstrap` 可以改变数据库；`serve` 只接受 current database。
 - SQLite 当前 schema version 为 3，并使用 `schema_migrations` ledger。legacy rebuild 在原库写入前建立 backup anchor 和 restore rehearsal，随后在事务内执行 row-count preservation、`foreign_key_check`、ledger 与表行数 readback；这仍不是 remote backup、scheduled backup、cloud sync 或 production DR。
 - dashboard HTTP 路由仍无认证；启用 dashboard 时配置校验只接受 `localhost` 或 loopback IP，非 loopback host 会在启动前失败。它仍只是本机只读界面，不能暴露到公网反向代理，也不能描述为 remote/admin 能力。
-- evidence relation、episode summary、memory layer 和 richer semantics projection 主要是 read-only 定义与测试切片，尚未形成统一 MCP / application runtime read path。
+- episode summary、memory layer 和 richer semantics projection 主要是 read-only 定义与测试切片；evidence relation 已有 scoped MCP runtime 首片，仍不是 ranking / widening engine。
 - `.github/workflows/ci.yml` 已在 Linux/macOS 上声明 format、all-feature Clippy、full tests 与 status sync；Rust 固定为 `1.95.0`，CLI tracing 固定写 stderr。当前仍无真实 binary package、fresh-machine / Windows 完整证据或正式 release approval。
 - `rmcp` 仍固定在 `0.5.0`。对官方 `2.2.0` 的隔离探针在机械迁移后 compile 通过，但存在 router dead-code warning，且 MCP `stdio` 回归为 47/48；因此本轮不升级，具体破坏面与测试矩阵见 [兼容性 spike](spikes/rmcp-compatibility-2026-07-14.md)。
 
@@ -55,7 +55,7 @@ M1.1.3 为现有 `search_memory` 增加显式 `record_type = Episode` 与 option
 
 SQLite 从 `episode_events -> events` 出发，在 exact filter、分组、排序和 `1..=100` limit 之前按 server-derived owner + namespace 收窄。同一个 reference 即使关联多个 namespace，也只返回请求 scope 的 membership，不暴露其他 scope 的计数或存在性。结果的 `recorded_at` 由该 scope 内最新 Event 派生，provenance 返回 canonical recent-first Event references 与 canonical same-scope Claim references；路径只读、provider-free，operation metadata 仅记录 record type 与结果数。
 
-该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1.1.4 已补上 scoped Reflection search，但 evidence-relation runtime read、稳定完整 record union、Episode/Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
+该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1.1.4 / M1.1.5 已补上 scoped Reflection search 与 evidence-relation runtime，但稳定完整 record union、Episode/Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
 
 同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan。2026-08-13 已完成全部三项：identity supporting-Episode 查询现在同时限制 Claim 与 Event scope；Claim search/get 对 mixed-scope revision edge 整边隐藏；新写入拒绝 `Owner::Unknown`，只读 doctor 盘点 legacy Unknown 行且不改写。它们不回滚本切片已验证的 scope-first Episode projection。
 
@@ -83,6 +83,12 @@ M1.1.4 为现有 `search_memory` 增加显式 `record_type = Reflection` 与 opt
 
 结果返回 persisted reflection ID、recorded_at、请求 scope 的 owner/namespace、summary，以及同 scope canonical Claim / evidence references。`get_memory` 仍只接受 Event / Claim。该切片没有 schema migration / index，也不覆盖 identity/commitment history、record-only history 或 Reflection lookup。
 
+## 2026-08-13 M1.1.5 Scoped Evidence Relation Runtime Read
+
+M1.1.5 把既有只读 `build_evidence_relation_report` 收敛为第 8 个 MCP 工具 `get_evidence_relation(namespace, trigger_window_event_ids, selected_evidence_event_ids?, selection_basis?)`。显式 namespace 派生 owner；trigger window 接受裸 ID 与 `event:<id>`，保序去重后再与 SQLite 中同 owner+namespace 的 Event 做 intersect-only 收窄。missing / cross-scope trigger ID 从窗口省略；selected 必须落在 scoped window 内，否则 fail closed。结果返回 canonical `event:<id>`、caller-order `window_rank`、selected / available-not-selected、bounded binary weight 与 rejection reason。路径只读、provider-free；operation metadata 仅含 `report_type`、`trigger_window_size`、`selected_count`、`result_count`。
+
+该切片没有 schema migration / index，也不引入 ranking、widening、stable union、Episode/Reflection lookup 或 correction。既有 projection JSON 的 raw `event_id` 合同保持不变。
+
 ## 项目定位
 
 当前仓库更准确的定位是：
@@ -99,12 +105,13 @@ M1.1.4 为现有 `search_memory` 增加显式 `record_type = Reflection` 与 opt
 
 `events -> claims -> self_snapshot -> decision -> reflection`
 
-对应到 MCP 工具层，当前可用的 7 个工具是：
+对应到 MCP 工具层，当前可用的 8 个工具是：
 
 - `ingest_interaction`
 - `search_memory`
 - `get_memory`
 - `get_reflection_history`
+- `get_evidence_relation`
 - `build_self_snapshot`
 - `decide_with_snapshot`
 - `run_reflection`
@@ -351,7 +358,7 @@ Implementation notes:
 
 ## 未实现
 
-- 正式 evidence-relation runtime read 与稳定完整 cross-type record union
+- 稳定完整 cross-type record union
 - Episode / Reflection `get_memory`、identity/commitment history 与 record-only Reflection history
 - current-schema structural readback，以及 exclusive init/migration lifecycle gate
 - 受审计的 `supersede_memory` correction 合同，以及真实 MCP 客户端“记录 → 重连 → 检索 → 查看证据 → supersede → 回看历史”退出证据
@@ -366,7 +373,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-08-13`，测试与工具链已完成分层减重；M1.1.4 继续复用以下运行入口：
+截至 `2026-08-13`，测试与工具链已完成分层减重；M1.1.5 继续复用以下运行入口：
 
 - `cargo fmt --check`
 - `git diff --check`

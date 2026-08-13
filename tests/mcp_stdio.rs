@@ -31,6 +31,7 @@ async fn server_exposes_expected_tools_over_stdio() {
         vec![
             "build_self_snapshot".to_string(),
             "decide_with_snapshot".to_string(),
+            "get_evidence_relation".to_string(),
             "get_memory".to_string(),
             "get_reflection_history".to_string(),
             "ingest_interaction".to_string(),
@@ -168,6 +169,35 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
         &[json!("namespace"), json!("claim_reference")]
     );
     assert!(history_schema["properties"].get("limit").is_some());
+
+    let relation_schema = tools
+        .iter()
+        .find(|tool| tool.name == "get_evidence_relation")
+        .map(|tool| &tool.input_schema)
+        .expect("get_evidence_relation tool schema");
+    let relation_required = relation_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .expect("get_evidence_relation schema should expose required fields");
+    assert_eq!(
+        relation_required,
+        &[json!("namespace"), json!("trigger_window_event_ids")]
+    );
+    let relation_properties = relation_schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .expect("get_evidence_relation schema should expose properties");
+    for field in [
+        "namespace",
+        "trigger_window_event_ids",
+        "selected_evidence_event_ids",
+        "selection_basis",
+    ] {
+        assert!(
+            relation_properties.contains_key(field),
+            "get_evidence_relation schema missing {field}: {relation_schema:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -2419,6 +2449,197 @@ async fn search_memory_returns_scoped_reflection_provenance_and_hides_record_onl
 }
 
 #[tokio::test]
+async fn get_evidence_relation_returns_scoped_window_and_hides_cross_scope_ids_over_stdio() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let event_a1 = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/relation-stdio-a",
+                    "kind": "Observation",
+                    "summary": "first scoped evidence"
+                },
+                "claim_drafts": []
+            }),
+        )
+        .await
+        .unwrap();
+    let event_a1_id = event_a1["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let event_a2 = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/relation-stdio-a",
+                    "kind": "Observation",
+                    "summary": "second scoped evidence"
+                },
+                "claim_drafts": []
+            }),
+        )
+        .await
+        .unwrap();
+    let event_a2_id = event_a2["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let event_b = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/relation-stdio-b",
+                    "kind": "Observation",
+                    "summary": "cross-scope interferer"
+                },
+                "claim_drafts": []
+            }),
+        )
+        .await
+        .unwrap();
+    let event_b_id = event_b["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let report = client
+        .call_tool(
+            "get_evidence_relation",
+            json!({
+                "namespace": "project/relation-stdio-a",
+                "trigger_window_event_ids": [
+                    format!("event:{event_a2_id}"),
+                    event_b_id,
+                    "relation-missing",
+                    event_a1_id,
+                    event_a2_id
+                ],
+                "selected_evidence_event_ids": [format!("event:{event_a1_id}")],
+                "selection_basis": "explicit_model_ids"
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        report.get("error").is_none(),
+        "scoped evidence relation failed: {report:?}"
+    );
+    let structured = &report["result"]["structuredContent"];
+    assert_eq!(structured["owner"], "World");
+    assert_eq!(structured["namespace"], "project/relation-stdio-a");
+    assert_eq!(structured["trigger_window_size"], 2);
+    assert_eq!(structured["selected_count"], 1);
+    assert_eq!(structured["rejected_count"], 1);
+    assert_eq!(
+        structured["no_widening_policy"],
+        "selected_subset_of_trigger_window"
+    );
+    assert_eq!(
+        structured["relations"],
+        json!([
+            {
+                "event_reference": format!("event:{event_a2_id}"),
+                "window_rank": 1,
+                "selected": false,
+                "relation_status": "available_not_selected",
+                "selection_weight": 0,
+                "selection_basis": null,
+                "rejection_reason": "not_selected_by_current_policy"
+            },
+            {
+                "event_reference": format!("event:{event_a1_id}"),
+                "window_rank": 2,
+                "selected": true,
+                "relation_status": "selected",
+                "selection_weight": 100,
+                "selection_basis": "explicit_model_ids",
+                "rejection_reason": null
+            }
+        ])
+    );
+
+    let rejected = client
+        .call_tool(
+            "get_evidence_relation",
+            json!({
+                "namespace": "project/relation-stdio-a",
+                "trigger_window_event_ids": [event_a1_id, event_b_id],
+                "selected_evidence_event_ids": [event_b_id]
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(rejected["error"]["code"], -32602);
+
+    for invalid in [
+        json!({}),
+        json!({"namespace": "invalid", "trigger_window_event_ids": ["evt-1"]}),
+        json!({"namespace": "project/relation-stdio-a"}),
+        json!({
+            "namespace": "project/relation-stdio-a",
+            "trigger_window_event_ids": [""]
+        }),
+        json!({
+            "namespace": "project/relation-stdio-a",
+            "trigger_window_event_ids": ["evt-1"],
+            "selection_basis": "   "
+        }),
+    ] {
+        let response = client
+            .call_tool("get_evidence_relation", invalid)
+            .await
+            .unwrap();
+        assert_eq!(
+            response["error"]["code"], -32602,
+            "invalid evidence relation must fail closed: {response:?}"
+        );
+    }
+
+    let empty = client
+        .call_tool(
+            "get_evidence_relation",
+            json!({
+                "namespace": "project/relation-stdio-a",
+                "trigger_window_event_ids": []
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(empty["result"]["structuredContent"]["relations"], json!([]));
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let operation = sqlx::query(
+        "SELECT response_summary_json FROM operation_log WHERE entrypoint = 'get_evidence_relation' ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let summary: Value =
+        serde_json::from_str(&operation.get::<String, _>("response_summary_json")).unwrap();
+    assert_eq!(
+        summary,
+        json!({
+            "report_type": "evidence_relation",
+            "trigger_window_size": 0,
+            "selected_count": 0,
+            "result_count": 0
+        })
+    );
+}
+
+#[tokio::test]
 async fn search_memory_invalid_or_empty_scope_fails_closed_over_stdio() {
     let mut client = test_support::spawn_stdio_client().await.unwrap();
     let _ = client.list_all_tools().await.unwrap();
@@ -4170,7 +4391,7 @@ required = true
         .expect("client");
 
     let tools = client.list_all_tools().await.expect("list tools");
-    assert_eq!(tools.len(), 7);
+    assert_eq!(tools.len(), 8);
 
     let health: serde_json::Value = reqwest::get(format!("http://127.0.0.1:{port}/api/health"))
         .await
@@ -4249,7 +4470,7 @@ max_concurrent_tasks = 1
             .await
             .unwrap();
     let tools = client.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 7);
+    assert_eq!(tools.len(), 8);
 
     client
         .call_tool(

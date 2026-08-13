@@ -6,6 +6,7 @@ use crate::{
         auto_reflect_if_needed::AutoReflectInput,
         build_self_snapshot::BuildSelfSnapshotInput,
         decide_with_snapshot::DecideWithSnapshotInput,
+        get_evidence_relation::GetEvidenceRelationInput,
         get_memory::{GetMemoryInput, MemoryRecordReference},
         get_reflection_history::{DEFAULT_REFLECTION_HISTORY_LIMIT, GetReflectionHistoryInput},
         ingest_interaction::IngestInput,
@@ -526,6 +527,58 @@ pub struct GetMemoryParams {
     pub id: String,
     #[serde(default)]
     pub record_type: Option<MemoryRecordTypeDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GetEvidenceRelationParams {
+    pub namespace: String,
+    #[schemars(length(max = MAX_EVIDENCE_MANIFEST_ITEMS))]
+    pub trigger_window_event_ids: Vec<String>,
+    #[serde(default)]
+    #[schemars(length(max = MAX_EVIDENCE_MANIFEST_ITEMS))]
+    pub selected_evidence_event_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub selection_basis: Option<String>,
+}
+
+impl TryFrom<GetEvidenceRelationParams> for GetEvidenceRelationInput {
+    type Error = AppError;
+
+    fn try_from(value: GetEvidenceRelationParams) -> Result<Self, Self::Error> {
+        if value.trigger_window_event_ids.len() > MAX_EVIDENCE_MANIFEST_ITEMS {
+            return Err(AppError::InvalidParams(format!(
+                "trigger_window_event_ids must contain at most {MAX_EVIDENCE_MANIFEST_ITEMS} entries"
+            )));
+        }
+        let selected_evidence_event_ids = value.selected_evidence_event_ids.unwrap_or_default();
+        if selected_evidence_event_ids.len() > MAX_EVIDENCE_MANIFEST_ITEMS {
+            return Err(AppError::InvalidParams(format!(
+                "selected_evidence_event_ids must contain at most {MAX_EVIDENCE_MANIFEST_ITEMS} entries"
+            )));
+        }
+        let input = Self {
+            namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
+            trigger_window: parse_event_references(value.trigger_window_event_ids)?,
+            selected_evidence: parse_event_references(selected_evidence_event_ids)?,
+            selection_basis: value.selection_basis,
+        };
+        input.validate()?;
+        Ok(input)
+    }
+}
+
+fn parse_event_references(values: Vec<String>) -> Result<Vec<EventReference>, AppError> {
+    let mut parsed = Vec::new();
+    for value in values {
+        let reference = EventReference::parse(value).map_err(AppError::from)?;
+        if parsed
+            .iter()
+            .all(|existing: &EventReference| existing.event_id() != reference.event_id())
+        {
+            parsed.push(reference);
+        }
+    }
+    Ok(parsed)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

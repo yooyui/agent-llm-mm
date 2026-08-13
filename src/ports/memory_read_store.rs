@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
@@ -118,6 +120,12 @@ impl ReflectionReadRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopedEventIdQuery {
+    pub scope: MemoryScope,
+    pub event_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaimReflectionHistoryQuery {
     pub scope: MemoryScope,
     pub claim_reference: ClaimReference,
@@ -211,6 +219,11 @@ pub trait MemoryReadStore {
         &self,
         query: ReflectionRecordQuery,
     ) -> Result<Vec<ReflectionReadRecord>, AppError>;
+
+    async fn query_scoped_event_ids(
+        &self,
+        query: ScopedEventIdQuery,
+    ) -> Result<BTreeSet<String>, AppError>;
 
     async fn query_claim_reflection_history(
         &self,

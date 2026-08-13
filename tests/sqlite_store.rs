@@ -1,5 +1,8 @@
 use agent_llm_mm::{
-    application::build_self_snapshot::{BuildSelfSnapshotInput, execute as build_self_snapshot},
+    application::{
+        build_self_snapshot::{BuildSelfSnapshotInput, execute as build_self_snapshot},
+        get_evidence_relation::{GetEvidenceRelationInput, execute as get_evidence_relation},
+    },
     domain::{
         claim::{ClaimDraft, ClaimReference},
         event::{Event, EventReference, MAX_EVIDENCE_MANIFEST_ITEMS},
@@ -14,8 +17,8 @@ use agent_llm_mm::{
         ClaimRecordQuery, ClaimReflectionHistoryQuery, ClaimRevisionLinks, ClaimStatus, ClaimStore,
         CommitmentStore, EpisodeRecordQuery, EpisodeStore, EventRecordQuery, EventStore,
         EvidenceQuery, IdentityStore, IngestTransactionRunner, MemoryReadStore,
-        ReflectionRecordQuery, ReflectionStore, ReflectionTransactionRunner, StoredClaim,
-        StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        ReflectionRecordQuery, ReflectionStore, ReflectionTransactionRunner, ScopedEventIdQuery,
+        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
         TriggerLedgerStore,
     },
 };
@@ -3380,6 +3383,150 @@ async fn sqlite_claim_reflection_history_rejects_malformed_legacy_evidence_json(
         .await;
 
     assert!(matches!(result, Err(AppError::Message(_))));
+}
+
+#[tokio::test]
+async fn sqlite_evidence_relation_runtime_is_scoped_intersect_only_and_hides_cross_scope_ids() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let project_a = Namespace::for_project("relation-a");
+    let project_b = Namespace::for_project("relation-b");
+
+    for (event_id, namespace) in [
+        ("relation-event-a1", project_a.clone()),
+        ("relation-event-a2", project_a.clone()),
+        ("relation-event-b", project_b.clone()),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                now,
+                Event::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    EventKind::Observation,
+                    event_id,
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+
+    let membership = context
+        .store
+        .query_scoped_event_ids(ScopedEventIdQuery {
+            scope: MemoryScope::for_namespace(project_a.clone()),
+            event_ids: vec![
+                "relation-event-a2".to_string(),
+                "relation-event-missing".to_string(),
+                "relation-event-b".to_string(),
+                "relation-event-a1".to_string(),
+            ],
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        membership.into_iter().collect::<Vec<_>>(),
+        vec![
+            "relation-event-a1".to_string(),
+            "relation-event-a2".to_string()
+        ]
+    );
+
+    let report = get_evidence_relation(
+        &context.store,
+        GetEvidenceRelationInput {
+            namespace: project_a.clone(),
+            trigger_window: vec![
+                EventReference::parse("event:relation-event-a2").unwrap(),
+                EventReference::parse("relation-event-b").unwrap(),
+                EventReference::parse("relation-event-missing").unwrap(),
+                EventReference::parse("relation-event-a1").unwrap(),
+                EventReference::parse("relation-event-a2").unwrap(),
+            ],
+            selected_evidence: vec![EventReference::parse("relation-event-a1").unwrap()],
+            selection_basis: Some("explicit_model_ids".to_string()),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(report.owner, Owner::World);
+    assert_eq!(report.namespace, "project/relation-a");
+    assert_eq!(report.trigger_window_size, 2);
+    assert_eq!(report.selected_count, 1);
+    assert_eq!(report.rejected_count, 1);
+    assert_eq!(
+        report
+            .relations
+            .iter()
+            .map(|relation| {
+                (
+                    relation.event_reference.as_str(),
+                    relation.window_rank,
+                    relation.selected,
+                    relation.relation_status.as_str(),
+                )
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "event:relation-event-a2",
+                1,
+                false,
+                "available_not_selected"
+            ),
+            ("event:relation-event-a1", 2, true, "selected"),
+        ]
+    );
+    assert_eq!(
+        report.relations[1].selection_basis.as_deref(),
+        Some("explicit_model_ids")
+    );
+
+    let cross_scope_selected = get_evidence_relation(
+        &context.store,
+        GetEvidenceRelationInput {
+            namespace: project_a.clone(),
+            trigger_window: vec![
+                EventReference::parse("relation-event-a1").unwrap(),
+                EventReference::parse("relation-event-b").unwrap(),
+            ],
+            selected_evidence: vec![EventReference::parse("relation-event-b").unwrap()],
+            selection_basis: None,
+        },
+    )
+    .await
+    .expect_err("selected evidence outside the scoped window must fail closed");
+    assert!(
+        cross_scope_selected
+            .to_string()
+            .contains("outside the trigger window")
+    );
+
+    let empty = get_evidence_relation(
+        &context.store,
+        GetEvidenceRelationInput {
+            namespace: project_a,
+            trigger_window: Vec::new(),
+            selected_evidence: Vec::new(),
+            selection_basis: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(empty.trigger_window_size, 0);
+    assert!(empty.relations.is_empty());
+
+    let unscoped = context
+        .store
+        .query_scoped_event_ids(ScopedEventIdQuery {
+            scope: MemoryScope::legacy_unscoped(),
+            event_ids: vec!["relation-event-a1".to_string()],
+        })
+        .await;
+    assert!(matches!(unscoped, Err(AppError::InvalidParams(_))));
 }
 
 #[tokio::test]

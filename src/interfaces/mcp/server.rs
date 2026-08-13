@@ -22,7 +22,8 @@ use crate::{
         auto_reflect_if_needed::{self, AutoReflectInput, RecursionGuard},
         build_self_snapshot,
         daemon::DaemonHandle,
-        decide_with_snapshot, get_memory, get_reflection_history, ingest_interaction,
+        decide_with_snapshot, get_evidence_relation, get_memory, get_reflection_history,
+        ingest_interaction,
         ingest_interaction::IngestInput,
         run_reflection,
         run_reflection::ReflectionInput,
@@ -48,15 +49,15 @@ use crate::{
         IdentityStore, IngestTransaction, IngestTransactionRunner, MemoryReadStore, ModelDecision,
         ModelDecisionRequest, ModelPort, OperationLogStore, ReflectionReadRecord,
         ReflectionRecordQuery, ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner,
-        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
-        TriggerLedgerStore,
+        ScopedEventIdQuery, StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry,
+        TriggerLedgerStatus, TriggerLedgerStore,
     },
     support::config::{AppConfig, ModelConfig, ModelProviderKind, TransportKind},
 };
 
 use super::dto::{
-    BuildSelfSnapshotParams, DecideWithSnapshotParams, GetMemoryParams, GetReflectionHistoryParams,
-    IngestInteractionParams, RunReflectionParams, SearchMemoryParams,
+    BuildSelfSnapshotParams, DecideWithSnapshotParams, GetEvidenceRelationParams, GetMemoryParams,
+    GetReflectionHistoryParams, IngestInteractionParams, RunReflectionParams, SearchMemoryParams,
 };
 
 pub const AUTO_REFLECTION_RUNTIME_HOOKS: [&str; 4] = [
@@ -457,6 +458,69 @@ impl Server {
             .record_tool_operation(
                 ToolOperationRecord::ok(
                     "get_reflection_history",
+                    dashboard_namespace,
+                    Some(correlation_id),
+                )
+                .with_response_summary(response_summary),
+            )
+            .await;
+        structured(result)
+    }
+
+    #[tool(
+        description = "Read a scoped evidence-relation report for one explicit local memory namespace. The trigger window is the caller-provided event ID list intersected with events that exist in that owner+namespace. Selected IDs must stay inside the scoped window. Missing and cross-scope trigger IDs are omitted without widening; this first slice does not rank or score evidence.",
+        input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<GetEvidenceRelationParams>>()
+    )]
+    async fn get_evidence_relation(
+        &self,
+        raw_params: JsonObject,
+    ) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
+        let params = map_tool_error(
+            &self.runtime,
+            "get_evidence_relation",
+            None,
+            Some(correlation_id.clone()),
+            decode_tool_params::<GetEvidenceRelationParams>(raw_params),
+        )
+        .await?;
+        let dashboard_namespace = Some(params.namespace.clone());
+        let input = map_tool_error(
+            &self.runtime,
+            "get_evidence_relation",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            get_evidence_relation::GetEvidenceRelationInput::try_from(params),
+        )
+        .await?;
+        let result = map_tool_error(
+            &self.runtime,
+            "get_evidence_relation",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            get_evidence_relation::execute(&self.runtime, input).await,
+        )
+        .await?;
+        let response_summary = serde_json::json!({
+            "report_type": "evidence_relation",
+            "trigger_window_size": result.trigger_window_size,
+            "selected_count": result.selected_count,
+            "result_count": result.relations.len(),
+        });
+        self.runtime.dashboard.record_tool_ok(
+            "get_evidence_relation",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            format!(
+                "evidence relation returned {} row(s)",
+                result.relations.len()
+            ),
+            &response_summary,
+        );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok(
+                    "get_evidence_relation",
                     dashboard_namespace,
                     Some(correlation_id),
                 )
@@ -1080,6 +1144,13 @@ impl MemoryReadStore for Runtime {
         query: ReflectionRecordQuery,
     ) -> Result<Vec<ReflectionReadRecord>, AppError> {
         self.store.query_reflection_records(query).await
+    }
+
+    async fn query_scoped_event_ids(
+        &self,
+        query: ScopedEventIdQuery,
+    ) -> Result<std::collections::BTreeSet<String>, AppError> {
+        self.store.query_scoped_event_ids(query).await
     }
 
     async fn query_claim_reflection_history(

@@ -1,6 +1,7 @@
 use agent_llm_mm::{
     application::{
         build_self_snapshot::BuildSelfSnapshotInput,
+        get_evidence_relation::GetEvidenceRelationInput,
         get_memory::{GetMemoryInput, MemoryRecordReference},
         get_reflection_history::{DEFAULT_REFLECTION_HISTORY_LIMIT, GetReflectionHistoryInput},
         search_memory::{MemoryRecordType, SearchMemoryInput},
@@ -12,8 +13,8 @@ use agent_llm_mm::{
     },
     interfaces::mcp::dto::{
         BuildSelfSnapshotParams, ClaimDraftDto, EventDto, EventKindDto, EvidenceQueryDto,
-        GetMemoryParams, GetReflectionHistoryParams, MemoryRecordTypeDto, ModeDto, OwnerDto,
-        SearchMemoryParams,
+        GetEvidenceRelationParams, GetMemoryParams, GetReflectionHistoryParams,
+        MemoryRecordTypeDto, ModeDto, OwnerDto, SearchMemoryParams,
     },
     ports::EvidenceQuery,
 };
@@ -206,6 +207,74 @@ fn search_memory_dto_validates_exact_reflection_filters_and_type_compatibility()
             "Reflection-specific filters must stay bound to record_type Reflection"
         );
     }
+}
+
+#[test]
+fn get_evidence_relation_dto_parses_mixed_references_and_defaults_selection() {
+    let input = GetEvidenceRelationInput::try_from(GetEvidenceRelationParams {
+        namespace: "project/dto".to_string(),
+        trigger_window_event_ids: vec![
+            "event:evt-new".to_string(),
+            "evt-mid".to_string(),
+            "evt-new".to_string(),
+        ],
+        selected_evidence_event_ids: None,
+        selection_basis: None,
+    })
+    .expect("raw and canonical trigger ids should parse");
+
+    assert_eq!(
+        input
+            .trigger_window
+            .iter()
+            .map(|reference| reference.event_id())
+            .collect::<Vec<_>>(),
+        vec!["evt-new", "evt-mid"]
+    );
+    assert!(input.selected_evidence.is_empty());
+}
+
+#[test]
+fn get_evidence_relation_dto_rejects_invalid_scope_ids_and_limits() {
+    let missing_namespace = GetEvidenceRelationInput::try_from(GetEvidenceRelationParams {
+        namespace: "invalid".to_string(),
+        trigger_window_event_ids: vec!["evt-1".to_string()],
+        selected_evidence_event_ids: None,
+        selection_basis: None,
+    })
+    .expect_err("invalid namespace should fail closed");
+    assert!(missing_namespace.to_string().contains("InvalidNamespace"));
+
+    for invalid in ["", " ", "event:", "event:event:evt-window"] {
+        let error = GetEvidenceRelationInput::try_from(GetEvidenceRelationParams {
+            namespace: "project/dto".to_string(),
+            trigger_window_event_ids: vec![invalid.to_string()],
+            selected_evidence_event_ids: None,
+            selection_basis: None,
+        })
+        .expect_err("invalid trigger-window references must fail closed");
+        assert!(error.to_string().contains("InvalidEventReference"));
+    }
+
+    let oversized = GetEvidenceRelationInput::try_from(GetEvidenceRelationParams {
+        namespace: "project/dto".to_string(),
+        trigger_window_event_ids: (0..=MAX_EVIDENCE_MANIFEST_ITEMS)
+            .map(|index| format!("evt-{index}"))
+            .collect(),
+        selected_evidence_event_ids: None,
+        selection_basis: None,
+    })
+    .expect_err("oversized trigger windows must fail closed");
+    assert!(oversized.to_string().contains("at most"));
+
+    let blank_basis = GetEvidenceRelationInput::try_from(GetEvidenceRelationParams {
+        namespace: "project/dto".to_string(),
+        trigger_window_event_ids: vec!["evt-1".to_string()],
+        selected_evidence_event_ids: Some(vec!["evt-1".to_string()]),
+        selection_basis: Some("   ".to_string()),
+    })
+    .expect_err("blank selection_basis must fail closed");
+    assert!(blank_basis.to_string().contains("selection_basis"));
 }
 
 #[test]
