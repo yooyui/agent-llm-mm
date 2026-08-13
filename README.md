@@ -13,7 +13,7 @@ The current project is best understood as a technical MVP for local agent memory
 ## Features
 
 - **Local MCP memory service**: exposes `ingest_interaction`, `search_memory`, `get_memory`, `get_reflection_history`, `build_self_snapshot`, `decide_with_snapshot`, and `run_reflection` over MCP `stdio`.
-- **Scoped event, claim, and episode recall**: `search_memory` requires an explicit namespace. It defaults to bounded recent-first event records; additive `record_type = Claim` returns scoped claims, while `record_type = Episode` returns a scope-projected episode record with its latest in-scope event time and canonical Event/Claim provenance. Episode references remain opaque exact-match strings in this first slice. All three deterministic paths are provider-free and scope-filter exact records; mixed-scope Claim revision edges are hidden in full.
+- **Scoped event, claim, episode, and reflection recall**: `search_memory` requires an explicit namespace. It defaults to bounded recent-first event records; additive `record_type = Claim` returns scoped claims, `record_type = Episode` returns a scope-projected episode record, and `record_type = Reflection` returns reflections attributed only through same-scope Claim endpoints. Record-only reflections stay invisible. All four deterministic paths are provider-free and scope-filter exact records; mixed-scope Claim revision edges are hidden in full.
 - **Scoped stable-ID lookup**: `get_memory(namespace, id, record_type?)` returns one complete Event or Claim record. Omitting `record_type` preserves Event behavior; Claim lookup requires `record_type = Claim`. Both types accept canonical or raw IDs, and missing/cross-namespace IDs return `record: null` without widening.
 - **Scoped Claim reflection history**: `get_reflection_history(namespace, claim_reference, limit?)` walks the bidirectional revision chain reachable from one exact scoped Claim and returns newest-first reflection records. Missing, cross-scope, or mixed-scope paths stay empty/hidden; the provider-free read remains bounded to 1–100 records.
 - **SQLite persistence**: stores events, claims, evidence, reflection audits, trigger ledger entries, and operation logs.
@@ -94,6 +94,7 @@ Implemented:
 - M1.1.1 scoped event recall through the additive `search_memory` MCP tool; cross-namespace exact-ID matches return empty and semantic memory tables remain unchanged by reads
 - M1.1.2 scoped claim recall through additive `search_memory(record_type = Claim)`; omitted `claim_status` defaults to `Active`, claim results retain canonical evidence/episode and direct reflection revision links, and event/time filters are rejected because claims have no stored `recorded_at`
 - M1.1.3 scoped episode provenance recall through explicit `search_memory(record_type = Episode)`; SQLite derives each record only from same-scope events, orders records by the latest same-scope event tuple, returns the persisted episode reference unchanged, and exposes canonical same-scope Event/Claim provenance
+- M1.1.4 scoped reflection provenance recall through explicit `search_memory(record_type = Reflection)`; a row is in scope only via a same-scope superseded Claim with an in-scope or absent replacement, and record-only reflections cannot inherit a namespace
 - M1.2.1 scoped event lookup through additive `get_memory`; a missing or cross-namespace stable ID returns `record: null` without widening
 - M1.2.2 scoped claim lookup through explicit `get_memory(record_type = Claim)`; exact lookup accepts canonical/raw Claim IDs and returns Active, Disputed, or Superseded claims with the same provenance shape as Claim search
 - M1.2.3 scoped Claim reflection history through the seventh MCP tool, `get_reflection_history`; canonical/raw Claim anchors reach a bounded newest-first bidirectional revision chain, while missing/cross-scope anchors and mixed-scope edges do not widen or leak
@@ -116,7 +117,7 @@ Partially implemented:
 - Governance validation failures write only a rejected trigger audit. Failures while appending the handled trigger ledger or committing the reflection transaction roll back pending identity, commitment, claim/evidence, reflection, and handled-ledger changes; a separate rejected audit is then recorded outside the failed transaction. This is locally verified failure atomicity, not crash-recovery or distributed transaction support.
 - Identity, claims, evidence, and episodes in the decision snapshot are still caller-provided; there is no server-created snapshot handle or complete policy/provenance binding yet.
 - Episodes are still lightweight scope-projected records over `episode_events -> events`, not a durable Episode entity or complete autobiographical memory model. The new search slice does not persist or claim `objective`, `outcome`, or `lesson` fields.
-- The runtime read interface now covers complete Event/Claim search and lookup records, scoped Episode provenance search, and a bounded Claim-linked reflection-history slice. These paths remain read-only/provider-free, but they do not cover Reflection search, a stable full cross-type union, identity/commitment or record-only reflection history, Episode/Reflection `get_memory`, or correction tools. The Episode slice adds no schema migration or index and retains an MVP table-scan performance boundary.
+- The runtime read interface now covers complete Event/Claim search and lookup records, scoped Episode and Reflection provenance search, and a bounded Claim-linked reflection-history slice. These paths remain read-only/provider-free, but they do not cover a stable full cross-type union, identity/commitment or record-only reflection history, Episode/Reflection `get_memory`, or correction tools. The Episode and Reflection slices add no schema migration or index and retain an MVP table-scan performance boundary.
 - M1.0 scope/data-integrity gates are complete for new writes. Leftover `Owner::Unknown` rows remain schema-legal but invisible to namespace-derived scoped reads until a separately approved rewrite.
 - Provider live evidence proves configuration and connectivity only. It does not prove model quality, SLA, or production readiness.
 - Local alpha gates still depend on external evidence such as a real fresh-machine run, Windows parity, and a human release decision.
@@ -125,7 +126,7 @@ Partially implemented:
 Not implemented:
 
 - Full memory layering
-- Complete Reflection/evidence-relation read models, stable cross-type union, Episode/Reflection lookup, identity/commitment and record-only reflection history, and audited correction tools
+- Formal evidence-relation runtime read, stable cross-type union, Episode/Reflection lookup, identity/commitment and record-only reflection history, and audited correction tools
 - Richer evidence ranking / weighting
 - Production-grade remote, team, or multi-tenant mode
 - Daemon write capabilities and autonomous background operation

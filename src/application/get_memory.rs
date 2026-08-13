@@ -62,6 +62,7 @@ where
             claim_status: None,
             mode: None,
             episode_reference: None,
+            reflection_reference: None,
             limit: 1,
         },
     )

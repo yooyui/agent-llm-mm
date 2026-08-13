@@ -11,6 +11,7 @@ use crate::{
     ports::{
         ClaimReadRecord, ClaimRecordQuery, ClaimStatus, EpisodeReadRecord, EpisodeRecordQuery,
         EventReadRecord, EventRecordQuery, MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore,
+        ReflectionReadRecord, ReflectionRecordQuery,
     },
 };
 
@@ -21,6 +22,7 @@ pub enum MemoryRecordType {
     Event,
     Claim,
     Episode,
+    Reflection,
 }
 
 impl MemoryRecordType {
@@ -29,6 +31,7 @@ impl MemoryRecordType {
             Self::Event => "event",
             Self::Claim => "claim",
             Self::Episode => "episode",
+            Self::Reflection => "reflection",
         }
     }
 }
@@ -45,6 +48,7 @@ pub struct SearchMemoryInput {
     pub claim_status: Option<ClaimStatus>,
     pub mode: Option<Mode>,
     pub episode_reference: Option<String>,
+    pub reflection_reference: Option<String>,
     pub limit: usize,
 }
 
@@ -77,16 +81,25 @@ impl SearchMemoryInput {
                     .to_string(),
             ));
         }
+        if let Some(reference) = self.reflection_reference.as_deref()
+            && (reference.is_empty() || reference.trim() != reference)
+        {
+            return Err(AppError::InvalidParams(
+                "reflection_reference must be non-empty and have no leading or trailing whitespace"
+                    .to_string(),
+            ));
+        }
 
         match self.record_type {
             MemoryRecordType::Event
                 if self.claim_reference.is_some()
                     || self.claim_status.is_some()
                     || self.mode.is_some()
-                    || self.episode_reference.is_some() =>
+                    || self.episode_reference.is_some()
+                    || self.reflection_reference.is_some() =>
             {
                 Err(AppError::InvalidParams(
-                    "claim_reference, claim_status, mode, and episode_reference require their matching record_type"
+                    "claim_reference, claim_status, mode, episode_reference, and reflection_reference require their matching record_type"
                         .to_string(),
                 ))
             }
@@ -95,10 +108,11 @@ impl SearchMemoryInput {
                     || self.kind.is_some()
                     || self.recorded_after.is_some()
                     || self.recorded_before.is_some()
-                    || self.episode_reference.is_some() =>
+                    || self.episode_reference.is_some()
+                    || self.reflection_reference.is_some() =>
             {
                 Err(AppError::InvalidParams(
-                    "event_reference, kind, recorded time filters, and episode_reference require their matching record_type; claims do not have a stored recorded_at timestamp"
+                    "event_reference, kind, recorded time filters, episode_reference, and reflection_reference require their matching record_type; claims do not have a stored recorded_at timestamp"
                         .to_string(),
                 ))
             }
@@ -109,10 +123,26 @@ impl SearchMemoryInput {
                     || self.recorded_before.is_some()
                     || self.claim_reference.is_some()
                     || self.claim_status.is_some()
-                    || self.mode.is_some() =>
+                    || self.mode.is_some()
+                    || self.reflection_reference.is_some() =>
             {
                 Err(AppError::InvalidParams(
                     "Episode searches support only episode_reference and limit filters".to_string(),
+                ))
+            }
+            MemoryRecordType::Reflection
+                if self.event_reference.is_some()
+                    || self.kind.is_some()
+                    || self.recorded_after.is_some()
+                    || self.recorded_before.is_some()
+                    || self.claim_reference.is_some()
+                    || self.claim_status.is_some()
+                    || self.mode.is_some()
+                    || self.episode_reference.is_some() =>
+            {
+                Err(AppError::InvalidParams(
+                    "Reflection searches support only reflection_reference and limit filters"
+                        .to_string(),
                 ))
             }
             _ => Ok(()),
@@ -158,6 +188,14 @@ pub enum SearchMemoryRecord {
         namespace: String,
         provenance: EpisodeProvenance,
     },
+    Reflection {
+        id: String,
+        recorded_at: DateTime<Utc>,
+        owner: Owner,
+        namespace: String,
+        summary: String,
+        provenance: ReflectionProvenance,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -181,6 +219,13 @@ pub struct ClaimProvenance {
 pub struct EpisodeProvenance {
     pub event_references: Vec<String>,
     pub claim_references: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ReflectionProvenance {
+    pub superseded_claim_reference: Option<String>,
+    pub replacement_claim_reference: Option<String>,
+    pub supporting_evidence_event_references: Vec<String>,
 }
 
 pub async fn execute<D>(deps: &D, input: SearchMemoryInput) -> Result<SearchMemoryResult, AppError>
@@ -222,6 +267,16 @@ where
             .query_episode_records(EpisodeRecordQuery {
                 scope,
                 episode_reference: input.episode_reference,
+                limit: input.limit,
+            })
+            .await?
+            .into_iter()
+            .map(SearchMemoryRecord::from)
+            .collect(),
+        MemoryRecordType::Reflection => deps
+            .query_reflection_records(ReflectionRecordQuery {
+                scope,
+                reflection_reference: input.reflection_reference,
                 limit: input.limit,
             })
             .await?
@@ -305,6 +360,34 @@ impl From<EpisodeReadRecord> for SearchMemoryRecord {
                     .collect(),
                 claim_references: value
                     .claim_references
+                    .into_iter()
+                    .map(|reference| reference.canonical())
+                    .collect(),
+            },
+        }
+    }
+}
+
+impl From<ReflectionReadRecord> for SearchMemoryRecord {
+    fn from(value: ReflectionReadRecord) -> Self {
+        Self::Reflection {
+            id: value.reflection_id,
+            recorded_at: value.recorded_at,
+            owner: value.owner,
+            namespace: value.namespace.as_str().to_string(),
+            summary: value.summary,
+            provenance: ReflectionProvenance {
+                superseded_claim_reference: value
+                    .provenance
+                    .superseded_claim_reference
+                    .map(|reference| reference.canonical()),
+                replacement_claim_reference: value
+                    .provenance
+                    .replacement_claim_reference
+                    .map(|reference| reference.canonical()),
+                supporting_evidence_event_references: value
+                    .provenance
+                    .supporting_evidence_event_references
                     .into_iter()
                     .map(|reference| reference.canonical())
                     .collect(),

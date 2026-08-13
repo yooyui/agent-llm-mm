@@ -74,6 +74,50 @@ pub struct ClaimReadRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReflectionRecordQuery {
+    pub scope: MemoryScope,
+    pub reflection_reference: Option<String>,
+    pub limit: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ReflectionProvenanceLinks {
+    pub superseded_claim_reference: Option<ClaimReference>,
+    pub replacement_claim_reference: Option<ClaimReference>,
+    pub supporting_evidence_event_references: Vec<EventReference>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReflectionReadRecord {
+    pub reflection_id: String,
+    pub recorded_at: DateTime<Utc>,
+    pub owner: Owner,
+    pub namespace: Namespace,
+    pub summary: String,
+    pub provenance: ReflectionProvenanceLinks,
+}
+
+impl ReflectionReadRecord {
+    pub fn new(
+        reflection_id: String,
+        recorded_at: DateTime<Utc>,
+        owner: Owner,
+        namespace: Namespace,
+        summary: String,
+        provenance: ReflectionProvenanceLinks,
+    ) -> Self {
+        Self {
+            reflection_id,
+            recorded_at,
+            owner,
+            namespace,
+            summary,
+            provenance,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaimReflectionHistoryQuery {
     pub scope: MemoryScope,
     pub claim_reference: ClaimReference,
@@ -162,6 +206,11 @@ pub trait MemoryReadStore {
         &self,
         query: EpisodeRecordQuery,
     ) -> Result<Vec<EpisodeReadRecord>, AppError>;
+
+    async fn query_reflection_records(
+        &self,
+        query: ReflectionRecordQuery,
+    ) -> Result<Vec<ReflectionReadRecord>, AppError>;
 
     async fn query_claim_reflection_history(
         &self,

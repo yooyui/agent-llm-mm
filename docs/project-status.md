@@ -55,7 +55,7 @@ M1.1.3 为现有 `search_memory` 增加显式 `record_type = Episode` 与 option
 
 SQLite 从 `episode_events -> events` 出发，在 exact filter、分组、排序和 `1..=100` limit 之前按 server-derived owner + namespace 收窄。同一个 reference 即使关联多个 namespace，也只返回请求 scope 的 membership，不暴露其他 scope 的计数或存在性。结果的 `recorded_at` 由该 scope 内最新 Event 派生，provenance 返回 canonical recent-first Event references 与 canonical same-scope Claim references；路径只读、provider-free，operation metadata 仅记录 record type 与结果数。
 
-该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1 当前完成六个独立切片，但 Reflection/evidence-relation runtime read、稳定完整 record union、Episode/Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
+该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1.1.4 已补上 scoped Reflection search，但 evidence-relation runtime read、稳定完整 record union、Episode/Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
 
 同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan。2026-08-13 已完成全部三项：identity supporting-Episode 查询现在同时限制 Claim 与 Event scope；Claim search/get 对 mixed-scope revision edge 整边隐藏；新写入拒绝 `Owner::Unknown`，只读 doctor 盘点 legacy Unknown 行且不改写。它们不回滚本切片已验证的 scope-first Episode projection。
 
@@ -76,6 +76,12 @@ M1.0.2 让普通 Claim search/get 与 Claim history 使用同一 fail-closed edg
 M1.0.3 冻结新写入的 owner/namespace 合同：`self` → `Self_`，`world` → `World`，`user/*` → `User`，`project/*` → `World`。MCP Event/Claim DTO 与 Claim `validate` 拒绝 `Owner::Unknown`。namespace-derived scoped read 继续精确匹配 owner + namespace，不使用 unscoped fallback 或 `OR owner = unknown`。schema 仍允许 legacy Unknown world/project 行；只读 `inspect_database` / `doctor` 报告 `unknown_owner_inventory`，`rewrite_performed = false`，改写需另行批准。
 
 该切片没有 schema migration 或自动 rewrite。它不让 legacy Unknown 行通过 scoped read 找回。
+
+## 2026-08-13 M1.1.4 Scoped Reflection Provenance Read
+
+M1.1.4 为现有 `search_memory` 增加显式 `record_type = Reflection` 与 optional exact `reflection_reference`。Reflection 表没有 owner/namespace；scope 只从 Claim 端点派生。一条 Reflection 属于请求 scope，当且仅当 superseded Claim 在该 owner + namespace 内，且 replacement 要么为空、要么也在同一 scope。record-only Reflection 没有 Claim anchor，因此不能推断 namespace，也不会出现在 scoped search 或 exact reference 命中中。mixed-scope revision edge 整条隐藏。
+
+结果返回 persisted reflection ID、recorded_at、请求 scope 的 owner/namespace、summary，以及同 scope canonical Claim / evidence references。`get_memory` 仍只接受 Event / Claim。该切片没有 schema migration / index，也不覆盖 identity/commitment history、record-only history 或 Reflection lookup。
 
 ## 项目定位
 
@@ -345,7 +351,7 @@ Implementation notes:
 
 ## 未实现
 
-- scoped Reflection provenance read、正式 evidence-relation runtime read 与稳定完整 cross-type record union
+- 正式 evidence-relation runtime read 与稳定完整 cross-type record union
 - Episode / Reflection `get_memory`、identity/commitment history 与 record-only Reflection history
 - current-schema structural readback，以及 exclusive init/migration lifecycle gate
 - 受审计的 `supersede_memory` correction 合同，以及真实 MCP 客户端“记录 → 重连 → 检索 → 查看证据 → supersede → 回看历史”退出证据
@@ -360,7 +366,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-08-13`，测试与工具链已完成分层减重；M1.0.3 继续复用以下运行入口：
+截至 `2026-08-13`，测试与工具链已完成分层减重；M1.1.4 继续复用以下运行入口：
 
 - `cargo fmt --check`
 - `git diff --check`

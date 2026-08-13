@@ -13,9 +13,10 @@ use agent_llm_mm::{
     ports::{
         ClaimRecordQuery, ClaimReflectionHistoryQuery, ClaimRevisionLinks, ClaimStatus, ClaimStore,
         CommitmentStore, EpisodeRecordQuery, EpisodeStore, EventRecordQuery, EventStore,
-        EvidenceQuery, IdentityStore, IngestTransactionRunner, MemoryReadStore, ReflectionStore,
-        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
-        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
+        EvidenceQuery, IdentityStore, IngestTransactionRunner, MemoryReadStore,
+        ReflectionRecordQuery, ReflectionStore, ReflectionTransactionRunner, StoredClaim,
+        StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        TriggerLedgerStore,
     },
 };
 use chrono::{DateTime, Utc};
@@ -3379,4 +3380,186 @@ async fn sqlite_claim_reflection_history_rejects_malformed_legacy_evidence_json(
         .await;
 
     assert!(matches!(result, Err(AppError::Message(_))));
+}
+
+#[tokio::test]
+async fn sqlite_reflection_recall_is_scoped_claim_attributed_and_hides_record_only_rows() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let project_a = Namespace::for_project("reflection-a");
+    let project_b = Namespace::for_project("reflection-b");
+
+    for (event_id, namespace) in [
+        ("reflection-event-a", project_a.clone()),
+        ("reflection-event-b", project_b.clone()),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                now,
+                Event::new_with_namespace(Owner::World, namespace, EventKind::Reflection, event_id)
+                    .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+    for (claim_id, namespace, status) in [
+        (
+            "reflection-claim-old",
+            project_a.clone(),
+            ClaimStatus::Superseded,
+        ),
+        (
+            "reflection-claim-new",
+            project_a.clone(),
+            ClaimStatus::Active,
+        ),
+        (
+            "reflection-claim-disputed",
+            project_a.clone(),
+            ClaimStatus::Disputed,
+        ),
+        ("reflection-claim-b", project_b.clone(), ClaimStatus::Active),
+    ] {
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                claim_id.to_string(),
+                ClaimDraft::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    "reflection.fact",
+                    "is",
+                    claim_id,
+                    Mode::Observed,
+                ),
+                status,
+            ))
+            .await
+            .unwrap();
+    }
+    for reflection in [
+        StoredReflection::new(
+            "reflection-same".to_string(),
+            now,
+            Reflection::new("same-scope replacement"),
+            Some("reflection-claim-old".to_string()),
+            Some("reflection-claim-new".to_string()),
+        )
+        .with_supporting_evidence_event_ids(vec![
+            "reflection-event-a".to_string(),
+            "reflection-event-b".to_string(),
+        ]),
+        StoredReflection::new(
+            "reflection-dispute".to_string(),
+            now + chrono::Duration::seconds(1),
+            Reflection::new("same-scope dispute"),
+            Some("reflection-claim-disputed".to_string()),
+            None,
+        )
+        .with_supporting_evidence_event_ids(vec!["reflection-event-a".to_string()]),
+        StoredReflection::new(
+            "reflection-mixed".to_string(),
+            now + chrono::Duration::seconds(2),
+            Reflection::new("mixed-scope must stay hidden"),
+            Some("reflection-claim-old".to_string()),
+            Some("reflection-claim-b".to_string()),
+        ),
+        StoredReflection::new(
+            "reflection-record-only".to_string(),
+            now + chrono::Duration::seconds(3),
+            Reflection::new("record-only has no claim anchor"),
+            None,
+            None,
+        ),
+        StoredReflection::new(
+            "reflection-b-only".to_string(),
+            now + chrono::Duration::seconds(4),
+            Reflection::new("other namespace"),
+            Some("reflection-claim-b".to_string()),
+            None,
+        ),
+    ] {
+        context.store.append_reflection(reflection).await.unwrap();
+    }
+
+    let scoped = context
+        .store
+        .query_reflection_records(ReflectionRecordQuery {
+            scope: MemoryScope::for_namespace(project_a.clone()),
+            reflection_reference: None,
+            limit: 10,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        scoped
+            .iter()
+            .map(|record| record.reflection_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["reflection-dispute", "reflection-same"]
+    );
+    assert_eq!(scoped[0].owner, Owner::World);
+    assert_eq!(scoped[0].namespace, project_a);
+    assert_eq!(
+        scoped[1]
+            .provenance
+            .supporting_evidence_event_references
+            .iter()
+            .map(EventReference::canonical)
+            .collect::<Vec<_>>(),
+        vec!["event:reflection-event-a"]
+    );
+    assert_eq!(
+        scoped[1]
+            .provenance
+            .superseded_claim_reference
+            .as_ref()
+            .map(ClaimReference::canonical)
+            .as_deref(),
+        Some("claim:reflection-claim-old")
+    );
+
+    let exact = context
+        .store
+        .query_reflection_records(ReflectionRecordQuery {
+            scope: MemoryScope::for_namespace(project_a.clone()),
+            reflection_reference: Some("reflection-same".to_string()),
+            limit: 1,
+        })
+        .await
+        .unwrap();
+    assert_eq!(exact.len(), 1);
+    assert_eq!(exact[0].reflection_id, "reflection-same");
+
+    for hidden in [
+        "reflection-mixed",
+        "reflection-record-only",
+        "reflection-b-only",
+    ] {
+        let empty = context
+            .store
+            .query_reflection_records(ReflectionRecordQuery {
+                scope: MemoryScope::for_namespace(project_a.clone()),
+                reflection_reference: Some(hidden.to_string()),
+                limit: 1,
+            })
+            .await
+            .unwrap();
+        assert!(
+            empty.is_empty(),
+            "{hidden} must be indistinguishable from missing in this scope"
+        );
+    }
+
+    let unscoped = context
+        .store
+        .query_reflection_records(ReflectionRecordQuery {
+            scope: MemoryScope::legacy_unscoped(),
+            reflection_reference: None,
+            limit: 10,
+        })
+        .await;
+    assert!(matches!(unscoped, Err(AppError::InvalidParams(_))));
 }

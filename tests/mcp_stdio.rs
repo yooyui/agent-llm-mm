@@ -115,6 +115,7 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
         "claim_status",
         "mode",
         "episode_reference",
+        "reflection_reference",
         "limit",
     ] {
         assert!(
@@ -129,8 +130,8 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
     assert_eq!(search_required, &[json!("namespace")]);
     assert_eq!(
         search_schema["definitions"]["SearchMemoryRecordTypeDto"]["enum"],
-        json!(["Event", "Claim", "Episode"]),
-        "search_memory record_type schema should include exactly Event, Claim, and Episode"
+        json!(["Event", "Claim", "Episode", "Reflection"]),
+        "search_memory record_type schema should include exactly Event, Claim, Episode, and Reflection"
     );
 
     let get_schema = tools
@@ -2277,6 +2278,144 @@ async fn search_and_get_memory_hide_mixed_scope_claim_revision_edges_over_stdio(
             "{tool} {namespace} leaked replacement_claim_reference: {provenance}"
         );
     }
+}
+
+#[tokio::test]
+async fn search_memory_returns_scoped_reflection_provenance_and_hides_record_only_over_stdio() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/reflection-search-a",
+                    "kind": "Observation",
+                    "summary": "old scoped fact"
+                },
+                "claim_drafts": [{
+                    "owner": "World",
+                    "namespace": "project/reflection-search-a",
+                    "subject": "project.claim",
+                    "predicate": "is",
+                    "object": "old",
+                    "mode": "Observed"
+                }]
+            }),
+        )
+        .await
+        .unwrap();
+    let event_id = ingest["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap();
+    let old_claim_id = format!("{event_id}:claim:0");
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {"summary": "replace the old scoped fact"},
+                "supersede_claim_id": old_claim_id,
+                "replacement_claim": {
+                    "owner": "World",
+                    "namespace": "project/reflection-search-a",
+                    "subject": "project.claim",
+                    "predicate": "is",
+                    "object": "new",
+                    "mode": "Observed"
+                },
+                "replacement_evidence_event_ids": [format!("event:{event_id}")]
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        reflection.get("error").is_none(),
+        "reflection failed: {reflection:?}"
+    );
+    let reflection_id = reflection["result"]["structuredContent"]["reflection_id"]
+        .as_str()
+        .unwrap();
+    let replacement_claim_id = reflection["result"]["structuredContent"]["replacement_claim_id"]
+        .as_str()
+        .unwrap();
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    sqlx::query(
+        r#"
+        INSERT INTO reflections (
+            reflection_id, recorded_at, summary, superseded_claim_id,
+            replacement_claim_id, supporting_evidence_event_ids
+        ) VALUES (?, ?, ?, NULL, NULL, '[]')
+        "#,
+    )
+    .bind("reflection-record-only")
+    .bind("2026-08-13T00:00:00.000000000Z")
+    .bind("record-only must not inherit a namespace")
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let search = client
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/reflection-search-a",
+                "record_type": "Reflection"
+            }),
+        )
+        .await
+        .unwrap();
+    let records = search["result"]["structuredContent"]["records"]
+        .as_array()
+        .cloned()
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["record_type"], "reflection");
+    assert_eq!(records[0]["id"], reflection_id);
+    assert_eq!(records[0]["namespace"], "project/reflection-search-a");
+    assert_eq!(
+        records[0]["provenance"]["superseded_claim_reference"],
+        format!("claim:{old_claim_id}")
+    );
+    assert_eq!(
+        records[0]["provenance"]["replacement_claim_reference"],
+        format!("claim:{replacement_claim_id}")
+    );
+    assert_eq!(
+        records[0]["provenance"]["supporting_evidence_event_references"],
+        json!([format!("event:{event_id}")])
+    );
+
+    let hidden = client
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/reflection-search-a",
+                "record_type": "Reflection",
+                "reflection_reference": "reflection-record-only"
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(hidden["result"]["structuredContent"]["records"], json!([]));
+
+    let unsupported_get = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/reflection-search-a",
+                "id": reflection_id,
+                "record_type": "Reflection"
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unsupported_get["error"]["code"], -32602);
 }
 
 #[tokio::test]

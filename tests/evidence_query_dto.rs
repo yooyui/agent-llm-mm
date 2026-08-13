@@ -126,11 +126,84 @@ fn search_memory_dto_validates_exact_episode_filters_and_type_compatibility() {
             "record_type": "Claim",
             "episode_reference": "episode:claim-filter"
         }),
+        serde_json::json!({
+            "namespace": "project/dto",
+            "record_type": "Reflection",
+            "episode_reference": "episode:reflection-filter"
+        }),
     ] {
         let params = serde_json::from_value::<SearchMemoryParams>(params).unwrap();
         assert!(
             SearchMemoryInput::try_from(params).is_err(),
             "record-type-specific filters must not be accepted by another record type"
+        );
+    }
+}
+
+#[test]
+fn search_memory_dto_adds_reflection_without_widening_get_memory_record_types() {
+    let params = serde_json::from_value::<SearchMemoryParams>(serde_json::json!({
+        "namespace": "project/dto",
+        "record_type": "Reflection",
+        "reflection_reference": "reflection-persisted",
+        "limit": 9
+    }))
+    .expect("search_memory should deserialize the Reflection record type");
+    let input = SearchMemoryInput::try_from(params).expect("Reflection search should convert");
+
+    assert_eq!(input.record_type, MemoryRecordType::Reflection);
+    assert_eq!(
+        input.reflection_reference.as_deref(),
+        Some("reflection-persisted")
+    );
+    assert_eq!(input.limit, 9);
+    assert!(input.claim_status.is_none());
+
+    let get_reflection = serde_json::from_value::<GetMemoryParams>(serde_json::json!({
+        "namespace": "project/dto",
+        "id": "reflection-persisted",
+        "record_type": "Reflection"
+    }));
+    assert!(
+        get_reflection.is_err(),
+        "get_memory must not accept Reflection in this slice"
+    );
+}
+
+#[test]
+fn search_memory_dto_validates_exact_reflection_filters_and_type_compatibility() {
+    for reflection_reference in ["", "   ", " reflection-trimmed", "reflection-trimmed "] {
+        let params = serde_json::from_value::<SearchMemoryParams>(serde_json::json!({
+            "namespace": "project/dto",
+            "record_type": "Reflection",
+            "reflection_reference": reflection_reference
+        }))
+        .unwrap();
+        let error = SearchMemoryInput::try_from(params)
+            .expect_err("empty or boundary-whitespace reflection references must fail closed");
+        assert!(error.to_string().contains("reflection_reference"));
+    }
+
+    for params in [
+        serde_json::json!({
+            "namespace": "project/dto",
+            "record_type": "Reflection",
+            "kind": "Observation"
+        }),
+        serde_json::json!({
+            "namespace": "project/dto",
+            "reflection_reference": "reflection-event-filter"
+        }),
+        serde_json::json!({
+            "namespace": "project/dto",
+            "record_type": "Episode",
+            "reflection_reference": "reflection-episode-filter"
+        }),
+    ] {
+        let params = serde_json::from_value::<SearchMemoryParams>(params).unwrap();
+        assert!(
+            SearchMemoryInput::try_from(params).is_err(),
+            "Reflection-specific filters must stay bound to record_type Reflection"
         );
     }
 }

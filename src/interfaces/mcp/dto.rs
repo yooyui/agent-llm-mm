@@ -87,6 +87,7 @@ pub enum SearchMemoryRecordTypeDto {
     Event,
     Claim,
     Episode,
+    Reflection,
 }
 
 impl From<SearchMemoryRecordTypeDto> for MemoryRecordType {
@@ -95,6 +96,7 @@ impl From<SearchMemoryRecordTypeDto> for MemoryRecordType {
             SearchMemoryRecordTypeDto::Event => Self::Event,
             SearchMemoryRecordTypeDto::Claim => Self::Claim,
             SearchMemoryRecordTypeDto::Episode => Self::Episode,
+            SearchMemoryRecordTypeDto::Reflection => Self::Reflection,
         }
     }
 }
@@ -514,6 +516,8 @@ pub struct SearchMemoryParams {
     pub mode: Option<ModeDto>,
     #[serde(default)]
     pub episode_reference: Option<String>,
+    #[serde(default)]
+    pub reflection_reference: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -596,6 +600,7 @@ impl TryFrom<SearchMemoryParams> for SearchMemoryInput {
             }),
             mode: value.mode.map(Mode::from),
             episode_reference: value.episode_reference,
+            reflection_reference: value.reflection_reference,
             limit: value.limit.unwrap_or(DEFAULT_SEARCH_MEMORY_LIMIT),
         };
         input.validate()?;
