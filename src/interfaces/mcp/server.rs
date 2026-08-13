@@ -355,7 +355,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Get one complete event or claim record by stable ID inside one explicit local memory namespace. Omitted record_type preserves Event behavior; Claim lookup requires record_type Claim. Canonical and raw IDs are supported. A missing or cross-scope record returns null without widening the query.",
+        description = "Get one complete event, claim, or scoped Episode record by stable ID inside one explicit local memory namespace. Omitted record_type preserves Event behavior; Claim lookup requires record_type Claim; Episode lookup requires record_type Episode and treats id as an opaque exact persisted reference. Canonical and raw Event/Claim IDs are supported. A missing or cross-scope record returns null without widening the query.",
         input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<GetMemoryParams>>()
     )]
     async fn get_memory(&self, raw_params: JsonObject) -> Result<CallToolResult, McpError> {

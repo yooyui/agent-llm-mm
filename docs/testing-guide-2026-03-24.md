@@ -446,7 +446,7 @@ bash -n scripts/agent-llm-mm.sh scripts/first-run-bootstrap-smoke-local.sh scrip
 
 M0.4 不证明 remote backup、scheduled backup、cloud sync、production disaster recovery，或超出 SQLite 事务语义的 crash/power-loss guarantee。
 
-### 6.3F M1.1.1 / M1.1.2 / M1.1.3 / M1.1.4 / M1.1.5 / M1.1.6 / M1.2.1 / M1.2.2 / M1.2.3 scoped read model 回归
+### 6.3F M1.1.1 / M1.1.2 / M1.1.3 / M1.1.4 / M1.1.5 / M1.1.6 / M1.2.1 / M1.2.2 / M1.2.3 / M1.2.4 scoped read model 回归
 
 ```zsh
 cargo test --test sqlite_store sqlite_event_recall -v
@@ -474,11 +474,11 @@ cargo test --test status_sync -v
 
 这组回归证明：`search_memory` 只接受显式 namespace，且省略 additive `record_type` 时继续使用 Event；SQLite 在 filter / limit 前执行 owner + namespace 收窄，exact Event/Claim reference 都不会跨 scope 命中。Event 路径保留完整字段与现有 claim/episode provenance；Claim 路径支持 canonical/raw `claim_reference`、`claim_status`、`mode` 和 `1..=100` limit，省略 status 默认 `Active`，并返回 canonical claim/evidence references、episode references 与直接 source/superseded reflection links。`get_memory` 省略 `record_type` 时保持 canonical/raw Event ID 语义，显式 `record_type = Claim` 时接受 canonical/raw Claim ID；精确 Claim lookup 可返回任意状态，但 missing / cross-scope 仍为 `record: null`。DTO 回归还覆盖 raw Event ID `claim:*` 不被误判为 Claim。
 
-M1.1.3 回归另外证明：`record_type = Episode` 只在 `search_memory` 中开放，Episode 必须使用显式 namespace，optional `episode_reference` 只做非空 exact persisted-string 匹配并原样返回；`get_memory` schema/behavior 仍只接受 Event / Claim。SQLite 在 Episode filter、分组、排序和 limit 之前通过 Event owner + namespace 收窄，并按该 scope 内最新 Event timestamp、Event rowid 与 Episode reference 稳定排序；同一 Episode reference 跨 namespace 时只返回请求 scope 的 membership。结果 `recorded_at` 来自最新 scoped Event，provenance 仅包含 canonical recent-first same-scope Event references 与 canonical same-scope Claim references。断开重连且 provider 不可达时读取仍可用，semantic tables 不变，operation metadata 只记录 `record_type` 与 `result_count`。
+M1.1.3 回归另外证明：`record_type = Episode` 在 `search_memory` 中开放，Episode 必须使用显式 namespace，optional `episode_reference` 只做非空 exact persisted-string 匹配并原样返回。SQLite 在 Episode filter、分组、排序和 limit 之前通过 Event owner + namespace 收窄，并按该 scope 内最新 Event timestamp、Event rowid 与 Episode reference 稳定排序；同一 Episode reference 跨 namespace 时只返回请求 scope 的 membership。结果 `recorded_at` 来自最新 scoped Event，provenance 仅包含 canonical recent-first same-scope Event references 与 canonical same-scope Claim references。断开重连且 provider 不可达时读取仍可用，semantic tables 不变，operation metadata 只记录 `record_type` 与 `result_count`。M1.2.4 再让 `get_memory(record_type = Episode)` 以 `limit = 1` 复用同一 opaque exact reference；missing / 跨 scope 返回 `record: null`，省略类型仍保持 Event。
 
 M1.2.3 回归另外证明：`get_reflection_history` 要求显式 namespace 与 exact Claim anchor，接受 canonical/raw Claim ID，limit 默认 20 且只允许 `1..=100`；SQLite 递归读取 superseded/replacement 双向 chain，并按 newest-first 返回有界结果与 `has_more`。missing/cross-scope Claim 返回空；mixed-scope edge 整条隐藏；supporting evidence 只返回同 scope canonical references；malformed legacy evidence fail closed。断开重连且 provider 不可达时历史读取仍可用，semantic memory tables 不变，operation log metadata 只保存 `history_type`、`result_count`、`has_more`。
 
-该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.1.4 Scoped Reflection Provenance Read`、`M1.1.5 Scoped Evidence Relation Runtime Read`、`M1.1.6 Stable Cross-Type Record Union`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup` 与 `M1.2.3 Scoped Claim Reflection History`。M1.0.1 / M1.0.2 / M1.0.3 分别由 6.3G / 6.3H / 6.3I 单独证明。M1.1.4 由 6.3J 单独补充。M1.1.5 由 6.3K 单独补充。M1.1.6 由 6.3L 单独补充。它不证明 identity/commitment history、record-only reflection、Episode/Reflection `get_memory`、correction、current-schema structural readback、exclusive init/migration、完整 M1.1/M1.2/M1、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha；Episode reference normalization、schema migration/index 和规模化性能也未证明，当前仍是 MVP 表扫描边界。
+该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.1.4 Scoped Reflection Provenance Read`、`M1.1.5 Scoped Evidence Relation Runtime Read`、`M1.1.6 Stable Cross-Type Record Union`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup`、`M1.2.3 Scoped Claim Reflection History` 与 `M1.2.4 Scoped Episode Lookup`。M1.0.1 / M1.0.2 / M1.0.3 分别由 6.3G / 6.3H / 6.3I 单独证明。M1.1.4 由 6.3J 单独补充。M1.1.5 由 6.3K 单独补充。M1.1.6 由 6.3L 单独补充。M1.2.4 由 6.3M 单独补充。它不证明 identity/commitment history、record-only reflection、Reflection `get_memory`、correction、current-schema structural readback、exclusive init/migration、完整 M1.1/M1.2/M1、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha；Episode reference normalization、schema migration/index 和规模化性能也未证明，当前仍是 MVP 表扫描边界。
 
 ### 6.3G M1.0.1 scoped identity evidence-to-Episode gate
 
@@ -554,7 +554,19 @@ cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -- --
 ./scripts/test-tier.sh core
 ```
 
-这组回归验证：additive `record_types` 可请求 Event / Claim / Episode / Reflection 的 scoped union；省略 `record_type` / `record_types` 仍为 Event。两者同时出现、空数组、重复类型或类型专属 filter fail closed。单类型路径保持原 SQL 顺序与 tagged JSON。union 按 `recorded_at DESC`（Claim 无 timestamp 在后）、type rank、id DESC 收口并截断，跨 scope 记录不进入结果。`get_memory` 仍只接受 Event / Claim。该切片没有 schema migration / index，也不证明 lookup/history/correction 或完整 M1。
+这组回归验证：additive `record_types` 可请求 Event / Claim / Episode / Reflection 的 scoped union；省略 `record_type` / `record_types` 仍为 Event。两者同时出现、空数组、重复类型或类型专属 filter fail closed。单类型路径保持原 SQL 顺序与 tagged JSON。union 按 `recorded_at DESC`（Claim 无 timestamp 在后）、type rank、id DESC 收口并截断，跨 scope 记录不进入结果。该切片没有 schema migration / index，也不证明 lookup/history/correction 或完整 M1。
+
+### 6.3M M1.2.4 scoped Episode lookup
+
+```zsh
+cargo test --test evidence_query_dto search_memory_dto_adds_episode_without_widening_get_memory_record_types -- --exact
+cargo test --test evidence_query_dto get_memory_dto_rejects_invalid_episode_references_without_accepting_reflection -- --exact
+cargo test --test mcp_stdio search_memory_returns_scoped_episode_provenance_over_stdio_without_semantic_writes -- --exact
+cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -- --exact
+./scripts/test-tier.sh core
+```
+
+这组回归验证：显式 `get_memory(record_type = Episode)` 把 `id` 当作 opaque exact persisted Episode reference，并以 `limit = 1` 复用同一 scoped search。missing、大小写不同或跨 scope ID 返回 `record: null`；省略类型仍按 Event 解析。空白或首尾空白 ID fail closed。`get_memory` 仍拒绝 Reflection。该切片没有 schema migration / index，也不证明 Reflection lookup 或完整 M1。
 
 ### 6.4 Provider 合规预检
 

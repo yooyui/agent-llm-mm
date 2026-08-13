@@ -34,6 +34,7 @@ fn get_memory_dto_defaults_ambiguous_raw_ids_to_event_for_compatibility() {
             assert_eq!(reference.event_id(), "claim:legacy-event-id");
         }
         MemoryRecordReference::Claim(_) => panic!("omitted record type must not select Claim"),
+        MemoryRecordReference::Episode(_) => panic!("omitted record type must not select Episode"),
     }
 }
 
@@ -52,6 +53,7 @@ fn get_memory_dto_uses_explicit_claim_type_for_raw_or_canonical_claim_ids() {
                 assert_eq!(reference.claim_id(), "stored-claim-id");
             }
             MemoryRecordReference::Event(_) => panic!("explicit Claim must not select Event"),
+            MemoryRecordReference::Episode(_) => panic!("explicit Claim must not select Episode"),
         }
     }
 }
@@ -75,14 +77,45 @@ fn search_memory_dto_adds_episode_without_widening_get_memory_record_types() {
     assert_eq!(input.limit, 7);
     assert!(input.claim_status.is_none());
 
-    let get_episode = serde_json::from_value::<GetMemoryParams>(serde_json::json!({
+    let get_episode = GetMemoryInput::try_from(
+        serde_json::from_value::<GetMemoryParams>(serde_json::json!({
+            "namespace": "project/dto",
+            "id": "episode:Persisted-Exactly",
+            "record_type": "Episode"
+        }))
+        .expect("get_memory should deserialize the Episode record type"),
+    )
+    .expect("explicit Episode lookup should convert");
+    match get_episode.id {
+        MemoryRecordReference::Episode(reference) => {
+            assert_eq!(reference, "episode:Persisted-Exactly");
+        }
+        MemoryRecordReference::Event(_) | MemoryRecordReference::Claim(_) => {
+            panic!("explicit Episode must keep the opaque persisted reference")
+        }
+    }
+}
+
+#[test]
+fn get_memory_dto_rejects_invalid_episode_references_without_accepting_reflection() {
+    for id in ["", "   ", " episode:trimmed", "episode:trimmed "] {
+        let error = GetMemoryInput::try_from(GetMemoryParams {
+            namespace: "project/dto".to_string(),
+            id: id.to_string(),
+            record_type: Some(MemoryRecordTypeDto::Episode),
+        })
+        .expect_err("empty or boundary-whitespace Episode ids must fail closed");
+        assert!(error.to_string().contains("episode_reference"));
+    }
+
+    let get_reflection = serde_json::from_value::<GetMemoryParams>(serde_json::json!({
         "namespace": "project/dto",
-        "id": "episode:Persisted-Exactly",
-        "record_type": "Episode"
+        "id": "reflection-persisted",
+        "record_type": "Reflection"
     }));
     assert!(
-        get_episode.is_err(),
-        "get_memory must continue to accept only Event and Claim record types"
+        get_reflection.is_err(),
+        "get_memory must not accept Reflection in this slice"
     );
 }
 

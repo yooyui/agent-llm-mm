@@ -51,11 +51,11 @@ Event、Claim 与 Claim history 查询共用独立的只读 application/port，�
 
 ## 2026-08-09 M1.1.3 Scoped Episode Provenance Read
 
-M1.1.3 为现有 `search_memory` 增加显式 `record_type = Episode` 与 optional `episode_reference`。Episode reference 在本片保持 opaque：按持久化字符串精确匹配并原样返回，不做 `episode:` canonical/raw 猜测或改写。省略 `record_type` 仍查询 Event；`get_memory` 仍只接受 Event / Claim，避免把 Episode search 的首片误报成 lookup 完成。
+M1.1.3 为现有 `search_memory` 增加显式 `record_type = Episode` 与 optional `episode_reference`。Episode reference 在本片保持 opaque：按持久化字符串精确匹配并原样返回，不做 `episode:` canonical/raw 猜测或改写。省略 `record_type` 仍查询 Event。M1.2.4 之后 `get_memory` 已接受显式 Episode lookup；Reflection lookup 仍未开放。
 
 SQLite 从 `episode_events -> events` 出发，在 exact filter、分组、排序和 `1..=100` limit 之前按 server-derived owner + namespace 收窄。同一个 reference 即使关联多个 namespace，也只返回请求 scope 的 membership，不暴露其他 scope 的计数或存在性。结果的 `recorded_at` 由该 scope 内最新 Event 派生，provenance 返回 canonical recent-first Event references 与 canonical same-scope Claim references；路径只读、provider-free，operation metadata 仅记录 record type 与结果数。
 
-该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1.1.4 / M1.1.5 / M1.1.6 已补上 scoped Reflection search、evidence-relation runtime 与跨类型 union，但 Episode/Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
+该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1.1.4 / M1.1.5 / M1.1.6 / M1.2.4 已补上 scoped Reflection search、evidence-relation runtime、跨类型 union 与 Episode lookup，但 Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
 
 同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan。2026-08-13 已完成全部三项：identity supporting-Episode 查询现在同时限制 Claim 与 Event scope；Claim search/get 对 mixed-scope revision edge 整边隐藏；新写入拒绝 `Owner::Unknown`，只读 doctor 盘点 legacy Unknown 行且不改写。它们不回滚本切片已验证的 scope-first Episode projection。
 
@@ -91,9 +91,13 @@ M1.1.5 把既有只读 `build_evidence_relation_report` 收敛为第 8 个 MCP �
 
 ## 2026-08-13 M1.1.6 Stable Cross-Type Record Union
 
-M1.1.6 为 `search_memory` 增加 additive `record_types`。省略 `record_type` 与 `record_types` 时仍查询 Event；两者同时出现、空数组或重复类型 fail closed。单类型路径保持原来的 SQL 顺序与 tagged JSON。两个及以上类型组成 scoped union：先分别按同一 owner+namespace 与 `1..=100` limit 读取，再按 `recorded_at DESC`（Claim 无 timestamp 排在最后）、type rank（Event / Episode / Reflection / Claim）、id DESC 稳定排序并截断。union 拒绝类型专属 filter；Claim 在 union 中仍默认 Active。`get_memory` 仍只接受 Event / Claim。
+M1.1.6 为 `search_memory` 增加 additive `record_types`。省略 `record_type` 与 `record_types` 时仍查询 Event；两者同时出现、空数组或重复类型 fail closed。单类型路径保持原来的 SQL 顺序与 tagged JSON。两个及以上类型组成 scoped union：先分别按同一 owner+namespace 与 `1..=100` limit 读取，再按 `recorded_at DESC`（Claim 无 timestamp 排在最后）、type rank（Event / Episode / Reflection / Claim）、id DESC 稳定排序并截断。union 拒绝类型专属 filter；Claim 在 union 中仍默认 Active。`get_memory` 现已覆盖 Event / Claim / Episode。
 
 该切片没有 schema migration / index，也不开放 Episode/Reflection lookup、identity/commitment history 或 correction。
+
+## 2026-08-13 M1.2.4 Scoped Episode Lookup
+
+M1.2.4 让 `get_memory(namespace, id, record_type?)` 在显式 `record_type = Episode` 时接受 opaque persisted Episode reference，并以 `limit = 1` 复用同一 scoped search service，返回与 Episode search 相同的 provenance record。省略类型仍保持 Event 语义，因此 `episode:*` 不会被重判为 Episode。空白或首尾空白 ID fail closed；missing、大小写不同或跨 scope ID 返回 `record: null`。本片不推断 `episode:` canonical/raw 等价，也不开放 Reflection lookup。
 
 ## 项目定位
 
@@ -364,7 +368,7 @@ Implementation notes:
 
 ## 未实现
 
-- Episode / Reflection `get_memory`、identity/commitment history 与 record-only Reflection history
+- Reflection `get_memory`、identity/commitment history 与 record-only Reflection history
 - current-schema structural readback，以及 exclusive init/migration lifecycle gate
 - 受审计的 `supersede_memory` correction 合同，以及真实 MCP 客户端“记录 → 重连 → 检索 → 查看证据 → supersede → 回看历史”退出证据
 - richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / inclusive recency window / limit 的窄化 evidence-oriented 查询基础；只读 relation projection 已有首片，但不是 full ranking/weighting engine）
@@ -378,7 +382,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-08-13`，测试与工具链已完成分层减重；M1.1.6 继续复用以下运行入口：
+截至 `2026-08-13`，测试与工具链已完成分层减重；M1.2.4 继续复用以下运行入口：
 
 - `cargo fmt --check`
 - `git diff --check`

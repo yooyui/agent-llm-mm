@@ -72,6 +72,7 @@ impl From<ModeDto> for Mode {
 pub enum MemoryRecordTypeDto {
     Event,
     Claim,
+    Episode,
 }
 
 impl From<MemoryRecordTypeDto> for MemoryRecordType {
@@ -79,6 +80,7 @@ impl From<MemoryRecordTypeDto> for MemoryRecordType {
         match value {
             MemoryRecordTypeDto::Event => Self::Event,
             MemoryRecordTypeDto::Claim => Self::Claim,
+            MemoryRecordTypeDto::Episode => Self::Episode,
         }
     }
 }
@@ -618,12 +620,25 @@ impl TryFrom<GetMemoryParams> for GetMemoryInput {
             MemoryRecordTypeDto::Claim => MemoryRecordReference::Claim(
                 ClaimReference::parse(value.id).map_err(AppError::from)?,
             ),
+            MemoryRecordTypeDto::Episode => {
+                MemoryRecordReference::Episode(parse_opaque_episode_reference(value.id)?)
+            }
         };
         Ok(Self {
             namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
             id,
         })
     }
+}
+
+fn parse_opaque_episode_reference(value: String) -> Result<String, AppError> {
+    if value.is_empty() || value.trim() != value {
+        return Err(AppError::InvalidParams(
+            "episode_reference must be non-empty and have no leading or trailing whitespace"
+                .to_string(),
+        ));
+    }
+    Ok(value)
 }
 
 impl TryFrom<SearchMemoryParams> for SearchMemoryInput {

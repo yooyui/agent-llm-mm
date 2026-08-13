@@ -152,8 +152,8 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
     );
     assert_eq!(
         get_schema["definitions"]["MemoryRecordTypeDto"]["enum"],
-        json!(["Event", "Claim"]),
-        "get_memory record_type schema must remain exactly Event and Claim"
+        json!(["Event", "Claim", "Episode"]),
+        "get_memory record_type schema must remain exactly Event, Claim, and Episode"
     );
 
     let history_schema = tools
@@ -1780,7 +1780,7 @@ async fn search_memory_returns_scoped_episode_provenance_over_stdio_without_sema
         );
     }
 
-    let unsupported_get = client
+    let found = client
         .call_tool(
             "get_memory",
             json!({
@@ -1791,7 +1791,54 @@ async fn search_memory_returns_scoped_episode_provenance_over_stdio_without_sema
         )
         .await
         .unwrap();
-    assert_eq!(unsupported_get["error"]["code"], -32602);
+    assert!(
+        found.get("error").is_none(),
+        "episode lookup failed: {found:?}"
+    );
+    let lookup = &found["result"]["structuredContent"];
+    assert_eq!(lookup["record"], *record);
+    assert_eq!(lookup["namespace"], "project/episode-a");
+
+    for params in [
+        json!({
+            "namespace": "project/episode-a",
+            "id": "episode:missing",
+            "record_type": "Episode"
+        }),
+        json!({
+            "namespace": "project/episode-a",
+            "id": "episode:shared-exact",
+            "record_type": "Episode"
+        }),
+        json!({
+            "namespace": "project/empty",
+            "id": "episode:Shared-Exact",
+            "record_type": "Episode"
+        }),
+    ] {
+        let missing = client.call_tool("get_memory", params).await.unwrap();
+        assert_eq!(
+            missing["result"]["structuredContent"]["record"],
+            json!(null),
+            "missing or cross-scope Episode lookup must return null without widening"
+        );
+    }
+
+    let omitted_type = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/episode-a",
+                "id": "episode:Shared-Exact"
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        omitted_type["result"]["structuredContent"]["record"],
+        json!(null),
+        "omitted record_type must keep Event lookup semantics"
+    );
     assert_eq!(semantic_memory_counts(&pool).await, semantic_counts_before);
 }
 

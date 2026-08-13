@@ -16,6 +16,7 @@ use super::search_memory::{MemoryRecordType, SearchMemoryInput, SearchMemoryReco
 pub enum MemoryRecordReference {
     Event(EventReference),
     Claim(ClaimReference),
+    Episode(String),
 }
 
 impl MemoryRecordReference {
@@ -23,6 +24,7 @@ impl MemoryRecordReference {
         match self {
             Self::Event(_) => MemoryRecordType::Event,
             Self::Claim(_) => MemoryRecordType::Claim,
+            Self::Episode(_) => MemoryRecordType::Episode,
         }
     }
 }
@@ -45,9 +47,10 @@ where
     D: MemoryReadStore + Sync,
 {
     let record_type = input.id.record_type();
-    let (event_reference, claim_reference) = match input.id {
-        MemoryRecordReference::Event(reference) => (Some(reference), None),
-        MemoryRecordReference::Claim(reference) => (None, Some(reference)),
+    let (event_reference, claim_reference, episode_reference) = match input.id {
+        MemoryRecordReference::Event(reference) => (Some(reference), None, None),
+        MemoryRecordReference::Claim(reference) => (None, Some(reference), None),
+        MemoryRecordReference::Episode(reference) => (None, None, Some(reference)),
     };
     let result = super::search_memory::execute(
         deps,
@@ -61,7 +64,7 @@ where
             claim_reference,
             claim_status: None,
             mode: None,
-            episode_reference: None,
+            episode_reference,
             reflection_reference: None,
             limit: 1,
         },
