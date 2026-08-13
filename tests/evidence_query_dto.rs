@@ -6,6 +6,7 @@ use agent_llm_mm::{
         get_reflection_history::{DEFAULT_REFLECTION_HISTORY_LIMIT, GetReflectionHistoryInput},
         get_self_model_history::{DEFAULT_SELF_MODEL_HISTORY_LIMIT, GetSelfModelHistoryInput},
         search_memory::{MemoryRecordType, SearchMemoryInput},
+        supersede_memory::SupersedeMemoryInput,
     },
     domain::{
         claim::ClaimDraft,
@@ -16,7 +17,7 @@ use agent_llm_mm::{
         BuildSelfSnapshotParams, ClaimDraftDto, EventDto, EventKindDto, EvidenceQueryDto,
         GetEvidenceRelationParams, GetMemoryParams, GetReflectionHistoryParams,
         GetSelfModelHistoryParams, MemoryRecordTypeDto, ModeDto, OwnerDto, SearchMemoryParams,
-        SelfModelHistoryTypeDto,
+        SelfModelHistoryTypeDto, SupersedeMemoryParams,
     },
     ports::{ClaimStatus, EvidenceQuery, SelfModelHistoryKind},
 };
@@ -469,6 +470,91 @@ fn get_self_model_history_dto_rejects_invalid_scope_and_limits() {
         .expect_err("out-of-range self-model history limit should fail");
         assert!(error.to_string().contains("limit"));
     }
+}
+
+#[test]
+fn supersede_memory_dto_parses_canonical_claim_and_event_references() {
+    let input = SupersedeMemoryInput::try_from(SupersedeMemoryParams {
+        namespace: "project/dto".to_string(),
+        claim_reference: "claim:stored-claim".to_string(),
+        replacement_claim: ClaimDraftDto {
+            owner: OwnerDto::World,
+            namespace: Some("project/dto".to_string()),
+            subject: "project.role".to_string(),
+            predicate: "is".to_string(),
+            object: "corrected".to_string(),
+            mode: ModeDto::Observed,
+        },
+        replacement_evidence_event_ids: vec![
+            "event:evidence-1".to_string(),
+            "evidence-1".to_string(),
+        ],
+        summary: "correct the stored claim".to_string(),
+    })
+    .expect("scoped supersede should parse");
+    assert_eq!(input.claim_reference.canonical(), "claim:stored-claim");
+    assert_eq!(
+        input
+            .evidence_event_ids
+            .iter()
+            .map(|reference| reference.canonical())
+            .collect::<Vec<_>>(),
+        vec!["event:evidence-1"]
+    );
+}
+
+#[test]
+fn supersede_memory_dto_rejects_invalid_scope_target_and_empty_evidence() {
+    let invalid_namespace = SupersedeMemoryInput::try_from(SupersedeMemoryParams {
+        namespace: "invalid".to_string(),
+        claim_reference: "claim:stored-claim".to_string(),
+        replacement_claim: ClaimDraftDto {
+            owner: OwnerDto::World,
+            namespace: Some("project/dto".to_string()),
+            subject: "project.role".to_string(),
+            predicate: "is".to_string(),
+            object: "corrected".to_string(),
+            mode: ModeDto::Observed,
+        },
+        replacement_evidence_event_ids: vec!["event:evidence-1".to_string()],
+        summary: "correct the stored claim".to_string(),
+    })
+    .expect_err("invalid namespace should fail closed");
+    assert!(invalid_namespace.to_string().contains("InvalidNamespace"));
+
+    let empty_evidence = SupersedeMemoryInput::try_from(SupersedeMemoryParams {
+        namespace: "project/dto".to_string(),
+        claim_reference: "stored-claim".to_string(),
+        replacement_claim: ClaimDraftDto {
+            owner: OwnerDto::World,
+            namespace: Some("project/dto".to_string()),
+            subject: "project.role".to_string(),
+            predicate: "is".to_string(),
+            object: "corrected".to_string(),
+            mode: ModeDto::Observed,
+        },
+        replacement_evidence_event_ids: vec![],
+        summary: "correct the stored claim".to_string(),
+    })
+    .expect_err("empty evidence should fail closed");
+    assert!(empty_evidence.to_string().contains("evidence"));
+
+    let mismatched_scope = SupersedeMemoryInput::try_from(SupersedeMemoryParams {
+        namespace: "project/dto".to_string(),
+        claim_reference: "stored-claim".to_string(),
+        replacement_claim: ClaimDraftDto {
+            owner: OwnerDto::World,
+            namespace: Some("project/other".to_string()),
+            subject: "project.role".to_string(),
+            predicate: "is".to_string(),
+            object: "corrected".to_string(),
+            mode: ModeDto::Observed,
+        },
+        replacement_evidence_event_ids: vec!["event:evidence-1".to_string()],
+        summary: "correct the stored claim".to_string(),
+    })
+    .expect_err("replacement leaving the requested namespace should fail closed");
+    assert!(mismatched_scope.to_string().contains("namespace"));
 }
 
 #[test]

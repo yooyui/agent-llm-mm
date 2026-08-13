@@ -446,7 +446,7 @@ bash -n scripts/agent-llm-mm.sh scripts/first-run-bootstrap-smoke-local.sh scrip
 
 M0.4 不证明 remote backup、scheduled backup、cloud sync、production disaster recovery，或超出 SQLite 事务语义的 crash/power-loss guarantee。
 
-### 6.3F M1.1.1 / M1.1.2 / M1.1.3 / M1.1.4 / M1.1.5 / M1.1.6 / M1.2.1 / M1.2.2 / M1.2.3 / M1.2.4 / M1.2.5 / M1.2.6 scoped read model 回归
+### 6.3F M1.1.1 / M1.1.2 / M1.1.3 / M1.1.4 / M1.1.5 / M1.1.6 / M1.2.1 / M1.2.2 / M1.2.3 / M1.2.4 / M1.2.5 / M1.2.6 / M1.2.7 scoped read and correction 回归
 
 ```zsh
 cargo test --test sqlite_store sqlite_event_recall -v
@@ -460,6 +460,8 @@ cargo test --test evidence_query_dto get_self_model_history -v
 cargo test --test evidence_query_dto episode -v
 cargo test --test sqlite_store sqlite_claim_reflection_history -v
 cargo test --test sqlite_store sqlite_self_model_history_is_scoped_claim_attributed_and_hides_record_only_rows -- --exact
+cargo test --test sqlite_store sqlite_supersede_memory_is_scoped_claim_correction_and_hides_cross_scope_targets -- --exact
+cargo test --test evidence_query_dto supersede_memory -v
 cargo test --test mcp_stdio search_memory -v
 cargo test --test mcp_stdio episode -v
 cargo test --test mcp_stdio search_memory_returns_scoped_claims_with_revision_provenance_over_stdio -v
@@ -480,7 +482,7 @@ M1.1.3 回归另外证明：`record_type = Episode` 在 `search_memory` 中开�
 
 M1.2.3 回归另外证明：`get_reflection_history` 要求显式 namespace 与 exact Claim anchor，接受 canonical/raw Claim ID，limit 默认 20 且只允许 `1..=100`；SQLite 递归读取 superseded/replacement 双向 chain，并按 newest-first 返回有界结果与 `has_more`。missing/cross-scope Claim 返回空；mixed-scope edge 整条隐藏；supporting evidence 只返回同 scope canonical references；malformed legacy evidence fail closed。断开重连且 provider 不可达时历史读取仍可用，semantic memory tables 不变，operation log metadata 只保存 `history_type`、`result_count`、`has_more`。
 
-该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.1.4 Scoped Reflection Provenance Read`、`M1.1.5 Scoped Evidence Relation Runtime Read`、`M1.1.6 Stable Cross-Type Record Union`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup`、`M1.2.3 Scoped Claim Reflection History`、`M1.2.4 Scoped Episode Lookup`、`M1.2.5 Scoped Reflection Lookup and Record-only History` 与 `M1.2.6 Identity and Commitment History`。M1.0.1 / M1.0.2 / M1.0.3 分别由 6.3G / 6.3H / 6.3I 单独证明。M1.1.4 由 6.3J 单独补充。M1.1.5 由 6.3K 单独补充。M1.1.6 由 6.3L 单独补充。M1.2.4 由 6.3M 单独补充。M1.2.5 由 6.3N 单独补充。M1.2.6 由 6.3O 单独补充。它不证明 versioned identity/commitment ledger、record-only reflection history、correction、current-schema structural readback、exclusive init/migration、完整 M1.1/M1.2/M1、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha；Episode reference normalization、schema migration/index 和规模化性能也未证明，当前仍是 MVP 表扫描边界。
+该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.1.4 Scoped Reflection Provenance Read`、`M1.1.5 Scoped Evidence Relation Runtime Read`、`M1.1.6 Stable Cross-Type Record Union`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup`、`M1.2.3 Scoped Claim Reflection History`、`M1.2.4 Scoped Episode Lookup`、`M1.2.5 Scoped Reflection Lookup and Record-only History`、`M1.2.6 Identity and Commitment History` 与 `M1.2.7 Audited Supersede Contract`。M1.0.1 / M1.0.2 / M1.0.3 分别由 6.3G / 6.3H / 6.3I 单独证明。M1.1.4 由 6.3J 单独补充。M1.1.5 由 6.3K 单独补充。M1.1.6 由 6.3L 单独补充。M1.2.4 由 6.3M 单独补充。M1.2.5 由 6.3N 单独补充。M1.2.6 由 6.3O 单独补充。M1.2.7 由 6.3P 单独补充。它不证明 versioned identity/commitment ledger、record-only reflection history、current-schema structural readback、exclusive init/migration、完整 M1.1/M1.2/M1、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha；Episode reference normalization、schema migration/index 和规模化性能也未证明，当前仍是 MVP 表扫描边界。
 
 ### 6.3G M1.0.1 scoped identity evidence-to-Episode gate
 
@@ -595,6 +597,20 @@ cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -- --
 ```
 
 这组回归验证：第 9 个 MCP 工具 `get_self_model_history(namespace, history_type, limit?)` 要求显式 namespace 与 `Identity` / `Commitment`；limit 默认 20、范围 `1..=100`，并用 `has_more` 表示截断。历史只读取现有 reflection 审计列，归属规则与 Reflection search 相同：必须存在同 scope superseded Claim，replacement 为空或同 scope。record-only 更新与 mixed-scope edge 保持不可见。路径只读、provider-free，operation metadata 仅含 `history_type`、`result_count`、`has_more`。该切片没有 schema migration / 新写路径 / rollback，也不把现态 `identity_claims` / `commitments` 表变成版本账本。
+
+### 6.3P M1.2.7 scoped audited supersede
+
+```zsh
+cargo test --test sqlite_store sqlite_supersede_memory_is_scoped_claim_correction_and_hides_cross_scope_targets -- --exact
+cargo test --test evidence_query_dto supersede_memory_dto_parses_canonical_claim_and_event_references -- --exact
+cargo test --test evidence_query_dto supersede_memory_dto_rejects_invalid_scope_target_and_empty_evidence -- --exact
+cargo test --test mcp_stdio supersede_memory_replaces_scoped_claim_without_hard_delete_over_stdio -- --exact
+cargo test --test mcp_stdio server_exposes_expected_tools_over_stdio -- --exact
+cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -- --exact
+./scripts/test-tier.sh core
+```
+
+这组回归验证：第 10 个 MCP 工具 `supersede_memory` 要求显式 namespace、Claim 与至少一条 evidence；replacement 必须留在同一 namespace。SQLite 先确认 target 与 evidence 都属于请求 owner+namespace，再调用既有 `run_reflection` 事务。默认 search 只返回新 Active Claim；旧 Claim 仍为 `Superseded` 且 history 可回看。missing / cross-scope 输入 fail closed。operation metadata 只保存 `correction_type` 与 `durable_write_path = run_reflection`。该切片没有 schema migration / 第二条 write path / hard delete，也不证明 Event/Episode/Reflection 纠错或完整 M1。
 
 ### 6.4 Provider 合规预检
 

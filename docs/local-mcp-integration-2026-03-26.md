@@ -155,6 +155,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - `get_reflection_history`（M1.2.3 exact scoped Claim revision chain 首片；显式 `namespace` + `claim_reference` 必填，limit 默认 20、范围 `1..=100`）
 - `get_self_model_history`（M1.2.6 scoped identity/commitment revision audit 首片；显式 `namespace` + `history_type` 必填，limit 默认 20、范围 `1..=100`）
 - `get_evidence_relation`（M1.1.5 scoped evidence-relation runtime 首片；显式 `namespace` + `trigger_window_event_ids` 必填，`selected_evidence_event_ids` / `selection_basis` 可选）
+- `supersede_memory`（M1.2.7 scoped Claim audited supersede 首片；显式 `namespace` + `claim_reference` + `replacement_claim` + `replacement_evidence_event_ids` + `summary` 必填；复用 `run_reflection`，默认不 hard delete）
 - `build_self_snapshot`
 - `run_reflection`
 - `doctor` / `serve`
@@ -172,7 +173,8 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - `get_reflection_history` 接受 canonical/raw Claim ID，以 exact scoped Claim 为锚点递归读取 superseded/replacement 双向链，并按 newest-first 返回 reflection ID、时间、摘要、canonical superseded/replacement Claim references 与同 scope canonical evidence references。missing/cross-scope anchor 返回空，mixed-scope edge 整条隐藏；读取只读且不依赖 provider，operation metadata 仅含 `history_type`、`result_count`、`has_more`。
 - `get_self_model_history` 按 `history_type = Identity` 或 `Commitment` 读取现有 reflection 审计列，只返回能通过同 scope Claim 归属的 newest-first 修订。record-only 更新与 mixed-scope edge 保持不可见。limit 默认 20、范围 `1..=100`，并用 `has_more` 表示截断。该首片不是 versioned identity/commitment ledger，也不提供 rollback。
 - `get_evidence_relation` 接受裸 ID 或 `event:<id>` 组成的 trigger window，先保序去重再与请求 owner+namespace 做 intersect-only 收窄。missing / cross-scope trigger ID 从窗口省略；selected 必须是 scoped window 的子集，否则 fail closed。结果返回 canonical `event:<id>`、window_rank、selected / available-not-selected、binary weight 与 rejection reason。路径只读、provider-free，operation metadata 仅含 `report_type`、`trigger_window_size`、`selected_count`、`result_count`。它不引入 ranking 或 widening。
-- Episode / Reflection lookup、Claim history 与 self-model audit 首片都不覆盖 versioned identity/commitment ledger、record-only reflection history 或 correction。Episode reference 仍是 opaque persisted string；这些切片都没有 schema migration/index，保留 technical-MVP 表扫描性能边界。
+- `supersede_memory` 接受 canonical/raw Claim ID 与至少一条 evidence，先确认 target 与 evidence 都在请求 namespace，再调用既有 `run_reflection` 事务。旧 Claim 变为 `Superseded`，历史接口仍可回看；missing / cross-scope 输入 fail closed。operation metadata 仅含 `correction_type` 与 `durable_write_path = run_reflection`。它不是第二条 durable write path，也不覆盖 identity/commitment 或 Event/Episode/Reflection 纠错。
+- Episode / Reflection lookup、Claim history、self-model audit 与 Claim supersede 首片都不覆盖 versioned identity/commitment ledger 或 record-only reflection history。Episode reference 仍是 opaque persisted string；这些切片都没有 schema migration/index，保留 technical-MVP 表扫描性能边界。
 - trigger-ledger-backed automatic self-revision MVP
   - 当前 MCP-wired automatic path 只有 4 条：
     - `ingest_interaction -> failure`
@@ -207,7 +209,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 ### 未实现
 
 - versioned identity/commitment ledger 和 record-only Reflection history
-- audited `supersede_memory` correction 与真实客户端 M1 退出故事
+- Event/Episode/Reflection 纠错，以及真实客户端 M1 退出故事
 - richer 自动 evidence lookup
 - richer evidence weighting / relation / ranking
 - richer reflection 语义（当前已有最小 `identity_core` / `commitments` 深层修订，但仍不是 richer schema / versioned policy）

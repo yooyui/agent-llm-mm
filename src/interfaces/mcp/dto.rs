@@ -13,6 +13,7 @@ use crate::{
         ingest_interaction::IngestInput,
         run_reflection::ReflectionInput,
         search_memory::{DEFAULT_SEARCH_MEMORY_LIMIT, MemoryRecordType, SearchMemoryInput},
+        supersede_memory::SupersedeMemoryInput,
     },
     domain::{
         claim::{ClaimDraft, ClaimReference},
@@ -627,6 +628,39 @@ impl TryFrom<GetSelfModelHistoryParams> for GetSelfModelHistoryInput {
             namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
             history_kind: SelfModelHistoryKind::from(value.history_type),
             limit: value.limit.unwrap_or(DEFAULT_SELF_MODEL_HISTORY_LIMIT),
+        };
+        input.validate()?;
+        Ok(input)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SupersedeMemoryParams {
+    pub namespace: String,
+    pub claim_reference: String,
+    pub replacement_claim: ClaimDraftDto,
+    #[schemars(length(max = MAX_EVIDENCE_MANIFEST_ITEMS))]
+    pub replacement_evidence_event_ids: Vec<String>,
+    pub summary: String,
+}
+
+impl TryFrom<SupersedeMemoryParams> for SupersedeMemoryInput {
+    type Error = AppError;
+
+    fn try_from(value: SupersedeMemoryParams) -> Result<Self, Self::Error> {
+        if value.replacement_evidence_event_ids.len() > MAX_EVIDENCE_MANIFEST_ITEMS {
+            return Err(AppError::InvalidParams(format!(
+                "replacement_evidence_event_ids must contain at most {MAX_EVIDENCE_MANIFEST_ITEMS} entries"
+            )));
+        }
+        let input = Self {
+            namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
+            claim_reference: ClaimReference::parse(value.claim_reference)
+                .map_err(AppError::from)?,
+            replacement_claim: ClaimDraft::try_from(value.replacement_claim)
+                .map_err(AppError::from)?,
+            evidence_event_ids: parse_event_references(value.replacement_evidence_event_ids)?,
+            summary: value.summary,
         };
         input.validate()?;
         Ok(input)

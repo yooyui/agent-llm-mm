@@ -9,3 +9,4 @@ pub mod get_self_model_history;
 pub mod ingest_interaction;
 pub mod run_reflection;
 pub mod search_memory;
+pub mod supersede_memory;

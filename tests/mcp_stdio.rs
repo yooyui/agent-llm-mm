@@ -38,6 +38,7 @@ async fn server_exposes_expected_tools_over_stdio() {
             "ingest_interaction".to_string(),
             "run_reflection".to_string(),
             "search_memory".to_string(),
+            "supersede_memory".to_string(),
         ]
     );
 }
@@ -188,6 +189,26 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
     assert_eq!(
         self_model_schema["definitions"]["SelfModelHistoryTypeDto"]["enum"],
         json!(["Identity", "Commitment"])
+    );
+
+    let supersede_schema = tools
+        .iter()
+        .find(|tool| tool.name == "supersede_memory")
+        .map(|tool| &tool.input_schema)
+        .expect("supersede_memory tool schema");
+    let supersede_required = supersede_schema
+        .get("required")
+        .and_then(Value::as_array)
+        .expect("supersede_memory schema should expose required fields");
+    assert_eq!(
+        supersede_required,
+        &[
+            json!("namespace"),
+            json!("claim_reference"),
+            json!("replacement_claim"),
+            json!("replacement_evidence_event_ids"),
+            json!("summary")
+        ]
     );
 
     let relation_schema = tools
@@ -2710,6 +2731,244 @@ async fn get_self_model_history_returns_scoped_identity_and_commitment_audits_ov
 }
 
 #[tokio::test]
+async fn supersede_memory_replaces_scoped_claim_without_hard_delete_over_stdio() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let ingest_a = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/supersede-stdio-a",
+                    "kind": "Observation",
+                    "summary": "scoped evidence for audited supersede"
+                },
+                "claim_drafts": [{
+                    "owner": "World",
+                    "namespace": "project/supersede-stdio-a",
+                    "subject": "project.role",
+                    "predicate": "is",
+                    "object": "old",
+                    "mode": "Observed"
+                }]
+            }),
+        )
+        .await
+        .unwrap();
+    let event_a = ingest_a["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let old_claim_id = format!("{event_a}:claim:0");
+
+    let ingest_b = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/supersede-stdio-b",
+                    "kind": "Observation",
+                    "summary": "cross-scope interference"
+                },
+                "claim_drafts": [{
+                    "owner": "World",
+                    "namespace": "project/supersede-stdio-b",
+                    "subject": "project.role",
+                    "predicate": "is",
+                    "object": "other",
+                    "mode": "Observed"
+                }]
+            }),
+        )
+        .await
+        .unwrap();
+    let event_b = ingest_b["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let other_claim_id = format!("{event_b}:claim:0");
+
+    let superseded = client
+        .call_tool(
+            "supersede_memory",
+            json!({
+                "namespace": "project/supersede-stdio-a",
+                "claim_reference": format!("claim:{old_claim_id}"),
+                "replacement_claim": {
+                    "owner": "World",
+                    "namespace": "project/supersede-stdio-a",
+                    "subject": "project.role",
+                    "predicate": "is",
+                    "object": "new",
+                    "mode": "Observed"
+                },
+                "replacement_evidence_event_ids": [format!("event:{event_a}")],
+                "summary": "replace the incorrect scoped claim"
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        superseded.get("error").is_none(),
+        "scoped supersede failed: {superseded:?}"
+    );
+    let superseded_result = &superseded["result"]["structuredContent"];
+    assert_eq!(superseded_result["durable_write_path"], "run_reflection");
+    assert_eq!(
+        superseded_result["superseded_claim_reference"],
+        format!("claim:{old_claim_id}")
+    );
+    let replacement_claim_id = superseded_result["replacement_claim_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let reflection_id = superseded_result["reflection_id"].as_str().unwrap();
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let operation = sqlx::query(
+        "SELECT response_summary_json FROM operation_log WHERE entrypoint = 'supersede_memory' ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let summary: Value =
+        serde_json::from_str(&operation.get::<String, _>("response_summary_json")).unwrap();
+    assert_eq!(
+        summary,
+        json!({"correction_type": "supersede", "durable_write_path": "run_reflection"})
+    );
+
+    let active = client
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/supersede-stdio-a",
+                "record_type": "Claim"
+            }),
+        )
+        .await
+        .unwrap();
+    let active_records = &active["result"]["structuredContent"]["records"];
+    assert_eq!(active_records.as_array().unwrap().len(), 1);
+    assert_eq!(
+        active_records[0]["id"],
+        format!("claim:{replacement_claim_id}")
+    );
+    assert_eq!(active_records[0]["status"], "Active");
+
+    let old_lookup = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/supersede-stdio-a",
+                "id": old_claim_id,
+                "record_type": "Claim"
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        old_lookup["result"]["structuredContent"]["record"]["status"],
+        "Superseded"
+    );
+
+    let history = client
+        .call_tool(
+            "get_reflection_history",
+            json!({
+                "namespace": "project/supersede-stdio-a",
+                "claim_reference": format!("claim:{old_claim_id}")
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        history["result"]["structuredContent"]["reflections"][0]["reflection_id"],
+        reflection_id
+    );
+
+    for invalid in [
+        json!({
+            "namespace": "project/supersede-stdio-a",
+            "claim_reference": format!("claim:{other_claim_id}"),
+            "replacement_claim": {
+                "owner": "World",
+                "namespace": "project/supersede-stdio-a",
+                "subject": "project.role",
+                "predicate": "is",
+                "object": "leaked",
+                "mode": "Observed"
+            },
+            "replacement_evidence_event_ids": [format!("event:{event_a}")],
+            "summary": "cross-scope target"
+        }),
+        json!({
+            "namespace": "project/supersede-stdio-a",
+            "claim_reference": format!("claim:{old_claim_id}"),
+            "replacement_claim": {
+                "owner": "World",
+                "namespace": "project/supersede-stdio-a",
+                "subject": "project.role",
+                "predicate": "is",
+                "object": "leaked",
+                "mode": "Observed"
+            },
+            "replacement_evidence_event_ids": [format!("event:{event_b}")],
+            "summary": "cross-scope evidence"
+        }),
+        json!({
+            "namespace": "project/supersede-stdio-a",
+            "claim_reference": "claim:missing",
+            "replacement_claim": {
+                "owner": "World",
+                "namespace": "project/supersede-stdio-a",
+                "subject": "project.role",
+                "predicate": "is",
+                "object": "missing",
+                "mode": "Observed"
+            },
+            "replacement_evidence_event_ids": [format!("event:{event_a}")],
+            "summary": "missing target"
+        }),
+        json!({
+            "namespace": "invalid",
+            "claim_reference": format!("claim:{old_claim_id}"),
+            "replacement_claim": {
+                "owner": "World",
+                "namespace": "project/supersede-stdio-a",
+                "subject": "project.role",
+                "predicate": "is",
+                "object": "bad",
+                "mode": "Observed"
+            },
+            "replacement_evidence_event_ids": [format!("event:{event_a}")],
+            "summary": "invalid namespace"
+        }),
+    ] {
+        let response = client.call_tool("supersede_memory", invalid).await.unwrap();
+        assert_eq!(
+            response["error"]["code"], -32602,
+            "invalid scoped supersede must fail closed: {response:?}"
+        );
+    }
+
+    let remaining_old = sqlx::query(
+        "SELECT status FROM claims WHERE claim_id = ? AND namespace = 'project/supersede-stdio-a'",
+    )
+    .bind(&old_claim_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(remaining_old.get::<String, _>("status"), "superseded");
+}
+
+#[tokio::test]
 async fn get_evidence_relation_returns_scoped_window_and_hides_cross_scope_ids_over_stdio() {
     let (mut client, database_url, _database_dir) =
         test_support::spawn_stdio_client_with_database()
@@ -4834,7 +5093,7 @@ required = true
         .expect("client");
 
     let tools = client.list_all_tools().await.expect("list tools");
-    assert_eq!(tools.len(), 9);
+    assert_eq!(tools.len(), 10);
 
     let health: serde_json::Value = reqwest::get(format!("http://127.0.0.1:{port}/api/health"))
         .await
@@ -4913,7 +5172,7 @@ max_concurrent_tasks = 1
             .await
             .unwrap();
     let tools = client.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 9);
+    assert_eq!(tools.len(), 10);
 
     client
         .call_tool(

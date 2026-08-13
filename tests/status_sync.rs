@@ -124,6 +124,12 @@ fn active_plan_and_reality_gate_documents_are_in_sync() {
     assert!(
         report
             .completed_plan_items
+            .contains(&"M1.2.7 Audited Supersede Contract".to_string()),
+        "active plan must expose the completed M1.2.7 audited supersede slice as a checkbox"
+    );
+    assert!(
+        report
+            .completed_plan_items
             .contains(&"M1.0.1 Scoped Identity Evidence-to-Episode Gate".to_string()),
         "active plan must expose the completed M1.0.1 identity evidence-to-episode gate as a checkbox"
     );

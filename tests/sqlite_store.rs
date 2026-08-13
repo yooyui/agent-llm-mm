@@ -6,6 +6,7 @@ use agent_llm_mm::{
         search_memory::{
             MemoryRecordType, SearchMemoryInput, SearchMemoryRecord, execute as search_memory,
         },
+        supersede_memory::{SupersedeMemoryInput, prepare_scoped_supersede},
     },
     domain::{
         claim::{ClaimDraft, ClaimReference},
@@ -3976,6 +3977,167 @@ async fn sqlite_self_model_history_is_scoped_claim_attributed_and_hides_record_o
         })
         .await;
     assert!(matches!(unscoped, Err(AppError::InvalidParams(_))));
+}
+
+#[tokio::test]
+async fn sqlite_supersede_memory_is_scoped_claim_correction_and_hides_cross_scope_targets() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let project_a = Namespace::for_project("supersede-a");
+    let project_b = Namespace::for_project("supersede-b");
+
+    for (event_id, namespace) in [
+        ("supersede-event-a", project_a.clone()),
+        ("supersede-event-b", project_b.clone()),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                now,
+                Event::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    EventKind::Observation,
+                    event_id,
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+    for (claim_id, namespace) in [
+        ("supersede-claim-a", project_a.clone()),
+        ("supersede-claim-b", project_b.clone()),
+    ] {
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                claim_id.to_string(),
+                ClaimDraft::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    "self.role",
+                    "is",
+                    claim_id,
+                    Mode::Observed,
+                ),
+                ClaimStatus::Active,
+            ))
+            .await
+            .unwrap();
+    }
+
+    let prepared = prepare_scoped_supersede(
+        &context.store,
+        &SupersedeMemoryInput {
+            namespace: project_a.clone(),
+            claim_reference: ClaimReference::parse("claim:supersede-claim-a").unwrap(),
+            replacement_claim: ClaimDraft::new_with_namespace(
+                Owner::World,
+                project_a.clone(),
+                "self.role",
+                "is",
+                "corrected",
+                Mode::Observed,
+            ),
+            evidence_event_ids: vec![EventReference::parse("event:supersede-event-a").unwrap()],
+            summary: "correct the scoped claim".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    let reflections_before = context
+        .store
+        .query_reflection_records(ReflectionRecordQuery {
+            scope: MemoryScope::for_namespace(project_a.clone()),
+            reflection_reference: None,
+            limit: 10,
+        })
+        .await
+        .unwrap();
+    assert!(reflections_before.is_empty());
+    drop(prepared);
+
+    let cross_claim = prepare_scoped_supersede(
+        &context.store,
+        &SupersedeMemoryInput {
+            namespace: project_a.clone(),
+            claim_reference: ClaimReference::parse("supersede-claim-b").unwrap(),
+            replacement_claim: ClaimDraft::new_with_namespace(
+                Owner::World,
+                project_a.clone(),
+                "self.role",
+                "is",
+                "leaked",
+                Mode::Observed,
+            ),
+            evidence_event_ids: vec![EventReference::parse("supersede-event-a").unwrap()],
+            summary: "must not touch the other namespace".to_string(),
+        },
+    )
+    .await;
+    assert!(matches!(cross_claim, Err(AppError::InvalidParams(_))));
+
+    let cross_evidence = prepare_scoped_supersede(
+        &context.store,
+        &SupersedeMemoryInput {
+            namespace: project_a.clone(),
+            claim_reference: ClaimReference::parse("supersede-claim-a").unwrap(),
+            replacement_claim: ClaimDraft::new_with_namespace(
+                Owner::World,
+                project_a.clone(),
+                "self.role",
+                "is",
+                "leaked-evidence",
+                Mode::Observed,
+            ),
+            evidence_event_ids: vec![EventReference::parse("event:supersede-event-b").unwrap()],
+            summary: "must not use foreign evidence".to_string(),
+        },
+    )
+    .await;
+    assert!(matches!(cross_evidence, Err(AppError::InvalidParams(_))));
+
+    let missing = prepare_scoped_supersede(
+        &context.store,
+        &SupersedeMemoryInput {
+            namespace: project_a.clone(),
+            claim_reference: ClaimReference::parse("claim:missing").unwrap(),
+            replacement_claim: ClaimDraft::new_with_namespace(
+                Owner::World,
+                project_a.clone(),
+                "self.role",
+                "is",
+                "missing",
+                Mode::Observed,
+            ),
+            evidence_event_ids: vec![EventReference::parse("event:supersede-event-a").unwrap()],
+            summary: "missing target".to_string(),
+        },
+    )
+    .await;
+    assert!(matches!(missing, Err(AppError::InvalidParams(_))));
+
+    let mismatched_replacement = SupersedeMemoryInput {
+        namespace: project_a,
+        claim_reference: ClaimReference::parse("supersede-claim-a").unwrap(),
+        replacement_claim: ClaimDraft::new_with_namespace(
+            Owner::World,
+            project_b,
+            "self.role",
+            "is",
+            "other-scope",
+            Mode::Observed,
+        ),
+        evidence_event_ids: vec![EventReference::parse("event:supersede-event-a").unwrap()],
+        summary: "replacement leaves the requested namespace".to_string(),
+    }
+    .validate();
+    assert!(matches!(
+        mismatched_replacement,
+        Err(AppError::InvalidParams(_))
+    ));
 }
 
 #[tokio::test]

@@ -29,7 +29,7 @@
 
 已实现：
 
-- Rust MCP `stdio` 服务与 9 个工具；`search_memory` 已覆盖显式 namespace 的 Event、Claim 与 scoped Episode / Reflection provenance recall 首片，`get_memory` 已覆盖 Event、Claim、Episode 与 scoped Reflection lookup 首片，`get_reflection_history` 已覆盖 exact scoped Claim revision chain 首片，`get_self_model_history` 已覆盖 scoped identity/commitment revision audit 首片，`get_evidence_relation` 已覆盖 scoped evidence-relation runtime 首片；
+- Rust MCP `stdio` 服务与 10 个工具；`search_memory` 已覆盖显式 namespace 的 Event、Claim 与 scoped Episode / Reflection provenance recall 首片，`get_memory` 已覆盖 Event、Claim、Episode 与 scoped Reflection lookup 首片，`get_reflection_history` 已覆盖 exact scoped Claim revision chain 首片，`get_self_model_history` 已覆盖 scoped identity/commitment revision audit 首片，`get_evidence_relation` 已覆盖 scoped evidence-relation runtime 首片，`supersede_memory` 已覆盖 scoped Claim audited supersede 首片；
 - SQLite 持久化与 ingest / reflection 事务；
 - `run_reflection` 受治理的 durable write path；
 - mock、OpenAI-compatible、OpenRouter 配置路径；
@@ -39,7 +39,7 @@
 当前不能视为完整产品能力：
 
 - 显式 namespace / manifest / time-window 的 M0.2 scoped snapshot 已收口，但省略 namespace 的 legacy 兼容调用仍未隔离，且尚无完整 recall read model；
-- 已有正式的 Event / Claim `search_memory` 与 `get_memory` 首片、Episode / Reflection `search_memory` provenance 首片、Episode / scoped Reflection `get_memory`、跨类型 `record_types` union、Claim-linked `get_reflection_history` 首片、scoped `get_self_model_history` 首片，以及 scoped `get_evidence_relation` 首片；versioned identity/commitment ledger、record-only reflection history 与 correction 接口仍未实现；
+- 已有正式的 Event / Claim `search_memory` 与 `get_memory` 首片、Episode / Reflection `search_memory` provenance 首片、Episode / scoped Reflection `get_memory`、跨类型 `record_types` union、Claim-linked `get_reflection_history` 首片、scoped `get_self_model_history` 首片、scoped `get_evidence_relation` 首片，以及 scoped `supersede_memory` 首片；versioned identity/commitment ledger 与 record-only reflection history 仍未实现；
 - M1.0 三项 scope/data-integrity 前置门已通过：identity evidence-to-Episode 计数同时限制 Claim/Event scope，Claim search/get 对 mixed-scope revision edge 整边隐藏，新写入拒绝 Unknown owner 且只读 doctor 盘点 legacy Unknown 行；
 - decision 已改用服务端 commitments，并同时 gate requested / provider-selected action；允许的 action-string 结果显式标记为 `experimental_non_authoritative`，且 policy scope 只覆盖 server commitment gate。但其他 snapshot 字段仍由 caller 提供，尚无完整 trusted snapshot handle 或 provenance binding；
 - cross-episode identity support 已使用 claim → evidence → episode 的真实 distinct join，并在 M1.0.1 绑定完整 `MemoryScope`；跨 namespace evidence link 不再改变 identity revision 判断，但仍没有完整 provenance graph；
@@ -84,22 +84,22 @@ M0 未通过前，不开始新 provider、daemon 写能力、remote/team 或正�
 
 目标：完成用户真正需要的本地记忆闭环。
 
-已完成十五片（截至 2026-08-13）：`M1.0.1`–`M1.0.3` 三项 Scope/Data-Integrity Gates、`M1.1.1` Event / `M1.1.2` Claim / `M1.1.3` Episode / `M1.1.4` Reflection scoped search、`M1.1.5` scoped evidence-relation runtime、`M1.1.6` 跨类型 union，以及 Event/Claim/Episode/Reflection lookup、Claim reflection history 与 identity/commitment revision audit。Event / Claim search 和 lookup 继续使用显式 namespace、SQL scope-first filtering、provider-free read 与跨 scope empty/null；Episode search 与 lookup 以同 scope Event membership 投影 Episode，并把 persisted reference 当作 opaque exact ID。Reflection search 与 lookup 只通过同 scope Claim 端点归属，隐藏 mixed-scope edge，并排除 record-only 行。additive `record_types` 在同一 scope 内合并已稳定的四类 tagged record，并按 recorded_at / type / id 收口。第 8 个 MCP 工具 `get_evidence_relation` 把既有只读 projection 收敛为 scoped trigger-window ∩ selected-subset 合同。完整 M1、versioned identity/commitment ledger、record-only reflection history、correction 和真实客户端退出门仍开放。
+已完成十六片（截至 2026-08-13）：`M1.0.1`–`M1.0.3` 三项 Scope/Data-Integrity Gates、`M1.1.1` Event / `M1.1.2` Claim / `M1.1.3` Episode / `M1.1.4` Reflection scoped search、`M1.1.5` scoped evidence-relation runtime、`M1.1.6` 跨类型 union，以及 Event/Claim/Episode/Reflection lookup、Claim reflection history、identity/commitment revision audit 与 scoped Claim audited supersede。Event / Claim search 和 lookup 继续使用显式 namespace、SQL scope-first filtering、provider-free read 与跨 scope empty/null；Episode search 与 lookup 以同 scope Event membership 投影 Episode，并把 persisted reference 当作 opaque exact ID。Reflection search 与 lookup 只通过同 scope Claim 端点归属，隐藏 mixed-scope edge，并排除 record-only 行。additive `record_types` 在同一 scope 内合并已稳定的四类 tagged record，并按 recorded_at / type / id 收口。第 8 个 MCP 工具 `get_evidence_relation` 把既有只读 projection 收敛为 scoped trigger-window ∩ selected-subset 合同。第 10 个 MCP 工具 `supersede_memory` 把 Claim 纠错收敛为显式 namespace + evidence 的 `run_reflection` 门面，默认不 hard delete。完整 M1、versioned identity/commitment ledger、record-only reflection history 和真实客户端退出门仍开放。
 
 计划能力：
 
-- M1.0 前置门、四类 scoped search、evidence-relation runtime、跨类型 union、四类 lookup 与 identity/commitment revision audit 已通过；下一步完成 audited supersede；
-- 已完成 scoped Episode / Reflection provenance search、evidence-relation runtime、跨类型 union、Episode / Reflection lookup 与 self-model history 首片；下一步完成 audited supersede；
+- M1.0 前置门、四类 scoped search、evidence-relation runtime、跨类型 union、四类 lookup、identity/commitment revision audit 与 scoped Claim audited supersede 已通过；下一步完成 current-schema structural readback；
+- 已完成 scoped Episode / Reflection provenance search、evidence-relation runtime、跨类型 union、Episode / Reflection lookup、self-model history 与 Claim supersede 首片；下一步完成 current-schema structural readback；
 - `search_memory`；
 - `get_memory`：当前 Event / Claim / Episode / scoped Reflection；record-only Reflection 仍不可见；
 - `get_reflection_history`：已完成 Claim-linked 首片；record-only history 仍开放；
 - `get_self_model_history`：已完成 scoped identity/commitment revision audit 首片；不是 versioned ledger 或 rollback；
-- 受审计的 `supersede_memory`；
+- `supersede_memory`：已完成 scoped Claim audited supersede 首片；复用 `run_reflection`，默认不 hard delete；
 - current-schema structural readback gate；同版本但约束被削弱的数据库不能报告 `current`；
 - 保留 ID、scope、时间、status、mode 和 provenance 的返回结构；
 - provider 离线时仍可用的 deterministic read path。
 
-冻结顺序：`audited supersede → current-schema structural readback → real-client closure`。
+冻结顺序：`current-schema structural readback → real-client closure`。
 
 退出门：真实 MCP 客户端完成“写入 → 重连 → 检索 → 查看证据 → supersede → 回看历史”，且两个干扰 namespace 没有任何数据混入。
 

@@ -107,6 +107,10 @@ M1.2.5 让 `get_memory(record_type = Reflection)` 接受 opaque persisted reflec
 
 M1.2.6 新增第 9 个 MCP 工具 `get_self_model_history(namespace, history_type, limit?)`。`history_type` 为 Identity 或 Commitment；limit 默认 20、范围 `1..=100`，并用 `has_more` 表示截断。结果来自现有 reflection 审计列，只包含能通过同 scope Claim 归属的行。record-only identity/commitment 更新保持不可见。该首片没有 schema migration、新写路径或 rollback，也不把现态 `identity_claims` / `commitments` 表变成版本账本。
 
+## 2026-08-13 M1.2.7 Audited Supersede Contract
+
+M1.2.7 新增第 10 个 MCP 工具 `supersede_memory(namespace, claim_reference, replacement_claim, replacement_evidence_event_ids, summary)`。它先按显式 namespace 校验 target Claim 与 evidence 都在同一 scope，再调用既有 `run_reflection::execute`。旧 Claim 被标为 `Superseded` 并留下 reflection 审计，默认不 hard delete。missing / cross-scope Claim 或 evidence fail closed；replacement 必须留在请求 namespace。该首片没有 schema migration、第二条 durable write path、identity/commitment 更新或 Event/Episode/Reflection 纠错。
+
 ## 项目定位
 
 当前仓库更准确的定位是：
@@ -123,7 +127,7 @@ M1.2.6 新增第 9 个 MCP 工具 `get_self_model_history(namespace, history_typ
 
 `events -> claims -> self_snapshot -> decision -> reflection`
 
-对应到 MCP 工具层，当前可用的 9 个工具是：
+对应到 MCP 工具层，当前可用的 10 个工具是：
 
 - `ingest_interaction`
 - `search_memory`
@@ -131,6 +135,7 @@ M1.2.6 新增第 9 个 MCP 工具 `get_self_model_history(namespace, history_typ
 - `get_reflection_history`
 - `get_self_model_history`
 - `get_evidence_relation`
+- `supersede_memory`
 - `build_self_snapshot`
 - `decide_with_snapshot`
 - `run_reflection`
@@ -379,7 +384,7 @@ Implementation notes:
 
 - versioned identity/commitment ledger 与 record-only Reflection history
 - current-schema structural readback，以及 exclusive init/migration lifecycle gate
-- 受审计的 `supersede_memory` correction 合同，以及真实 MCP 客户端“记录 → 重连 → 检索 → 查看证据 → supersede → 回看历史”退出证据
+- Event/Episode/Reflection 纠错、identity/commitment 作为 `supersede_memory` 的一部分，以及真实 MCP 客户端“记录 → 重连 → 检索 → 查看证据 → supersede → 回看历史”退出证据
 - richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / inclusive recency window / limit 的窄化 evidence-oriented 查询基础；只读 relation projection 已有首片，但不是 full ranking/weighting engine）
 - richer evidence weighting / full ranking engine
 - `identity_core` 的 richer schema 与版本化形成机制
@@ -391,7 +396,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-08-13`，测试与工具链已完成分层减重；M1.2.6 继续复用以下运行入口：
+截至 `2026-08-13`，测试与工具链已完成分层减重；M1.2.7 继续复用以下运行入口：
 
 - `cargo fmt --check`
 - `git diff --check`

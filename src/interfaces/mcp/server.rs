@@ -27,7 +27,7 @@ use crate::{
         ingest_interaction::IngestInput,
         run_reflection,
         run_reflection::ReflectionInput,
-        search_memory,
+        search_memory, supersede_memory,
     },
     domain::event::EventReference,
     domain::identity_core::IdentityCore,
@@ -58,7 +58,7 @@ use crate::{
 use super::dto::{
     BuildSelfSnapshotParams, DecideWithSnapshotParams, GetEvidenceRelationParams, GetMemoryParams,
     GetReflectionHistoryParams, GetSelfModelHistoryParams, IngestInteractionParams,
-    RunReflectionParams, SearchMemoryParams,
+    RunReflectionParams, SearchMemoryParams, SupersedeMemoryParams,
 };
 
 pub const AUTO_REFLECTION_RUNTIME_HOOKS: [&str; 4] = [
@@ -831,7 +831,62 @@ impl Server {
     }
 
     #[tool(
-        description = "Record a reflection that supersedes an existing claim.",
+        description = "Supersede one scoped claim with an explicit replacement and same-scope evidence. The write reuses the existing run_reflection transaction, marks the old claim superseded, and does not hard delete. Missing, cross-scope, or mixed-namespace targets fail closed. Identity and commitment updates stay on run_reflection.",
+        input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<SupersedeMemoryParams>>()
+    )]
+    async fn supersede_memory(&self, raw_params: JsonObject) -> Result<CallToolResult, McpError> {
+        let correlation_id = generated_mcp_correlation_id();
+        let params = map_tool_error(
+            &self.runtime,
+            "supersede_memory",
+            None,
+            Some(correlation_id.clone()),
+            decode_tool_params::<SupersedeMemoryParams>(raw_params),
+        )
+        .await?;
+        let dashboard_namespace = Some(params.namespace.clone());
+        let input = map_tool_error(
+            &self.runtime,
+            "supersede_memory",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            supersede_memory::SupersedeMemoryInput::try_from(params),
+        )
+        .await?;
+        let result = map_tool_error(
+            &self.runtime,
+            "supersede_memory",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            supersede_memory::execute(&self.runtime, input).await,
+        )
+        .await?;
+        let response_summary = serde_json::json!({
+            "correction_type": "supersede",
+            "durable_write_path": result.durable_write_path,
+        });
+        self.runtime.dashboard.record_tool_ok(
+            "supersede_memory",
+            dashboard_namespace.clone(),
+            Some(correlation_id.clone()),
+            "scoped claim superseded through run_reflection".to_string(),
+            &response_summary,
+        );
+        self.runtime
+            .record_tool_operation(
+                ToolOperationRecord::ok(
+                    "supersede_memory",
+                    dashboard_namespace,
+                    Some(correlation_id),
+                )
+                .with_response_summary(response_summary),
+            )
+            .await;
+        structured(result)
+    }
+
+    #[tool(
+        description = "Record a reflection that supersedes an existing claim. Scoped claim correction with explicit namespace uses supersede_memory.",
         input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<RunReflectionParams>>()
     )]
     async fn run_reflection(&self, raw_params: JsonObject) -> Result<CallToolResult, McpError> {
