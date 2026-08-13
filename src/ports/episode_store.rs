@@ -16,8 +16,14 @@ pub trait EpisodeStore {
     async fn list_episode_references(&self) -> Result<Vec<String>, AppError>;
     async fn list_episode_references_supporting_claims(
         &self,
+        scope: &MemoryScope,
         claim_ids: &[String],
     ) -> Result<Vec<String>, AppError> {
+        if !scope.is_explicitly_scoped() {
+            return Err(AppError::InvalidParams(
+                "claim-to-evidence-to-episode lookup requires an explicit namespace".to_string(),
+            ));
+        }
         if claim_ids.is_empty() {
             return Ok(Vec::new());
         }

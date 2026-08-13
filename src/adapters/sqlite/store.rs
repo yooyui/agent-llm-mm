@@ -1237,8 +1237,14 @@ impl EpisodeStore for SqliteStore {
 
     async fn list_episode_references_supporting_claims(
         &self,
+        scope: &MemoryScope,
         claim_ids: &[String],
     ) -> Result<Vec<String>, AppError> {
+        let (Some(owner), Some(namespace)) = (scope.owner(), scope.namespace()) else {
+            return Err(AppError::InvalidParams(
+                "claim-to-evidence-to-episode lookup requires an explicit namespace".to_string(),
+            ));
+        };
         if claim_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -1249,11 +1255,24 @@ impl EpisodeStore for SqliteStore {
                 episode_events.episode_reference,
                 MIN(episode_events.rowid) AS first_episode_event_rowid
             FROM evidence_links
+            INNER JOIN claims
+                ON claims.claim_id = evidence_links.claim_id
+            INNER JOIN events
+                ON events.event_id = evidence_links.event_id
             INNER JOIN episode_events
                 ON episode_events.event_id = evidence_links.event_id
-            WHERE evidence_links.claim_id IN (
+            WHERE claims.owner =
             "#,
         );
+        query
+            .push_bind(owner_as_str(owner))
+            .push(" AND claims.namespace = ")
+            .push_bind(namespace.as_str())
+            .push(" AND events.owner = ")
+            .push_bind(owner_as_str(owner))
+            .push(" AND events.namespace = ")
+            .push_bind(namespace.as_str())
+            .push(" AND evidence_links.claim_id IN (");
         let mut separated = query.separated(", ");
         for claim_id in claim_ids {
             separated.push_bind(claim_id);

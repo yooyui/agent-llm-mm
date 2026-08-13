@@ -678,7 +678,7 @@ where
         .map(|claim| claim.claim_id.clone())
         .collect::<Vec<_>>();
     let cross_episode_support_count = dedupe_strings(
-        deps.list_episode_references_supporting_claims(&supporting_claim_ids)
+        deps.list_episode_references_supporting_claims(&candidate.scope, &supporting_claim_ids)
             .await?,
     )
     .len();

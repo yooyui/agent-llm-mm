@@ -431,6 +431,39 @@ async fn auto_reflection_ignores_unrelated_episodes_for_identity_support() {
 }
 
 #[tokio::test]
+async fn auto_reflection_ignores_cross_scope_evidence_links_for_identity_support() {
+    let deps = test_support::deps_for_failure_modes();
+    deps.set_self_revision_proposal(test_support::identity_only_auto_reflection_proposal());
+    deps.seed_identity_support_context_with_cross_scope_evidence_links();
+
+    let error = auto_reflect_if_needed::execute(
+        &deps,
+        AutoReflectInput::for_conflict(
+            Namespace::world(),
+            vec!["conflict".to_string(), "identity".to_string()],
+        ),
+    )
+    .await
+    .expect_err("cross-scope evidence links must not satisfy identity episode support");
+
+    assert!(
+        error
+            .to_string()
+            .contains("requires support across at least 2 episodes"),
+        "unexpected rejection: {error}"
+    );
+    assert_eq!(
+        deps.latest_trigger_status(),
+        Some(TriggerLedgerStatus::Rejected)
+    );
+    assert!(deps.reflections().is_empty());
+    assert_eq!(
+        deps.identity().canonical_claims(),
+        &["identity:self=architect".to_string()]
+    );
+}
+
+#[tokio::test]
 async fn auto_reflection_rejects_model_proposed_evidence_outside_trigger_window() {
     let deps = test_support::deps_for_failure_modes();
     deps.seed_failure_window(vec![
@@ -2556,6 +2589,32 @@ impl Default for State {
     }
 }
 
+fn identity_support_events_for_claims(
+    claims: &[StoredClaim],
+    recorded_at: DateTime<Utc>,
+) -> Vec<StoredEvent> {
+    claims
+        .iter()
+        .enumerate()
+        .map(|(index, claim)| {
+            let scope = MemoryScope::for_namespace(claim.claim.namespace().clone());
+            StoredEvent::new(
+                format!("identity-support-event-{index}"),
+                recorded_at,
+                Event::new_with_namespace(
+                    scope
+                        .owner()
+                        .expect("namespace-derived memory scope is explicit"),
+                    claim.claim.namespace().clone(),
+                    EventKind::Observation,
+                    format!("identity support event {index}"),
+                )
+                .expect("claim namespace already matches a legal owner"),
+            )
+        })
+        .collect()
+}
+
 impl FailureModeDeps {
     fn new(state: State) -> Self {
         Self {
@@ -2684,10 +2743,103 @@ impl FailureModeDeps {
                 .collect()
         };
         let mut state = self.state.lock().unwrap();
+        let recorded_at = state.now;
+        let evidence_events = identity_support_events_for_claims(&claims, recorded_at);
+        state
+            .committed
+            .events
+            .retain(|event| !event.event_id.starts_with("identity-support-event-"));
+        state.committed.events.extend(evidence_events);
         state.committed.episode_references = episode_references;
         state.committed.episode_events = episode_events;
         state.committed.claims = claims;
         state.committed.evidence_links = evidence_links;
+    }
+
+    fn seed_identity_support_context_with_cross_scope_evidence_links(&self) {
+        let world_claims = (1..=3)
+            .map(|index| {
+                StoredClaim::new(
+                    format!("claim-supporting-{index}"),
+                    ClaimDraft::new(
+                        Owner::World,
+                        "self.role",
+                        "is",
+                        "principal_architect",
+                        Mode::Observed,
+                    )
+                    .with_namespace(Namespace::world()),
+                    ClaimStatus::Active,
+                )
+            })
+            .collect::<Vec<_>>();
+        let foreign_namespace = Namespace::for_project("other");
+        let mut state = self.state.lock().unwrap();
+        let recorded_at = state.now;
+        let in_scope_event = StoredEvent::new(
+            "identity-support-event-0".to_string(),
+            recorded_at,
+            Event::new(
+                Owner::World,
+                EventKind::Observation,
+                "in-scope identity support event",
+            ),
+        );
+        let foreign_events = (1..=2)
+            .map(|index| {
+                StoredEvent::new(
+                    format!("identity-support-event-{index}"),
+                    recorded_at,
+                    Event::new_with_namespace(
+                        Owner::World,
+                        foreign_namespace.clone(),
+                        EventKind::Observation,
+                        format!("foreign identity support event {index}"),
+                    )
+                    .unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+        state
+            .committed
+            .events
+            .retain(|event| !event.event_id.starts_with("identity-support-event-"));
+        state.committed.events.push(in_scope_event);
+        state.committed.events.extend(foreign_events);
+        state.committed.claims = world_claims;
+        state.committed.evidence_links = vec![
+            (
+                "claim-supporting-1".to_string(),
+                "identity-support-event-0".to_string(),
+            ),
+            (
+                "claim-supporting-2".to_string(),
+                "identity-support-event-1".to_string(),
+            ),
+            (
+                "claim-supporting-3".to_string(),
+                "identity-support-event-2".to_string(),
+            ),
+        ];
+        state.committed.episode_references = vec![
+            "episode:world-a".to_string(),
+            "episode:foreign-a".to_string(),
+            "episode:foreign-b".to_string(),
+        ];
+        state.committed.episode_events = vec![
+            (
+                "episode:world-a".to_string(),
+                "identity-support-event-0".to_string(),
+            ),
+            (
+                "episode:foreign-a".to_string(),
+                "identity-support-event-1".to_string(),
+            ),
+            (
+                "episode:foreign-b".to_string(),
+                "identity-support-event-2".to_string(),
+            ),
+        ];
     }
 
     fn seed_identity_support_context_without_provenance(
@@ -3089,14 +3241,38 @@ impl EpisodeStore for FailureModeDeps {
 
     async fn list_episode_references_supporting_claims(
         &self,
+        scope: &MemoryScope,
         claim_ids: &[String],
     ) -> Result<Vec<String>, AppError> {
+        let (Some(owner), Some(namespace)) = (scope.owner(), scope.namespace()) else {
+            return Err(AppError::InvalidParams(
+                "claim-to-evidence-to-episode lookup requires an explicit namespace".to_string(),
+            ));
+        };
         let state = self.state.lock().unwrap();
+        let scoped_claim_ids = state
+            .committed
+            .claims
+            .iter()
+            .filter(|claim| {
+                claim_ids.contains(&claim.claim_id)
+                    && claim.claim.owner() == owner
+                    && claim.claim.namespace() == namespace
+            })
+            .map(|claim| claim.claim_id.clone())
+            .collect::<Vec<_>>();
         let linked_event_ids = state
             .committed
             .evidence_links
             .iter()
-            .filter(|(claim_id, _)| claim_ids.contains(claim_id))
+            .filter(|(claim_id, event_id)| {
+                scoped_claim_ids.contains(claim_id)
+                    && state.committed.events.iter().any(|event| {
+                        event.event_id == *event_id
+                            && event.event.owner() == owner
+                            && event.event.namespace() == namespace
+                    })
+            })
             .map(|(_, event_id)| event_id.clone())
             .collect::<Vec<_>>();
         Ok(state

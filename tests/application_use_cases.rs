@@ -966,6 +966,27 @@ async fn episode_store_default_preserves_legacy_calls_and_fails_closed_for_scope
         .await
         .expect_err("legacy stores must not silently ignore snapshot time bounds");
     assert!(error.to_string().contains("time-bounded episode lookup"));
+
+    let error = store
+        .list_episode_references_supporting_claims(
+            &MemoryScope::legacy_unscoped(),
+            &["claim-legacy".to_string()],
+        )
+        .await
+        .expect_err("unscoped identity support lookup must fail closed");
+    assert!(error.to_string().contains("requires an explicit namespace"));
+    let error = store
+        .list_episode_references_supporting_claims(
+            &MemoryScope::self_(),
+            &["claim-legacy".to_string()],
+        )
+        .await
+        .expect_err("legacy stores must not invent claim-to-episode provenance");
+    assert!(
+        error
+            .to_string()
+            .contains("claim-to-evidence-to-episode lookup is not supported")
+    );
 }
 
 #[tokio::test]

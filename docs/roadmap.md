@@ -1,7 +1,7 @@
 # MCP Memory Ledger 路线图
 
 状态：`active summary`
-更新日期：`2026-08-09`
+更新日期：`2026-08-13`
 
 本文件只回答三个问题：现在做什么、接下来做什么、哪些方向暂不排期。具体任务、依赖、证据门与停止条件统一见 [2026-07-10 全新项目规划](plans/2026-07-10-product-replan.md)。
 
@@ -40,9 +40,9 @@
 
 - 显式 namespace / manifest / time-window 的 M0.2 scoped snapshot 已收口，但省略 namespace 的 legacy 兼容调用仍未隔离，且尚无完整 recall read model；
 - 已有正式的 Event / Claim `search_memory` 与 `get_memory` 首片、Episode `search_memory` provenance 首片，以及 Claim-linked `get_reflection_history` 首片；Reflection/evidence-relation runtime read、稳定完整 record union、identity/commitment history、record-only reflection、Episode/Reflection lookup 与 correction 接口仍未实现；
-- 三项既有 scope/data-integrity 缺口已进入 M1.0 前置门：identity evidence-to-Episode 计数尚未同时限制 Claim/Event scope，Claim 普通 provenance 对 mixed-scope revision edge 尚未整边隐藏，合法 Unknown owner 写入与 namespace-derived read 的可达性合同尚未冻结；
+- 三项既有 scope/data-integrity 缺口已进入 M1.0 前置门：M1.0.1 已让 identity evidence-to-Episode 计数同时限制 Claim/Event scope；Claim 普通 provenance 对 mixed-scope revision edge 尚未整边隐藏，合法 Unknown owner 写入与 namespace-derived read 的可达性合同尚未冻结；
 - decision 已改用服务端 commitments，并同时 gate requested / provider-selected action；允许的 action-string 结果显式标记为 `experimental_non_authoritative`，且 policy scope 只覆盖 server commitment gate。但其他 snapshot 字段仍由 caller 提供，尚无完整 trusted snapshot handle 或 provenance binding；
-- cross-episode identity support 已使用 claim → evidence → episode 的真实 distinct join，但仍没有完整 provenance graph；
+- cross-episode identity support 已使用 claim → evidence → episode 的真实 distinct join，并在 M1.0.1 绑定完整 `MemoryScope`；跨 namespace evidence link 不再改变 identity revision 判断，但仍没有完整 provenance graph；
 - M0.4 已完成：`init` / `migrate` / 默认只读 `doctor` / 显式 `doctor --allow-bootstrap` 已拆分，`serve` 不再隐式改库；
 - SQLite 使用 schema version 与 migration ledger；legacy migration 先建立 backup anchor 和 restore rehearsal，再在事务中执行 FK / 表行数 readback；
 - dashboard 无认证，但启用时配置已强制 localhost / loopback；remote/public exposure 仍未实现；
@@ -84,11 +84,11 @@ M0 未通过前，不开始新 provider、daemon 写能力、remote/team 或正�
 
 目标：完成用户真正需要的本地记忆闭环。
 
-已完成六片（截至 2026-08-09）：`M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup` 与 `M1.2.3 Scoped Claim Reflection History`。Event / Claim search 和 lookup 继续使用显式 namespace、SQL scope-first filtering、provider-free read 与跨 scope empty/null；Episode search 以同 scope Event membership 投影 Episode，按最新 scoped Event 元组稳定排序，返回原样 opaque reference 与 canonical same-scope Event/Claim provenance。第 7 个 MCP 工具 `get_reflection_history` 仍只覆盖 Claim revision chain。该 Episode 首片没有 schema migration/index，也没有开放 Episode lookup。完整 M1、Reflection/evidence-relation runtime read、稳定完整 record union、identity/commitment history、record-only reflection、Episode/Reflection lookup、correction 和真实客户端退出门仍开放。
+已完成七片（截至 2026-08-13）：`M1.0.1 Scoped Identity Evidence-to-Episode Gate`、`M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup` 与 `M1.2.3 Scoped Claim Reflection History`。Event / Claim search 和 lookup 继续使用显式 namespace、SQL scope-first filtering、provider-free read 与跨 scope empty/null；Episode search 以同 scope Event membership 投影 Episode，按最新 scoped Event 元组稳定排序，返回原样 opaque reference 与 canonical same-scope Event/Claim provenance。第 7 个 MCP 工具 `get_reflection_history` 仍只覆盖 Claim revision chain。Identity supporting-Episode 查询现在绑定完整 `MemoryScope`，并在分组/计数前同时限制 Claim 与 Evidence Event。该 Episode 首片没有 schema migration/index，也没有开放 Episode lookup。完整 M1、Reflection/evidence-relation runtime read、稳定完整 record union、identity/commitment history、record-only reflection、Episode/Reflection lookup、correction 和真实客户端退出门仍开放。
 
 计划能力：
 
-- 先完成 M1.0 三项 Scope/Data-Integrity Gates；全部通过前不继续扩张 Reflection、Evidence Relation、Stable Union、lookup/history 或 correction 合同；
+- 先完成剩余 M1.0 Scope/Data-Integrity Gates（M1.0.2 / M1.0.3）；全部通过前不继续扩张 Reflection、Evidence Relation、Stable Union、lookup/history 或 correction 合同；
 - 已完成 scoped Episode provenance search 首片；下一步依次完成 scoped Reflection read、evidence-relation runtime read 与稳定跨类型合同；
 - `search_memory`；
 - `get_memory`：当前仅 Event / Claim；Episode lookup 在 Episode search 合同稳定后单独实现；

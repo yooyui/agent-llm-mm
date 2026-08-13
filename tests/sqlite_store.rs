@@ -136,13 +136,17 @@ async fn sqlite_lists_only_episodes_reached_through_claim_evidence_links() {
             .unwrap();
     }
 
+    let world_scope = MemoryScope::for_namespace(Namespace::world());
     let episodes = context
         .store
-        .list_episode_references_supporting_claims(&[
-            "claim-support-1".to_string(),
-            "claim-support-2".to_string(),
-            "claim-support-3".to_string(),
-        ])
+        .list_episode_references_supporting_claims(
+            &world_scope,
+            &[
+                "claim-support-1".to_string(),
+                "claim-support-2".to_string(),
+                "claim-support-3".to_string(),
+            ],
+        )
         .await
         .unwrap();
 
@@ -156,10 +160,130 @@ async fn sqlite_lists_only_episodes_reached_through_claim_evidence_links() {
     assert!(
         context
             .store
-            .list_episode_references_supporting_claims(&[])
+            .list_episode_references_supporting_claims(&world_scope, &[])
             .await
             .unwrap()
             .is_empty()
+    );
+    let unscoped_error = context
+        .store
+        .list_episode_references_supporting_claims(&MemoryScope::legacy_unscoped(), &[])
+        .await
+        .expect_err("unscoped identity support lookup must fail closed");
+    assert!(
+        unscoped_error
+            .to_string()
+            .contains("requires an explicit namespace")
+    );
+}
+
+#[tokio::test]
+async fn sqlite_identity_support_ignores_cross_scope_evidence_links() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let world_scope = MemoryScope::for_namespace(Namespace::world());
+    let foreign_namespace = Namespace::for_project("other");
+
+    for (index, claim_id) in ["claim-world-1", "claim-world-2", "claim-world-3"]
+        .into_iter()
+        .enumerate()
+    {
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                claim_id.to_string(),
+                ClaimDraft::new(
+                    Owner::World,
+                    "self.role",
+                    "is",
+                    "principal_architect",
+                    Mode::Observed,
+                ),
+                ClaimStatus::Active,
+            ))
+            .await
+            .unwrap();
+        context
+            .store
+            .append_event(StoredEvent::new(
+                format!("evt-world-{index}"),
+                now + chrono::Duration::seconds(index as i64),
+                Event::new(
+                    Owner::World,
+                    EventKind::Observation,
+                    format!("world evidence {index}"),
+                ),
+            ))
+            .await
+            .unwrap();
+        context
+            .store
+            .append_event(StoredEvent::new(
+                format!("evt-foreign-{index}"),
+                now + chrono::Duration::seconds(20 + index as i64),
+                Event::new_with_namespace(
+                    Owner::World,
+                    foreign_namespace.clone(),
+                    EventKind::Observation,
+                    format!("foreign evidence {index}"),
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+
+    context
+        .store
+        .link_evidence("claim-world-1".to_string(), "evt-world-0".to_string())
+        .await
+        .unwrap();
+    context
+        .store
+        .link_evidence("claim-world-2".to_string(), "evt-foreign-1".to_string())
+        .await
+        .unwrap();
+    context
+        .store
+        .link_evidence("claim-world-3".to_string(), "evt-foreign-2".to_string())
+        .await
+        .unwrap();
+    for (episode_reference, event_id) in [
+        ("episode:world-a", "evt-world-0"),
+        ("episode:foreign-a", "evt-foreign-1"),
+        ("episode:foreign-b", "evt-foreign-2"),
+    ] {
+        context
+            .store
+            .record_event_in_episode(episode_reference.to_string(), event_id.to_string())
+            .await
+            .unwrap();
+    }
+
+    let world_claim_ids = [
+        "claim-world-1".to_string(),
+        "claim-world-2".to_string(),
+        "claim-world-3".to_string(),
+    ];
+    assert_eq!(
+        context
+            .store
+            .list_episode_references_supporting_claims(&world_scope, &world_claim_ids)
+            .await
+            .unwrap(),
+        vec!["episode:world-a".to_string()]
+    );
+    assert!(
+        context
+            .store
+            .list_episode_references_supporting_claims(
+                &MemoryScope::for_namespace(foreign_namespace),
+                &world_claim_ids,
+            )
+            .await
+            .unwrap()
+            .is_empty(),
+        "foreign-scope query must not count world claims even when they link to foreign events"
     );
 }
 

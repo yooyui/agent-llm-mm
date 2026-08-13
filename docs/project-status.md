@@ -28,7 +28,7 @@ M0.2 的完成对象仅是显式 scoped snapshot 及其必需边界：scope/mani
 - `build_self_snapshot` 已增加 additive `recorded_after` / `recorded_before`：任一时间边界都要求显式 `namespace`，使用 inclusive 边界，RFC3339 输入归一到 UTC，倒置窗口由 DTO / application fail closed。SQLite evidence 查询在同一条 SQL 中取 owner/namespace、manifest（如有）与时间窗交集；SQL 将项目 canonical timestamp 与旧库常见 `Z` / offset 文本转换为固定宽度 UTC 秒 + 9 位小数秒排序键，避免 SQLite date function 折叠亚毫秒差异，再以 `rowid DESC` 稳定 tie-break。episode 按窗口内最新合格事件元组排序，避免独立 `MAX(recorded_at)` / `MAX(rowid)` 来自不同事件。显式窗口空交集保持为空；claims 没有 recorded timestamp，因此仍只做 scope filtering。legacy unbounded snapshot 继续兼容，但 snapshot evidence / episode SQLite 读取已统一 recent-first；手工写入且超出项目 canonical / 常见 legacy 形式的畸形时间文本会 fail closed，而不是扩大 bounded 查询。
 - automatic self-revision 已从触发 namespace 派生完整 owner + namespace scope：先冻结 trigger window，再取授权 scope 与 trigger manifest 的交集，并以该受限窗口构建 revision snapshot 与 episode read；无有效交集保持 fail-closed，不回退到历史全量。active reflection runtime 的 MCP/application/model proposal evidence 输入均接受裸 event ID 与 `event:<id>`，以底层 raw ID 保序去重；SQLite 查询、evidence links、reflection audit 与 auto-reflection diagnostics 的明确 `*_event_ids` 兼容字段继续存取 raw ID，reference-shaped 输出才使用 canonical `event:<id>`。
 - `decide_with_snapshot` 仍接收调用方 snapshot，但 application 会在 gate 与 provider 调用前用当前服务端 commitment store 覆盖其中的 commitments，并对 requested action 与 provider-selected action 复用同一 commitment gate；selected action 被拒绝时返回 blocked、保留被拒绝的 `selected_action`，且 `decision = null`。允许路径保留兼容的 `model_decision` / action-string payload，同时明确返回 `decision_authority = experimental_non_authoritative` 与 `policy_scope = server_commitment_gate_only`；`gate.blocked = false` 不是完整 policy-passed verdict。identity / claims / evidence / episodes 仍是 caller-provided，尚无 server-created snapshot handle 或完整 policy binding，因此仍不能描述为完整可信策略执行器。
-- cross-episode identity support 已不再使用全局 episode 数量推断：application 先选出与 proposed identity value 匹配的 active claims，再通过只读 store port 与 SQLite `evidence_links` → `episode_events` join 计算 distinct supporting episodes；无关 episode、无 evidence link 的 claim 和空 claim 集都不会提高支持数。该切片复用现有 schema，仍不是完整 provenance graph。
+- cross-episode identity support 已不再使用全局 episode 数量推断：application 先选出与 proposed identity value 匹配的 active claims，再通过只读 store port 与 SQLite `evidence_links` → `episode_events` join 计算 distinct supporting episodes；无关 episode、无 evidence link 的 claim 和空 claim 集都不会提高支持数。M1.0.1 进一步要求该查询绑定完整 `MemoryScope`，并在分组/计数前同时限制 Claim 与 Evidence Event 的 owner + namespace；跨 namespace evidence link 不再改变 identity revision 判断。该切片复用现有 schema，仍不是完整 provenance graph。
 - governance failure atomicity 已由 application fault injection 与真实 SQLite transaction 回归共同覆盖：validation rejection 不进入 reflection transaction；handled-ledger append 或 commit 失败时，pending identity / commitment / claim-evidence / reflection / handled audit 均回滚，随后事务外只记录 rejected trigger audit。该证据不等于进程崩溃恢复、跨进程事务或分布式一致性。
 - `doctor` 默认执行只读检查；missing / old / read-only 数据库只报告状态，不创建、迁移或 seed。只有显式 `init`、`migrate` 或 `doctor --allow-bootstrap` 可以改变数据库；`serve` 只接受 current database。
 - SQLite 当前 schema version 为 3，并使用 `schema_migrations` ledger。legacy rebuild 在原库写入前建立 backup anchor 和 restore rehearsal，随后在事务内执行 row-count preservation、`foreign_key_check`、ledger 与表行数 readback；这仍不是 remote backup、scheduled backup、cloud sync 或 production DR。
@@ -57,7 +57,13 @@ SQLite 从 `episode_events -> events` 出发，在 exact filter、分组、排�
 
 该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1 当前完成六个独立切片，但 Reflection/evidence-relation runtime read、稳定完整 record union、Episode/Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
 
-同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan：identity supporting-Episode 查询尚未同时限制 Claim 与 Event scope；Claim 普通 provenance 对 mixed-scope revision edge 尚可能保留 Reflection ID；schema/domain 允许的部分 `Owner::Unknown` world/project 记录无法由 namespace-derived scoped read 找回。三项全部通过前不继续扩张后续 M1 feature；它们不回滚本切片已验证的 scope-first Episode projection。
+同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan。2026-08-13 已完成其中第一项：identity supporting-Episode 查询现在同时限制 Claim 与 Event scope。仍开放的两项是：Claim 普通 provenance 对 mixed-scope revision edge 尚可能保留 Reflection ID；schema/domain 允许的部分 `Owner::Unknown` world/project 记录无法由 namespace-derived scoped read 找回。剩余两项全部通过前不继续扩张后续 M1 feature；它们不回滚本切片已验证的 scope-first Episode projection。
+
+## 2026-08-13 M1.0.1 Scoped Identity Evidence-to-Episode Gate
+
+M1.0.1 让 identity auto-reflection 的 supporting-Episode 查询绑定完整 `MemoryScope`。`list_episode_references_supporting_claims` 现在接收 server-derived owner + namespace；legacy unscoped 调用 fail closed。SQLite 在 Episode 分组/计数前 JOIN `claims` 与 `events`，两端都必须匹配请求 scope。恶意跨 namespace 的 persisted evidence link 不再把外 scope Episode 计入 `cross_episode_support_count`，因此也不能单独把 identity revision 从拒绝变成通过。
+
+该切片没有 schema migration、新 index 或新 MCP tool。它不修复 mixed-scope Claim revision-edge redaction，也不冻结 Unknown owner 的写读可达性合同。
 
 ## 项目定位
 
@@ -327,7 +333,7 @@ Implementation notes:
 
 ## 未实现
 
-- M1.0 scope/data-integrity gates：scoped identity evidence-to-Episode 计数、mixed-scope Claim revision edge 整边 redaction，以及 owner/namespace 写读可达性合同
+- M1.0 剩余 scope/data-integrity gates：mixed-scope Claim revision edge 整边 redaction，以及 owner/namespace 写读可达性合同
 - scoped Reflection provenance read、正式 evidence-relation runtime read 与稳定完整 cross-type record union
 - Episode / Reflection `get_memory`、identity/commitment history 与 record-only Reflection history
 - current-schema structural readback，以及 exclusive init/migration lifecycle gate
@@ -343,7 +349,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-08-09`，测试与工具链已完成分层减重；M1.1.3 继续复用以下运行入口：
+截至 `2026-08-13`，测试与工具链已完成分层减重；M1.0.1 继续复用以下运行入口：
 
 - `cargo fmt --check`
 - `git diff --check`

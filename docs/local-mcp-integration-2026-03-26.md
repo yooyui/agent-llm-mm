@@ -201,7 +201,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 
 ### 未实现
 
-- M1.0 scope/data-integrity gates：scoped identity evidence-to-Episode 计数、mixed-scope Claim revision edge 整边隐藏、owner/namespace 写读可达性合同
+- M1.0 剩余 scope/data-integrity gates：mixed-scope Claim revision edge 整边隐藏、owner/namespace 写读可达性合同
 - scoped Reflection/evidence-relation runtime read 与稳定完整 cross-type record union
 - Episode / Reflection `get_memory`、identity/commitment 和 record-only Reflection history
 - audited `supersede_memory` correction 与真实客户端 M1 退出故事

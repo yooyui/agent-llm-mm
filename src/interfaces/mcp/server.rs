@@ -1130,10 +1130,11 @@ impl EpisodeStore for Runtime {
 
     async fn list_episode_references_supporting_claims(
         &self,
+        scope: &MemoryScope,
         claim_ids: &[String],
     ) -> Result<Vec<String>, AppError> {
         self.store
-            .list_episode_references_supporting_claims(claim_ids)
+            .list_episode_references_supporting_claims(scope, claim_ids)
             .await
     }
 
