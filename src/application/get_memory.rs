@@ -61,6 +61,7 @@ where
             claim_reference,
             claim_status: None,
             mode: None,
+            episode_reference: None,
             limit: 1,
         },
     )

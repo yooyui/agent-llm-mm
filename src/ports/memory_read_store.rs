@@ -5,7 +5,7 @@ use crate::{
     domain::{
         claim::ClaimReference,
         event::EventReference,
-        types::{EventKind, MemoryScope, Mode},
+        types::{EventKind, MemoryScope, Mode, Namespace, Owner},
     },
     error::AppError,
 };
@@ -29,6 +29,23 @@ pub struct EventReadRecord {
     pub event: StoredEvent,
     pub claim_ids: Vec<String>,
     pub episode_references: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EpisodeRecordQuery {
+    pub scope: MemoryScope,
+    pub episode_reference: Option<String>,
+    pub limit: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EpisodeReadRecord {
+    pub episode_reference: String,
+    pub recorded_at: DateTime<Utc>,
+    pub owner: Owner,
+    pub namespace: Namespace,
+    pub event_references: Vec<EventReference>,
+    pub claim_references: Vec<ClaimReference>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,6 +126,26 @@ impl EventReadRecord {
     }
 }
 
+impl EpisodeReadRecord {
+    pub fn new(
+        episode_reference: String,
+        recorded_at: DateTime<Utc>,
+        owner: Owner,
+        namespace: Namespace,
+        event_references: Vec<EventReference>,
+        claim_references: Vec<ClaimReference>,
+    ) -> Self {
+        Self {
+            episode_reference,
+            recorded_at,
+            owner,
+            namespace,
+            event_references,
+            claim_references,
+        }
+    }
+}
+
 #[async_trait]
 pub trait MemoryReadStore {
     async fn query_event_records(
@@ -120,6 +157,11 @@ pub trait MemoryReadStore {
         &self,
         query: ClaimRecordQuery,
     ) -> Result<Vec<ClaimReadRecord>, AppError>;
+
+    async fn query_episode_records(
+        &self,
+        query: EpisodeRecordQuery,
+    ) -> Result<Vec<EpisodeReadRecord>, AppError>;
 
     async fn query_claim_reflection_history(
         &self,

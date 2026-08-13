@@ -83,6 +83,23 @@ impl From<MemoryRecordTypeDto> for MemoryRecordType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum SearchMemoryRecordTypeDto {
+    Event,
+    Claim,
+    Episode,
+}
+
+impl From<SearchMemoryRecordTypeDto> for MemoryRecordType {
+    fn from(value: SearchMemoryRecordTypeDto) -> Self {
+        match value {
+            SearchMemoryRecordTypeDto::Event => Self::Event,
+            SearchMemoryRecordTypeDto::Claim => Self::Claim,
+            SearchMemoryRecordTypeDto::Episode => Self::Episode,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum ClaimStatusDto {
     Active,
     Disputed,
@@ -472,7 +489,7 @@ pub struct EvidenceQueryDto {
 pub struct SearchMemoryParams {
     pub namespace: String,
     #[serde(default)]
-    pub record_type: Option<MemoryRecordTypeDto>,
+    pub record_type: Option<SearchMemoryRecordTypeDto>,
     #[serde(default)]
     pub event_reference: Option<String>,
     #[serde(default)]
@@ -489,6 +506,8 @@ pub struct SearchMemoryParams {
     pub claim_status: Option<ClaimStatusDto>,
     #[serde(default)]
     pub mode: Option<ModeDto>,
+    #[serde(default)]
+    pub episode_reference: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -526,15 +545,12 @@ impl TryFrom<GetMemoryParams> for GetMemoryInput {
     type Error = AppError;
 
     fn try_from(value: GetMemoryParams) -> Result<Self, Self::Error> {
-        let record_type = value
-            .record_type
-            .map(MemoryRecordType::from)
-            .unwrap_or(MemoryRecordType::Event);
+        let record_type = value.record_type.unwrap_or(MemoryRecordTypeDto::Event);
         let id = match record_type {
-            MemoryRecordType::Event => MemoryRecordReference::Event(
+            MemoryRecordTypeDto::Event => MemoryRecordReference::Event(
                 EventReference::parse(value.id).map_err(AppError::from)?,
             ),
-            MemoryRecordType::Claim => MemoryRecordReference::Claim(
+            MemoryRecordTypeDto::Claim => MemoryRecordReference::Claim(
                 ClaimReference::parse(value.id).map_err(AppError::from)?,
             ),
         };
@@ -573,6 +589,7 @@ impl TryFrom<SearchMemoryParams> for SearchMemoryInput {
                 (record_type == MemoryRecordType::Claim).then_some(ClaimStatus::Active)
             }),
             mode: value.mode.map(Mode::from),
+            episode_reference: value.episode_reference,
             limit: value.limit.unwrap_or(DEFAULT_SEARCH_MEMORY_LIMIT),
         };
         input.validate()?;

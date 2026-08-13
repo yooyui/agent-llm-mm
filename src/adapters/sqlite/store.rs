@@ -21,11 +21,12 @@ use crate::{
     ports::{
         ClaimReadRecord, ClaimRecordQuery, ClaimReflectionHistoryPage, ClaimReflectionHistoryQuery,
         ClaimReflectionHistoryRecord, ClaimRevisionLinks, ClaimStatus, ClaimStore, CommitmentStore,
-        EpisodeStore, EventReadRecord, EventRecordQuery, EventStore, EvidenceQuery, IdentityStore,
-        IngestTransaction, IngestTransactionRunner, MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore,
-        OperationLogQuery, OperationLogStore, ReflectionStore, ReflectionTransaction,
-        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
-        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
+        EpisodeReadRecord, EpisodeRecordQuery, EpisodeStore, EventReadRecord, EventRecordQuery,
+        EventStore, EvidenceQuery, IdentityStore, IngestTransaction, IngestTransactionRunner,
+        MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore, OperationLogQuery, OperationLogStore,
+        ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner, StoredClaim,
+        StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
+        TriggerLedgerStore,
     },
 };
 
@@ -368,6 +369,137 @@ impl MemoryReadStore for SqliteStore {
             .collect())
     }
 
+    async fn query_episode_records(
+        &self,
+        query: EpisodeRecordQuery,
+    ) -> Result<Vec<EpisodeReadRecord>, AppError> {
+        if !query.scope.is_explicitly_scoped() {
+            return Err(AppError::InvalidParams(
+                "episode record query requires an explicit namespace".to_string(),
+            ));
+        }
+        if query.limit == 0 {
+            return Err(AppError::InvalidParams(
+                "episode record query limit must be at least 1".to_string(),
+            ));
+        }
+        if query.limit > MAX_EVENT_RECORD_QUERY_LIMIT {
+            return Err(AppError::InvalidParams(format!(
+                "episode record query limit must be at most {MAX_EVENT_RECORD_QUERY_LIMIT}"
+            )));
+        }
+        if let Some(reference) = query.episode_reference.as_deref()
+            && (reference.is_empty() || reference.trim() != reference)
+        {
+            return Err(AppError::InvalidParams(
+                "episode_reference must be non-empty and have no leading or trailing whitespace"
+                    .to_string(),
+            ));
+        }
+
+        let owner = query
+            .scope
+            .owner()
+            .expect("explicit memory scope must have an owner");
+        let namespace = query
+            .scope
+            .namespace()
+            .expect("explicit memory scope must have a namespace");
+        let recorded_at_sort_key = sqlite_rfc3339_sort_key("e.recorded_at");
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            r#"
+            WITH ranked_episode_events AS (
+                SELECT
+                    ee.episode_reference,
+                    e.recorded_at,
+            "#,
+        );
+        builder
+            .push(&recorded_at_sort_key)
+            .push(
+                r#" AS recorded_at_sort_key,
+                    e.rowid AS event_rowid,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY ee.episode_reference
+                        ORDER BY "#,
+            )
+            .push(&recorded_at_sort_key)
+            .push(
+                r#" DESC, e.rowid DESC
+                    ) AS episode_rank
+                FROM episode_events ee
+                INNER JOIN events e ON e.event_id = ee.event_id
+                WHERE e.owner = "#,
+            )
+            .push_bind(owner_as_str(owner))
+            .push(" AND e.namespace = ")
+            .push_bind(namespace.as_str());
+        if let Some(reference) = query.episode_reference.as_deref() {
+            builder
+                .push(" AND ee.episode_reference = ")
+                .push_bind(reference);
+        }
+        builder
+            .push(
+                r#"
+            )
+            SELECT episode_reference, recorded_at, recorded_at_sort_key, event_rowid
+            FROM ranked_episode_events
+            WHERE episode_rank = 1
+            ORDER BY recorded_at_sort_key DESC, event_rowid DESC, episode_reference ASC
+            LIMIT "#,
+            )
+            .push_bind(i64::try_from(query.limit).map_err(|_| {
+                AppError::InvalidParams(
+                    "episode record query limit exceeds the supported maximum".to_string(),
+                )
+            })?);
+
+        let episode_rows = map_sqlite(builder.build().fetch_all(&self.pool).await)?
+            .into_iter()
+            .map(|row| {
+                Ok((
+                    row.get::<String, _>("episode_reference"),
+                    parse_timestamp(&row.get::<String, _>("recorded_at"))?,
+                ))
+            })
+            .collect::<Result<Vec<_>, AppError>>()?;
+        if episode_rows.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let episode_references = episode_rows
+            .iter()
+            .map(|(reference, _)| reference.as_str())
+            .collect::<Vec<_>>();
+        let event_references =
+            load_episode_event_references(&self.pool, &episode_references, owner, namespace)
+                .await?;
+        let claim_references =
+            load_episode_claim_references(&self.pool, &episode_references, owner, namespace)
+                .await?;
+
+        Ok(episode_rows
+            .into_iter()
+            .map(|(episode_reference, recorded_at)| {
+                EpisodeReadRecord::new(
+                    episode_reference.clone(),
+                    recorded_at,
+                    owner,
+                    namespace.clone(),
+                    event_references
+                        .get(&episode_reference)
+                        .cloned()
+                        .unwrap_or_default(),
+                    claim_references
+                        .get(&episode_reference)
+                        .cloned()
+                        .unwrap_or_default(),
+                )
+            })
+            .collect())
+    }
+
     async fn query_claim_records(
         &self,
         query: ClaimRecordQuery,
@@ -691,6 +823,77 @@ async fn load_event_episode_references(
             .entry(row.get("event_id"))
             .or_default()
             .push(row.get("episode_reference"));
+    }
+    Ok(grouped)
+}
+
+async fn load_episode_event_references(
+    pool: &SqlitePool,
+    episode_references: &[&str],
+    owner: Owner,
+    namespace: &Namespace,
+) -> Result<BTreeMap<String, Vec<EventReference>>, AppError> {
+    let recorded_at_sort_key = sqlite_rfc3339_sort_key("e.recorded_at");
+    let mut builder = QueryBuilder::<Sqlite>::new(
+        "SELECT ee.episode_reference, e.event_id FROM episode_events ee INNER JOIN events e ON e.event_id = ee.event_id WHERE ee.episode_reference IN (",
+    );
+    let mut separated = builder.separated(", ");
+    for episode_reference in episode_references {
+        separated.push_bind(*episode_reference);
+    }
+    separated.push_unseparated(") AND e.owner = ");
+    builder
+        .push_bind(owner_as_str(owner))
+        .push(" AND e.namespace = ")
+        .push_bind(namespace.as_str())
+        .push(" ORDER BY ee.episode_reference, ")
+        .push(&recorded_at_sort_key)
+        .push(" DESC, e.rowid DESC");
+
+    let mut grouped = BTreeMap::<String, Vec<EventReference>>::new();
+    for row in map_sqlite(builder.build().fetch_all(pool).await)? {
+        grouped
+            .entry(row.get("episode_reference"))
+            .or_default()
+            .push(EventReference::from_event_id(
+                row.get::<String, _>("event_id"),
+            ));
+    }
+    Ok(grouped)
+}
+
+async fn load_episode_claim_references(
+    pool: &SqlitePool,
+    episode_references: &[&str],
+    owner: Owner,
+    namespace: &Namespace,
+) -> Result<BTreeMap<String, Vec<ClaimReference>>, AppError> {
+    let mut builder = QueryBuilder::<Sqlite>::new(
+        "SELECT DISTINCT ee.episode_reference, c.claim_id FROM episode_events ee INNER JOIN events e ON e.event_id = ee.event_id INNER JOIN evidence_links el ON el.event_id = e.event_id INNER JOIN claims c ON c.claim_id = el.claim_id WHERE ee.episode_reference IN (",
+    );
+    let mut separated = builder.separated(", ");
+    for episode_reference in episode_references {
+        separated.push_bind(*episode_reference);
+    }
+    separated.push_unseparated(") AND e.owner = ");
+    builder
+        .push_bind(owner_as_str(owner))
+        .push(" AND e.namespace = ")
+        .push_bind(namespace.as_str())
+        .push(" AND c.owner = ")
+        .push_bind(owner_as_str(owner))
+        .push(" AND c.namespace = ")
+        .push_bind(namespace.as_str())
+        .push(" ORDER BY ee.episode_reference, c.claim_id");
+
+    let mut grouped = BTreeMap::<String, Vec<ClaimReference>>::new();
+    for row in map_sqlite(builder.build().fetch_all(pool).await)? {
+        grouped
+            .entry(row.get("episode_reference"))
+            .or_default()
+            .push(ClaimReference::from_claim_id(
+                row.get::<String, _>("claim_id"),
+            ));
     }
     Ok(grouped)
 }

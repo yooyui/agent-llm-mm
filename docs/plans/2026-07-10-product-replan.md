@@ -1,6 +1,6 @@
 # MCP Memory Ledger 全新项目规划
 
-状态：`active / M0 complete / M1 active / M1.1.1, M1.1.2, M1.2.1, M1.2.2 and M1.2.3 complete`
+状态：`active / M0 complete / M1 active / M1.1.1, M1.1.2, M1.1.3, M1.2.1, M1.2.2 and M1.2.3 complete`
 规划日期：`2026-07-10`
 规划输入基线：`dev-work@6fcbb5f`
 主线整理基线：`1f7390d`
@@ -31,7 +31,7 @@ MCP Memory Ledger 已经拥有可运行的 Rust + SQLite + MCP `stdio` 核心、
 ### 2.1 已实现
 
 - 单一 Rust crate，正式 CLI 为 `serve` 与 `doctor`。
-- MCP `stdio` 运行时暴露 7 个工具：`ingest_interaction`、`search_memory`、`get_memory`、`get_reflection_history`、`build_self_snapshot`、`decide_with_snapshot`、`run_reflection`。其中 `search_memory` / `get_memory` 已覆盖显式 scope 的 Event 与 Claim 首片，`get_reflection_history` 已覆盖 exact scoped Claim revision chain 首片。
+- MCP `stdio` 运行时暴露 7 个工具：`ingest_interaction`、`search_memory`、`get_memory`、`get_reflection_history`、`build_self_snapshot`、`decide_with_snapshot`、`run_reflection`。其中 `search_memory` 已覆盖显式 scope 的 Event、Claim 与 Episode provenance 首片，`get_memory` 已覆盖 Event 与 Claim 首片，`get_reflection_history` 已覆盖 exact scoped Claim revision chain 首片。
 - SQLite 持久化 events、claims、evidence links、episode events、reflections、trigger ledger、identity、commitments 和 operation log。
 - ingest 与 reflection 具备事务边界；`run_reflection` 是当前 identity / commitments 的唯一 durable write path。
 - mock、OpenAI-compatible 和 OpenRouter provider 路径存在。
@@ -47,7 +47,7 @@ MCP Memory Ledger 已经拥有可运行的 Rust + SQLite + MCP `stdio` 核心、
 | F-03 | M0.3 已用 claim → evidence → episode distinct join 替代全局数量推断，并覆盖 governance transaction failure atomicity | 现有 join 仍不是完整 provenance graph，事务证据也不是 crash recovery | M0.3 限定退出门已通过；完整 provenance / recovery 继续保持公开边界 |
 | F-04 | M0.4 已拆分显式 init / migrate / bootstrap permission；默认 doctor 只读，serve current-only | remote backup / scheduled backup / production DR 仍不属于本地 SQLite 合同 | M0.4 已收口；后续 schema 变更继续复用 ledger / backup / rehearsal / transaction / readback 门 |
 | F-05 | M0.4 已为 legacy rebuild 建立 schema version、migration ledger、备份/恢复演练与显式事务 | 本地 SQLite 合同已收口；remote/scheduled/production DR 仍不存在 | 后续 schema 变更必须复用同一迁移与恢复门禁 |
-| F-06 | M1.1.1 / M1.1.2 已提供 scoped Event / Claim search 与 provenance；M1.2.1 / M1.2.2 增加两类 stable-ID lookup；M1.2.3 增加 Claim-linked reflection history 首片 | Event/Claim search + lookup 与 Claim revision chain 可用，但 identity/commitment history、record-only reflection、episode/reflection lookup 与纠错仍缺统一接口 | 继续按 M1 建设 Read Model v2 |
+| F-06 | M1.1.1 / M1.1.2 / M1.1.3 已提供 scoped Event / Claim / Episode search 与 provenance；M1.2.1 / M1.2.2 增加 Event/Claim stable-ID lookup；M1.2.3 增加 Claim-linked reflection history 首片 | 三类 search、两类 lookup 与 Claim revision chain 可用，但 Reflection/evidence-relation runtime read、稳定完整 union、Episode/Reflection lookup、identity/commitment history、record-only reflection 与纠错仍缺统一接口 | 继续按 M1 建设 Read Model v2 |
 | F-07 | Dashboard 仍无认证，但启用时已拒绝非 loopback host | 本地只读口径已有强制边界；remote dashboard 仍未授权 | M0.5 已收口；保持 loopback-only，认证与 remote 另走独立 gate |
 | F-08 | Linux/macOS CI 与 CLI stderr tracing 已建立；真实二进制包尚未建立 | source gate 已持续化，artifact delivery 仍不完整 | M0.5 已收口；M2 补真实包 |
 | F-09 | evidence / episode / memory layer projection 主要停留在定义和测试调用 | 测试存在被误读为运行时产品能力 | 未接入前标记 partial / experimental |
@@ -258,6 +258,16 @@ M0 已收口，当前只能从 M1 领取一个独立最小切片。新 provider�
 
 ## 7. M1 — Trustworthy Recall
 
+### M1.0 Scope and Data-Integrity Gates
+
+2026-08-09 的只读复核确认：M1.1.3 新增的 Episode 查询自身已使用 scope-first projection，可以保持 completed；但现有写侧和其他读侧仍有三项 scope / data-integrity 缺口。以下三项全部通过前，不继续领取 M1.1.4 之后的 Reflection、Evidence Relation、Stable Union、lookup/history 或 correction feature slice。
+
+- [ ] **M1.0.1 Scoped Identity Evidence-to-Episode Gate** — `list_episode_references_supporting_claims` 必须接收或可靠派生完整 `MemoryScope`，在 Episode 分组/计数前同时限制 Claim 与 Evidence Event 的 owner + namespace；恶意跨 namespace evidence link 不得改变 identity revision 判断。
+- [ ] **M1.0.2 Mixed-Scope Claim Revision Edge Redaction** — Claim search/get 遇到任一端越 scope 的 revision edge 时整边隐藏，不保留 Reflection ID、另一端 Claim ID、计数或存在性标志；source 与 superseded-by 两个方向都要有负向回归。
+- [ ] **M1.0.3 Owner-Namespace Read-Write Reachability Contract** — 冻结全部合法 owner/namespace 组合的写后可读合同；不得用 unscoped fallback 或静默 `OR owner = unknown` 扩大查询。对 legacy Unknown 数据先做只读 inventory/doctor 提示，迁移或重写需另行批准。
+
+三项代码任务彼此可独立，但执行优先级固定为治理判断完整性 → 跨 scope metadata 泄漏 → 写读可达性。它们是后续 M1 feature 的前置门，不把本地 namespace 选择器表述成远程 tenant authorization。
+
 ### M1.1 Read Model v2
 
 - [x] **M1.1.1 Scoped Event Recall Read Model**
@@ -272,7 +282,16 @@ M0 已收口，当前只能从 M1 领取一个独立最小切片。新 provider�
 - 已完成（2026-07-15）：SQLite 在所有 claim filter / limit 之前先按 server-derived owner + namespace 收窄；结果返回 canonical `claim:<id>`、subject/predicate/object、mode、status、canonical evidence event references、episode references，以及直接 source/superseded reflection links。查询只读、provider-free，跨 scope exact claim reference 返回空结果。
 - Claim 当前没有 stored `recorded_at`，因此 Claim 查询拒绝 event reference、event kind 与时间过滤。Claim lookup 由独立 M1.2.2 切片完成；该项仍不代表 episode/reflection record union、完整 revision history、correction contract 或 M1 退出门完成。
 
-- 继续按 scope 读取完整 episode、reflection 和 evidence relation，并把已完成的 Event / Claim 首片收敛到稳定的 record union。
+- [x] **M1.1.3 Scoped Episode Provenance Read**
+
+- 已完成（2026-08-09）：`search_memory` 增加显式 `record_type = Episode` 与 optional exact `episode_reference`。Episode reference 继续按现有持久化字符串精确匹配并原样返回；本片不引入 `episode:` canonical/raw 等价改写，避免未经 inventory/migration 就合并历史值。
+- 已完成（2026-08-09）：SQLite 先经 `episode_events -> events` 按 server-derived owner + namespace 收窄，再做 exact filter、分组、稳定 recent-first 排序与 `1..=100` limit。同一 reference 跨 namespace 时只返回请求 scope 的 membership；结果包含由同 scope 最新 Event 派生的 `recorded_at`、canonical recent-first Event references 与 canonical same-scope Claim references。路径只读、provider-free，未新增 schema/index，也未开放 Episode `get_memory`。
+
+- [ ] **M1.1.4 Scoped Reflection Provenance Read** — 先冻结 Reflection scope attribution；record-only Reflection 不能从不存在的 Claim anchor 推断 scope。
+- [ ] **M1.1.5 Scoped Evidence Relation Runtime Read** — 把已有只读 projection 收敛为正式 scope-first runtime contract，不引入 ranking/widening。
+- [ ] **M1.1.6 Stable Cross-Type Record Union** — 在 Event / Claim / Episode / Reflection 字段与兼容边界稳定后，再统一跨类型返回合同。
+
+- 继续按 scope 读取完整 reflection 和 evidence relation，并把已完成的 Event / Claim / Episode 首片收敛到稳定的 record union。
 - 查询结果保留 ID、namespace、owner、recorded_at、status、mode、provenance 和 supersession 状态。
 - SQLite 增加经过 explain/benchmark 证明需要的索引；不先假设 FTS 或向量数据库。
 
@@ -294,6 +313,11 @@ M0 已收口，当前只能从 M1 领取一个独立最小切片。新 provider�
 - 已完成（2026-07-15）：missing/cross-scope Claim 返回空历史；mixed-scope revision edge 任一端越界时整条 edge 隐藏；supporting evidence 只保留请求 scope 内 canonical `event:<id>` references。路径只读、provider-free，operation metadata 仅记录 `history_type`、`result_count`、`has_more`。
 - 该切片没有 schema migration 或新 index，SQLite 当前保留 technical-MVP 表扫描性能边界。它不覆盖 identity/commitment history、record-only reflection、episode/reflection `get_memory`、correction contract 或 M1 退出门。
 
+- [ ] **M1.2.4 Scoped Episode Lookup** — Episode search shape 稳定后，以 exact opaque reference + `limit = 1` 复用同一 scoped read service。
+- [ ] **M1.2.5 Scoped Reflection Lookup and Record-only History** — 依赖 M1.1.4 的 scope attribution 结论；missing/cross-scope 必须继续与不存在不可区分。
+- [ ] **M1.2.6 Identity and Commitment History** — 当前表只保存现态；若需要版本历史，先走独立 schema/migration/write-path 设计与恢复门。
+- [ ] **M1.2.7 Audited Supersede Contract** — 复用唯一受治理 reflection transaction，默认不 hard delete，不创建第二条 durable correction write path。
+
 第一批建议接口：
 
 - `search_memory`：按 scope、文本/结构过滤、时间范围、类型和 limit 检索。
@@ -304,6 +328,9 @@ M0 已收口，当前只能从 M1 领取一个独立最小切片。新 provider�
 现有 `ingest_interaction` 保持兼容。MCP Resources 只在上述查询契约稳定后评估，且必须复用同一 read service。
 
 ### M1.3 用户闭环
+
+- [ ] **M1.3.0 Current-Schema Structural Readback Gate** — 在任何 schema-changing M1 slice 和真实客户端退出门前，使用 `table_info`、`foreign_key_list`、index/DDL fingerprint 等验证关键结构；同版本但约束被削弱的数据库不得报告 `current`。无 schema/index 的纯只读 slice 不由此单独阻塞。
+- [ ] **M1.3.1 Real Client Recall and Correction Closure** — 仅在 scope/data-integrity、read/history/correction 与 current-schema structural readback 合同完成后执行真实 MCP 客户端故事，并保存 transcript、SQLite readback 与零 scope 泄漏证据。
 
 标准验收故事：
 
@@ -318,6 +345,7 @@ M1 退出门：该故事由真实本地客户端完成，并保存 MCP transcrip
 
 ## 8. M2 — Local Product Alpha
 
+- [ ] **M2.0.1 Exclusive Init-and-Migration Lifecycle Gate** — init 清理只处理本次操作确定创建的文件；init/migrate 需排他执行或明确拒绝并发，moving-target 检测不能只比较版本与行数。若任何 M1 任务提前引入 migration，则相应排他性门禁同步前移。
 - 建立版本化 macOS binary archive 和 checksum；Local Alpha 不要求 installer、service manager 或 auto-updater。
 - quick start 不要求用户本机安装 Rust toolchain。
 - `init → doctor --read-only → serve → remember/search/inspect/correct` 在 fresh macOS 环境可按文档完成。
@@ -428,8 +456,8 @@ M2 退出指标：
 
 ### 第 3 周：Read Model v2
 
-- 已完成 Event / Claim `search_memory` 与 `get_memory` 首片；
-- 已完成 exact scoped Claim revision history 首片；继续建立 episode / reflection record union 与其余 history；
+- 已完成 Event / Claim `search_memory` 与 `get_memory` 首片，以及 scoped Episode provenance `search_memory` 首片；
+- 已完成 exact scoped Claim revision history 首片；继续建立 Reflection/evidence-relation runtime read、Episode lookup、稳定 record union 与其余 history；
 - 用两个 namespace 小样本验证。
 
 ### 第 4 周：真实客户端闭环
@@ -475,8 +503,9 @@ M2 退出指标：
 - 未发布、未推送、未运行远程或 live-provider 操作。
 - M0.2 已完成七个连续最小切片：snapshot scope、explicit evidence manifest、time window / stable order、scoped auto-reflection snapshot、active reflection runtime event-ID 等价性、只读 evidence/episode projection event-ID 等价性，以及 offline demo artifact event reference。
 - M0.3 已完成四个限定切片并收口：trusted decision commitments + requested/selected dual gate、claim → evidence → episode distinct provenance join、validation / handled-ledger / commit failure atomicity，以及 experimental non-authoritative decision authority。
-- M1.1.1、M1.1.2、M1.2.1、M1.2.2 与 M1.2.3 已完成：Event / Claim search、stable-ID lookup 与 Claim-linked reflection history 均使用显式 namespace、scope-first narrowing 和 provider-free 只读路径；identity/commitment history、record-only reflection、correction 与真实客户端退出门仍开放。
+- M1.1.1、M1.1.2、M1.1.3、M1.2.1、M1.2.2 与 M1.2.3 已完成：Event / Claim / Episode search、Event / Claim stable-ID lookup 与 Claim-linked reflection history 均使用显式 namespace、scope-first narrowing 和 provider-free 只读路径；Episode lookup、Reflection/evidence-relation runtime read、稳定完整 union、identity/commitment history、record-only reflection、correction 与真实客户端退出门仍开放。
+- 2026-08-09 只读复核把三个既有缺口正式纳入 M1.0 前置门：identity evidence-to-Episode 计数缺少完整 scope、Claim 普通 provenance 对 mixed-scope revision edge 的 Reflection ID redaction 不完整，以及合法 Unknown owner 写入与 namespace-derived read 的可达性不一致。它们不回滚 M1.1.3 的 scope-first Episode projection，但会阻塞后续 M1 feature 扩张。
 
 M0 已收口。仍属于后续路线图而非本轮完成声明的项目包括：repository-wide event-ID 统一、完整 recall contract、support bundle inventory、server-created snapshot handle、structured action validation、完整 policy arbitration、真实 binary package、fresh-machine 与 Windows runtime parity。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
 
-当前里程碑是 M1 Trustworthy Recall；M1.1.1 Event recall、M1.1.2 Claim provenance read、M1.2.1 Event lookup、M1.2.2 Claim lookup 与 M1.2.3 Claim reflection history 五个首片已完成，后续仍须按独立最小切片推进。remote、tasks、OAuth、daemon writes、provider 扩张和正式发布仍不因 M0 或这五个首片完成而获得授权。
+当前里程碑是 M1 Trustworthy Recall；M1.1.1 Event recall、M1.1.2 Claim provenance read、M1.1.3 Episode provenance read、M1.2.1 Event lookup、M1.2.2 Claim lookup 与 M1.2.3 Claim reflection history 六个首片已完成。下一执行顺序冻结为三项 Scope/Data-Integrity Gates → Reflection provenance → evidence-relation runtime read → stable union → Episode/Reflection lookup 与其余 history → audited supersede → current-schema structural readback → real-client closure；每项仍须独立领取。M2 fresh-machine / packaging 前还必须完成 exclusive init/migration gate。remote、tasks、OAuth、daemon writes、provider 扩张和正式发布仍不因 M0 或这六个首片完成而获得授权。

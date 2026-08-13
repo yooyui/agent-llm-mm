@@ -114,6 +114,7 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
         "claim_reference",
         "claim_status",
         "mode",
+        "episode_reference",
         "limit",
     ] {
         assert!(
@@ -126,6 +127,11 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
         .and_then(Value::as_array)
         .expect("search_memory schema should expose required fields");
     assert_eq!(search_required, &[json!("namespace")]);
+    assert_eq!(
+        search_schema["definitions"]["SearchMemoryRecordTypeDto"]["enum"],
+        json!(["Event", "Claim", "Episode"]),
+        "search_memory record_type schema should include exactly Event, Claim, and Episode"
+    );
 
     let get_schema = tools
         .iter()
@@ -140,6 +146,11 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
     assert!(
         get_schema["properties"].get("record_type").is_some(),
         "get_memory schema should expose optional record_type: {get_schema:?}"
+    );
+    assert_eq!(
+        get_schema["definitions"]["MemoryRecordTypeDto"]["enum"],
+        json!(["Event", "Claim"]),
+        "get_memory record_type schema must remain exactly Event and Claim"
     );
 
     let history_schema = tools
@@ -1569,6 +1580,190 @@ async fn search_memory_returns_only_scoped_event_records_and_provenance_over_std
 }
 
 #[tokio::test]
+async fn search_memory_returns_scoped_episode_provenance_over_stdio_without_semantic_writes() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let mut ingested = Vec::new();
+    for (namespace, summary) in [
+        ("project/episode-a", "older scoped episode event"),
+        ("project/episode-a", "newer scoped episode event"),
+        ("project/episode-b", "newest cross-scope episode event"),
+    ] {
+        let response = client
+            .call_tool(
+                "ingest_interaction",
+                json!({
+                    "event": {
+                        "owner": "World",
+                        "namespace": namespace,
+                        "kind": "Observation",
+                        "summary": summary
+                    },
+                    "claim_drafts": [{
+                        "owner": "World",
+                        "namespace": namespace,
+                        "subject": "episode.fact",
+                        "predicate": "is",
+                        "object": summary,
+                        "mode": "Observed"
+                    }],
+                    "episode_reference": "episode:Shared-Exact"
+                }),
+            )
+            .await
+            .unwrap();
+        assert!(
+            response.get("error").is_none(),
+            "episode fixture ingest failed: {response:?}"
+        );
+        ingested.push(
+            response["result"]["structuredContent"]["event_id"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        );
+    }
+    let [old_a_event_id, new_a_event_id, b_event_id] = ingested.as_slice() else {
+        panic!("expected three ingested episode events");
+    };
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    for (event_id, recorded_at) in [
+        (old_a_event_id, "2026-07-15T01:00:00Z"),
+        (new_a_event_id, "2026-07-15T02:00:00Z"),
+        (b_event_id, "2026-07-15T03:00:00Z"),
+    ] {
+        sqlx::query("UPDATE events SET recorded_at = ? WHERE event_id = ?")
+            .bind(recorded_at)
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let semantic_counts_before = semantic_memory_counts(&pool).await;
+
+    let response = client
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/episode-a",
+                "record_type": "Episode",
+                "episode_reference": "episode:Shared-Exact",
+                "limit": 10
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        response.get("error").is_none(),
+        "episode search failed: {response:?}"
+    );
+    let result = &response["result"]["structuredContent"];
+    assert_eq!(result["owner"], "World");
+    assert_eq!(result["namespace"], "project/episode-a");
+    assert_eq!(result["limit"], 10);
+    let records = result["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1, "unexpected Episode search: {result:?}");
+    let record = &records[0];
+    assert_eq!(record["record_type"], "episode");
+    assert_eq!(record["id"], "episode:Shared-Exact");
+    assert_eq!(record["recorded_at"], "2026-07-15T02:00:00Z");
+    assert_eq!(record["owner"], "World");
+    assert_eq!(record["namespace"], "project/episode-a");
+    assert_eq!(
+        record["provenance"]["event_references"],
+        json!([
+            format!("event:{new_a_event_id}"),
+            format!("event:{old_a_event_id}")
+        ])
+    );
+    let mut expected_claim_references = vec![
+        format!("claim:{old_a_event_id}:claim:0"),
+        format!("claim:{new_a_event_id}:claim:0"),
+    ];
+    expected_claim_references.sort();
+    assert_eq!(
+        record["provenance"]["claim_references"],
+        json!(expected_claim_references)
+    );
+    for non_persisted_field in [
+        "objective",
+        "outcome",
+        "lesson",
+        "reflection_id",
+        "source_reflection_id",
+    ] {
+        assert!(
+            record.get(non_persisted_field).is_none(),
+            "Episode search must not invent {non_persisted_field}"
+        );
+    }
+    assert!(
+        record["provenance"].get("reflection_id").is_none()
+            && record["provenance"].get("source_reflection_id").is_none(),
+        "Episode provenance must not include Reflection IDs"
+    );
+
+    let operation = sqlx::query(
+        "SELECT namespace, status, response_summary_json FROM operation_log WHERE entrypoint = 'search_memory' ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(operation.get::<String, _>("namespace"), "project/episode-a");
+    assert_eq!(operation.get::<String, _>("status"), "ok");
+    let summary: Value =
+        serde_json::from_str(&operation.get::<String, _>("response_summary_json")).unwrap();
+    assert_eq!(
+        summary,
+        json!({"record_type": "episode", "result_count": 1})
+    );
+
+    for params in [
+        json!({
+            "namespace": "project/episode-a",
+            "record_type": "Episode",
+            "episode_reference": "episode:missing"
+        }),
+        json!({
+            "namespace": "project/episode-a",
+            "record_type": "Episode",
+            "episode_reference": "episode:shared-exact"
+        }),
+        json!({
+            "namespace": "project/empty",
+            "record_type": "Episode",
+            "episode_reference": "episode:Shared-Exact"
+        }),
+    ] {
+        let empty = client.call_tool("search_memory", params).await.unwrap();
+        assert_eq!(
+            empty["result"]["structuredContent"]["records"],
+            json!([]),
+            "missing or cross-scope Episode references must not widen the query"
+        );
+    }
+
+    let unsupported_get = client
+        .call_tool(
+            "get_memory",
+            json!({
+                "namespace": "project/episode-a",
+                "id": "episode:Shared-Exact",
+                "record_type": "Episode"
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unsupported_get["error"]["code"], -32602);
+    assert_eq!(semantic_memory_counts(&pool).await, semantic_counts_before);
+}
+
+#[tokio::test]
 async fn search_memory_returns_scoped_claims_with_revision_provenance_over_stdio() {
     let (mut client, database_url, _database_dir) =
         test_support::spawn_stdio_client_with_database()
@@ -1948,6 +2143,25 @@ async fn search_memory_invalid_or_empty_scope_fails_closed_over_stdio() {
             "namespace": "project/a",
             "mode": "Observed"
         }),
+        json!({
+            "namespace": "project/a",
+            "record_type": "Episode",
+            "episode_reference": "   "
+        }),
+        json!({
+            "namespace": "project/a",
+            "record_type": "Episode",
+            "episode_reference": " episode:boundary-whitespace"
+        }),
+        json!({
+            "namespace": "project/a",
+            "record_type": "Episode",
+            "event_reference": "event:not-an-episode-filter"
+        }),
+        json!({
+            "namespace": "project/a",
+            "episode_reference": "episode:requires-explicit-episode-type"
+        }),
     ] {
         let response = client.call_tool("search_memory", invalid).await.unwrap();
         assert_eq!(
@@ -2034,6 +2248,25 @@ timeout_ms = 100
     assert_eq!(
         response["result"]["structuredContent"]["records"][0]["summary"],
         "persist across an MCP reconnect"
+    );
+    let episode = reader
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/reconnect",
+                "record_type": "Episode",
+                "episode_reference": "episode:reconnect"
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        episode.get("error").is_none(),
+        "provider-free Episode search failed after reconnect: {episode:?}"
+    );
+    assert_eq!(
+        episode["result"]["structuredContent"]["records"][0]["id"],
+        "episode:reconnect"
     );
     let history = reader
         .call_tool(

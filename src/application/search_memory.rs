@@ -9,8 +9,8 @@ use crate::{
     },
     error::AppError,
     ports::{
-        ClaimReadRecord, ClaimRecordQuery, ClaimStatus, EventReadRecord, EventRecordQuery,
-        MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore,
+        ClaimReadRecord, ClaimRecordQuery, ClaimStatus, EpisodeReadRecord, EpisodeRecordQuery,
+        EventReadRecord, EventRecordQuery, MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore,
     },
 };
 
@@ -20,6 +20,7 @@ pub const DEFAULT_SEARCH_MEMORY_LIMIT: usize = 20;
 pub enum MemoryRecordType {
     Event,
     Claim,
+    Episode,
 }
 
 impl MemoryRecordType {
@@ -27,6 +28,7 @@ impl MemoryRecordType {
         match self {
             Self::Event => "event",
             Self::Claim => "claim",
+            Self::Episode => "episode",
         }
     }
 }
@@ -42,6 +44,7 @@ pub struct SearchMemoryInput {
     pub claim_reference: Option<ClaimReference>,
     pub claim_status: Option<ClaimStatus>,
     pub mode: Option<Mode>,
+    pub episode_reference: Option<String>,
     pub limit: usize,
 }
 
@@ -66,26 +69,50 @@ impl SearchMemoryInput {
                 "recorded_after must be less than or equal to recorded_before".to_string(),
             ));
         }
+        if let Some(reference) = self.episode_reference.as_deref()
+            && (reference.is_empty() || reference.trim() != reference)
+        {
+            return Err(AppError::InvalidParams(
+                "episode_reference must be non-empty and have no leading or trailing whitespace"
+                    .to_string(),
+            ));
+        }
 
         match self.record_type {
             MemoryRecordType::Event
                 if self.claim_reference.is_some()
                     || self.claim_status.is_some()
-                    || self.mode.is_some() =>
+                    || self.mode.is_some()
+                    || self.episode_reference.is_some() =>
             {
                 Err(AppError::InvalidParams(
-                    "claim_reference, claim_status, and mode require record_type Claim".to_string(),
+                    "claim_reference, claim_status, mode, and episode_reference require their matching record_type"
+                        .to_string(),
                 ))
             }
             MemoryRecordType::Claim
                 if self.event_reference.is_some()
                     || self.kind.is_some()
                     || self.recorded_after.is_some()
-                    || self.recorded_before.is_some() =>
+                    || self.recorded_before.is_some()
+                    || self.episode_reference.is_some() =>
             {
                 Err(AppError::InvalidParams(
-                    "event_reference, kind, and recorded time filters require record_type Event; claims do not have a stored recorded_at timestamp"
+                    "event_reference, kind, recorded time filters, and episode_reference require their matching record_type; claims do not have a stored recorded_at timestamp"
                         .to_string(),
+                ))
+            }
+            MemoryRecordType::Episode
+                if self.event_reference.is_some()
+                    || self.kind.is_some()
+                    || self.recorded_after.is_some()
+                    || self.recorded_before.is_some()
+                    || self.claim_reference.is_some()
+                    || self.claim_status.is_some()
+                    || self.mode.is_some() =>
+            {
+                Err(AppError::InvalidParams(
+                    "Episode searches support only episode_reference and limit filters".to_string(),
                 ))
             }
             _ => Ok(()),
@@ -124,6 +151,13 @@ pub enum SearchMemoryRecord {
         status: ClaimStatus,
         provenance: ClaimProvenance,
     },
+    Episode {
+        id: String,
+        recorded_at: DateTime<Utc>,
+        owner: Owner,
+        namespace: String,
+        provenance: EpisodeProvenance,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -141,6 +175,12 @@ pub struct ClaimProvenance {
     pub supersedes_claim_reference: Option<String>,
     pub superseded_by_reflection_id: Option<String>,
     pub replacement_claim_reference: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EpisodeProvenance {
+    pub event_references: Vec<String>,
+    pub claim_references: Vec<String>,
 }
 
 pub async fn execute<D>(deps: &D, input: SearchMemoryInput) -> Result<SearchMemoryResult, AppError>
@@ -172,6 +212,16 @@ where
                 claim_reference: input.claim_reference,
                 status: input.claim_status,
                 mode: input.mode,
+                limit: input.limit,
+            })
+            .await?
+            .into_iter()
+            .map(SearchMemoryRecord::from)
+            .collect(),
+        MemoryRecordType::Episode => deps
+            .query_episode_records(EpisodeRecordQuery {
+                scope,
+                episode_reference: input.episode_reference,
                 limit: input.limit,
             })
             .await?
@@ -235,6 +285,29 @@ impl From<ClaimReadRecord> for SearchMemoryRecord {
                     .revision
                     .replacement_claim_reference
                     .map(|reference| reference.canonical()),
+            },
+        }
+    }
+}
+
+impl From<EpisodeReadRecord> for SearchMemoryRecord {
+    fn from(value: EpisodeReadRecord) -> Self {
+        Self::Episode {
+            id: value.episode_reference,
+            recorded_at: value.recorded_at,
+            owner: value.owner,
+            namespace: value.namespace.as_str().to_string(),
+            provenance: EpisodeProvenance {
+                event_references: value
+                    .event_references
+                    .into_iter()
+                    .map(|reference| reference.canonical())
+                    .collect(),
+                claim_references: value
+                    .claim_references
+                    .into_iter()
+                    .map(|reference| reference.canonical())
+                    .collect(),
             },
         }
     }

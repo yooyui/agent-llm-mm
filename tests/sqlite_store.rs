@@ -12,10 +12,10 @@ use agent_llm_mm::{
     error::AppError,
     ports::{
         ClaimRecordQuery, ClaimReflectionHistoryQuery, ClaimStatus, ClaimStore, CommitmentStore,
-        EpisodeStore, EventRecordQuery, EventStore, EvidenceQuery, IdentityStore,
-        IngestTransactionRunner, MemoryReadStore, ReflectionStore, ReflectionTransactionRunner,
-        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
-        TriggerLedgerStore,
+        EpisodeRecordQuery, EpisodeStore, EventRecordQuery, EventStore, EvidenceQuery,
+        IdentityStore, IngestTransactionRunner, MemoryReadStore, ReflectionStore,
+        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
+        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
 };
 use chrono::{DateTime, Utc};
@@ -2358,6 +2358,258 @@ async fn sqlite_event_recall_rejects_unscoped_queries_and_never_widens_exact_ids
             kind: None,
             recorded_after: None,
             recorded_before: None,
+            limit: 10,
+        })
+        .await
+        .unwrap();
+    assert!(cross_scope.is_empty());
+}
+
+#[tokio::test]
+async fn sqlite_episode_recall_is_scoped_ordered_and_returns_distinct_provenance() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let project_a = Namespace::for_project("episode-a");
+    let project_b = Namespace::for_project("episode-b");
+
+    for (event_id, namespace, recorded_at) in [
+        ("episode-a-old", project_a.clone(), now),
+        (
+            "episode-a-tie",
+            project_a.clone(),
+            now + chrono::Duration::seconds(60),
+        ),
+        (
+            "episode-a-later-rowid",
+            project_a.clone(),
+            now + chrono::Duration::seconds(60),
+        ),
+        (
+            "episode-b-new",
+            project_b.clone(),
+            now + chrono::Duration::seconds(120),
+        ),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                recorded_at,
+                Event::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    EventKind::Observation,
+                    event_id,
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "episode-a-unknown-owner".to_string(),
+            now + chrono::Duration::seconds(180),
+            Event::new_with_namespace(
+                Owner::Unknown,
+                project_a.clone(),
+                EventKind::Observation,
+                "unknown-owner event must not leak into the World scope",
+            )
+            .unwrap(),
+        ))
+        .await
+        .unwrap();
+
+    for (episode_reference, event_id) in [
+        ("episode:z-tie", "episode-a-old"),
+        ("episode:z-tie", "episode-a-tie"),
+        ("episode:z-tie", "episode-b-new"),
+        ("episode:z-tie", "episode-a-unknown-owner"),
+        ("episode:a-tie", "episode-a-tie"),
+        ("episode:rowid-winner", "episode-a-later-rowid"),
+        ("episode:old", "episode-a-old"),
+    ] {
+        context
+            .store
+            .record_event_in_episode(episode_reference.to_string(), event_id.to_string())
+            .await
+            .unwrap();
+    }
+
+    for (claim_id, namespace) in [
+        ("claim-a-duplicate", project_a.clone()),
+        ("claim-a-new", project_a.clone()),
+        ("claim-a-only-cross-event", project_a.clone()),
+        ("claim-b", project_b.clone()),
+        ("claim-b-cross-link", project_b),
+    ] {
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                claim_id.to_string(),
+                ClaimDraft::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    "episode.fact",
+                    "is",
+                    claim_id,
+                    Mode::Observed,
+                ),
+                ClaimStatus::Active,
+            ))
+            .await
+            .unwrap();
+    }
+    context
+        .store
+        .upsert_claim(StoredClaim::new(
+            "claim-unknown-owner".to_string(),
+            ClaimDraft::new_with_namespace(
+                Owner::Unknown,
+                project_a.clone(),
+                "episode.fact",
+                "must_not",
+                "leak through an owner fallback",
+                Mode::Observed,
+            ),
+            ClaimStatus::Active,
+        ))
+        .await
+        .unwrap();
+    for (claim_id, event_id) in [
+        ("claim-a-duplicate", "episode-a-old"),
+        ("claim-a-duplicate", "episode-a-tie"),
+        ("claim-a-new", "episode-a-tie"),
+        ("claim-a-only-cross-event", "episode-b-new"),
+        ("claim-b", "episode-b-new"),
+        ("claim-b-cross-link", "episode-a-tie"),
+        ("claim-unknown-owner", "episode-a-unknown-owner"),
+    ] {
+        context
+            .store
+            .link_evidence(claim_id.to_string(), event_id.to_string())
+            .await
+            .unwrap();
+    }
+
+    let records = context
+        .store
+        .query_episode_records(EpisodeRecordQuery {
+            scope: MemoryScope::for_namespace(project_a.clone()),
+            episode_reference: None,
+            limit: 3,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.episode_reference.as_str())
+            .collect::<Vec<_>>(),
+        vec!["episode:rowid-winner", "episode:a-tie", "episode:z-tie"]
+    );
+    let shared = &records[2];
+    assert_eq!(
+        shared.recorded_at,
+        now + chrono::Duration::seconds(60),
+        "a newer event from another namespace must not affect the scoped episode timestamp"
+    );
+    assert_eq!(shared.owner, Owner::World);
+    assert_eq!(shared.namespace, project_a);
+    assert_eq!(
+        shared
+            .event_references
+            .iter()
+            .map(EventReference::canonical)
+            .collect::<Vec<_>>(),
+        vec!["event:episode-a-tie", "event:episode-a-old"]
+    );
+    assert_eq!(
+        shared
+            .claim_references
+            .iter()
+            .map(ClaimReference::canonical)
+            .collect::<Vec<_>>(),
+        vec!["claim:claim-a-duplicate", "claim:claim-a-new"],
+        "episode claim provenance must be same-scope and distinct"
+    );
+
+    let exact = context
+        .store
+        .query_episode_records(EpisodeRecordQuery {
+            scope: MemoryScope::for_namespace(Namespace::for_project("episode-a")),
+            episode_reference: Some("episode:z-tie".to_string()),
+            limit: 1,
+        })
+        .await
+        .unwrap();
+    assert_eq!(exact.len(), 1);
+    assert_eq!(exact[0].episode_reference, "episode:z-tie");
+}
+
+#[tokio::test]
+async fn sqlite_episode_recall_rejects_unscoped_limits_and_cross_scope_exact_references() {
+    let context = test_support::new_sqlite_store().await;
+    context
+        .store
+        .append_event(StoredEvent::new(
+            "episode-b-only-event".to_string(),
+            test_support::fixed_now(),
+            Event::new_with_namespace(
+                Owner::World,
+                Namespace::for_project("episode-b"),
+                EventKind::Observation,
+                "cross-scope episode",
+            )
+            .unwrap(),
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .record_event_in_episode(
+            "episode:b-only".to_string(),
+            "episode-b-only-event".to_string(),
+        )
+        .await
+        .unwrap();
+
+    for query in [
+        EpisodeRecordQuery {
+            scope: MemoryScope::legacy_unscoped(),
+            episode_reference: None,
+            limit: 10,
+        },
+        EpisodeRecordQuery {
+            scope: MemoryScope::for_namespace(Namespace::for_project("episode-a")),
+            episode_reference: None,
+            limit: 0,
+        },
+        EpisodeRecordQuery {
+            scope: MemoryScope::for_namespace(Namespace::for_project("episode-a")),
+            episode_reference: None,
+            limit: 101,
+        },
+        EpisodeRecordQuery {
+            scope: MemoryScope::for_namespace(Namespace::for_project("episode-a")),
+            episode_reference: Some(" episode:b-only".to_string()),
+            limit: 10,
+        },
+    ] {
+        assert!(matches!(
+            context.store.query_episode_records(query).await,
+            Err(AppError::InvalidParams(_))
+        ));
+    }
+
+    let cross_scope = context
+        .store
+        .query_episode_records(EpisodeRecordQuery {
+            scope: MemoryScope::for_namespace(Namespace::for_project("episode-a")),
+            episode_reference: Some("episode:b-only".to_string()),
             limit: 10,
         })
         .await

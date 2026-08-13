@@ -49,6 +49,16 @@ M1.2.3 新增第 7 个 MCP 工具 `get_reflection_history(namespace, claim_refer
 
 Event、Claim 与 Claim history 查询共用独立的只读 application/port，不复用 reflection evidence narrowing，不调用 model provider，也不修改 events、claims、evidence、episodes、reflections、identity 或 commitments。真实 `stdio` 回归覆盖跨 scope 干扰、exact-reference no-widening、非法参数 fail-closed、断开重连和不可达 provider。M1.2.3 没有 schema migration 或新 index，当前 SQLite 实现保留 technical-MVP 表扫描性能边界。五个首片完成仍不代表 identity/commitment history、record-only reflection、episode/reflection `get_memory`、supersede/correction、真实客户端 M1 退出门或 Local Alpha。
 
+## 2026-08-09 M1.1.3 Scoped Episode Provenance Read
+
+M1.1.3 为现有 `search_memory` 增加显式 `record_type = Episode` 与 optional `episode_reference`。Episode reference 在本片保持 opaque：按持久化字符串精确匹配并原样返回，不做 `episode:` canonical/raw 猜测或改写。省略 `record_type` 仍查询 Event；`get_memory` 仍只接受 Event / Claim，避免把 Episode search 的首片误报成 lookup 完成。
+
+SQLite 从 `episode_events -> events` 出发，在 exact filter、分组、排序和 `1..=100` limit 之前按 server-derived owner + namespace 收窄。同一个 reference 即使关联多个 namespace，也只返回请求 scope 的 membership，不暴露其他 scope 的计数或存在性。结果的 `recorded_at` 由该 scope 内最新 Event 派生，provenance 返回 canonical recent-first Event references 与 canonical same-scope Claim references；路径只读、provider-free，operation metadata 仅记录 record type 与结果数。
+
+该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1 当前完成六个独立切片，但 Reflection/evidence-relation runtime read、稳定完整 record union、Episode/Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
+
+同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan：identity supporting-Episode 查询尚未同时限制 Claim 与 Event scope；Claim 普通 provenance 对 mixed-scope revision edge 尚可能保留 Reflection ID；schema/domain 允许的部分 `Owner::Unknown` world/project 记录无法由 namespace-derived scoped read 找回。三项全部通过前不继续扩张后续 M1 feature；它们不回滚本切片已验证的 scope-first Episode projection。
+
 ## 项目定位
 
 当前仓库更准确的定位是：
@@ -317,6 +327,11 @@ Implementation notes:
 
 ## 未实现
 
+- M1.0 scope/data-integrity gates：scoped identity evidence-to-Episode 计数、mixed-scope Claim revision edge 整边 redaction，以及 owner/namespace 写读可达性合同
+- scoped Reflection provenance read、正式 evidence-relation runtime read 与稳定完整 cross-type record union
+- Episode / Reflection `get_memory`、identity/commitment history 与 record-only Reflection history
+- current-schema structural readback，以及 exclusive init/migration lifecycle gate
+- 受审计的 `supersede_memory` correction 合同，以及真实 MCP 客户端“记录 → 重连 → 检索 → 查看证据 → supersede → 回看历史”退出证据
 - richer 自动 evidence lookup（当前 `replacement_evidence_query` / `proposed_evidence_query` 仍只是 namespace / owner / kind / inclusive recency window / limit 的窄化 evidence-oriented 查询基础；只读 relation projection 已有首片，但不是 full ranking/weighting engine）
 - richer evidence weighting / full ranking engine
 - `identity_core` 的 richer schema 与版本化形成机制
@@ -328,7 +343,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-07-10`，测试与工具链已完成分层减重，fresh 运行入口为：
+截至 `2026-08-09`，测试与工具链已完成分层减重；M1.1.3 继续复用以下运行入口：
 
 - `cargo fmt --check`
 - `git diff --check`

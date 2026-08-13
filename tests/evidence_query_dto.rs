@@ -3,11 +3,12 @@ use agent_llm_mm::{
         build_self_snapshot::BuildSelfSnapshotInput,
         get_memory::{GetMemoryInput, MemoryRecordReference},
         get_reflection_history::{DEFAULT_REFLECTION_HISTORY_LIMIT, GetReflectionHistoryInput},
+        search_memory::{MemoryRecordType, SearchMemoryInput},
     },
     domain::{event::MAX_EVIDENCE_MANIFEST_ITEMS, types::Owner},
     interfaces::mcp::dto::{
         BuildSelfSnapshotParams, EvidenceQueryDto, GetMemoryParams, GetReflectionHistoryParams,
-        MemoryRecordTypeDto,
+        MemoryRecordTypeDto, SearchMemoryParams,
     },
     ports::EvidenceQuery,
 };
@@ -46,6 +47,86 @@ fn get_memory_dto_uses_explicit_claim_type_for_raw_or_canonical_claim_ids() {
             }
             MemoryRecordReference::Event(_) => panic!("explicit Claim must not select Event"),
         }
+    }
+}
+
+#[test]
+fn search_memory_dto_adds_episode_without_widening_get_memory_record_types() {
+    let params = serde_json::from_value::<SearchMemoryParams>(serde_json::json!({
+        "namespace": "project/dto",
+        "record_type": "Episode",
+        "episode_reference": "episode:Persisted-Exactly",
+        "limit": 7
+    }))
+    .expect("search_memory should deserialize the Episode record type");
+    let input = SearchMemoryInput::try_from(params).expect("Episode search should convert");
+
+    assert_eq!(input.record_type, MemoryRecordType::Episode);
+    assert_eq!(
+        input.episode_reference.as_deref(),
+        Some("episode:Persisted-Exactly")
+    );
+    assert_eq!(input.limit, 7);
+    assert!(input.claim_status.is_none());
+
+    let get_episode = serde_json::from_value::<GetMemoryParams>(serde_json::json!({
+        "namespace": "project/dto",
+        "id": "episode:Persisted-Exactly",
+        "record_type": "Episode"
+    }));
+    assert!(
+        get_episode.is_err(),
+        "get_memory must continue to accept only Event and Claim record types"
+    );
+}
+
+#[test]
+fn search_memory_dto_keeps_omitted_record_type_as_event() {
+    let params = serde_json::from_value::<SearchMemoryParams>(serde_json::json!({
+        "namespace": "project/dto"
+    }))
+    .unwrap();
+    let input = SearchMemoryInput::try_from(params).unwrap();
+
+    assert_eq!(input.record_type, MemoryRecordType::Event);
+    assert!(input.episode_reference.is_none());
+}
+
+#[test]
+fn search_memory_dto_validates_exact_episode_filters_and_type_compatibility() {
+    for episode_reference in ["", "   ", " episode:trimmed", "episode:trimmed "] {
+        let params = serde_json::from_value::<SearchMemoryParams>(serde_json::json!({
+            "namespace": "project/dto",
+            "record_type": "Episode",
+            "episode_reference": episode_reference
+        }))
+        .unwrap();
+        let error = SearchMemoryInput::try_from(params)
+            .expect_err("empty or boundary-whitespace episode references must fail closed");
+        assert!(error.to_string().contains("episode_reference"));
+    }
+
+    for params in [
+        serde_json::json!({
+            "namespace": "project/dto",
+            "record_type": "Episode",
+            "kind": "Observation"
+        }),
+        serde_json::json!({
+            "namespace": "project/dto",
+            "episode_reference": "episode:event-filter"
+        }),
+        serde_json::json!({
+            "namespace": "project/dto",
+            "record_type": "Claim",
+            "episode_reference": "episode:claim-filter"
+        }),
+    ] {
+        let params = serde_json::from_value::<SearchMemoryParams>(params).unwrap();
+        assert!(
+            SearchMemoryInput::try_from(params).is_err(),
+            "record-type-specific filters must not be accepted by another record type"
+        );
     }
 }
 

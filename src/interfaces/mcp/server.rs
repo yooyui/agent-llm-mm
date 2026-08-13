@@ -43,12 +43,12 @@ use crate::{
     },
     ports::{
         ClaimReadRecord, ClaimRecordQuery, ClaimReflectionHistoryPage, ClaimReflectionHistoryQuery,
-        ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeStore, EventReadRecord,
-        EventRecordQuery, EventStore, EvidenceQuery, IdGenerator, IdentityStore, IngestTransaction,
-        IngestTransactionRunner, MemoryReadStore, ModelDecision, ModelDecisionRequest, ModelPort,
-        OperationLogStore, ReflectionStore, ReflectionTransaction, ReflectionTransactionRunner,
-        StoredClaim, StoredEvent, StoredReflection, StoredTriggerLedgerEntry, TriggerLedgerStatus,
-        TriggerLedgerStore,
+        ClaimStatus, ClaimStore, Clock, CommitmentStore, EpisodeReadRecord, EpisodeRecordQuery,
+        EpisodeStore, EventReadRecord, EventRecordQuery, EventStore, EvidenceQuery, IdGenerator,
+        IdentityStore, IngestTransaction, IngestTransactionRunner, MemoryReadStore, ModelDecision,
+        ModelDecisionRequest, ModelPort, OperationLogStore, ReflectionStore, ReflectionTransaction,
+        ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
+        StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
     support::config::{AppConfig, ModelConfig, ModelProviderKind, TransportKind},
 };
@@ -291,7 +291,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Search complete event or claim records in one explicit local memory namespace. Event queries support exact reference, kind, inclusive time range, and bounded recent-first results. Claim queries support exact reference, status, and mode; claims have no stored recorded_at timestamp.",
+        description = "Search complete event, claim, or scoped Episode provenance records in one explicit local memory namespace. Omitted record_type preserves Event behavior. Event queries support exact reference, kind, inclusive time range, and bounded recent-first results. Claim queries support exact reference, status, and mode; claims have no stored recorded_at timestamp. Episode queries support an exact persisted episode_reference and return the latest scoped timestamp plus scoped event/claim provenance.",
         input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<SearchMemoryParams>>()
     )]
     async fn search_memory(&self, raw_params: JsonObject) -> Result<CallToolResult, McpError> {
@@ -1065,6 +1065,13 @@ impl MemoryReadStore for Runtime {
         query: ClaimRecordQuery,
     ) -> Result<Vec<ClaimReadRecord>, AppError> {
         self.store.query_claim_records(query).await
+    }
+
+    async fn query_episode_records(
+        &self,
+        query: EpisodeRecordQuery,
+    ) -> Result<Vec<EpisodeReadRecord>, AppError> {
+        self.store.query_episode_records(query).await
     }
 
     async fn query_claim_reflection_history(

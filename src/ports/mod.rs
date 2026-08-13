@@ -31,8 +31,8 @@ pub use id_generator::IdGenerator;
 pub use identity_store::IdentityStore;
 pub use memory_read_store::{
     ClaimReadRecord, ClaimRecordQuery, ClaimReflectionHistoryPage, ClaimReflectionHistoryQuery,
-    ClaimReflectionHistoryRecord, ClaimRevisionLinks, EventReadRecord, EventRecordQuery,
-    MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore,
+    ClaimReflectionHistoryRecord, ClaimRevisionLinks, EpisodeReadRecord, EpisodeRecordQuery,
+    EventReadRecord, EventRecordQuery, MAX_EVENT_RECORD_QUERY_LIMIT, MemoryReadStore,
 };
 pub use model_port::{ModelDecision, ModelDecisionRequest, ModelInput, ModelPort};
 pub use operation_log_store::{OperationLogQuery, OperationLogStore};

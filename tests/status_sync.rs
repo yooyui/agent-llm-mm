@@ -82,6 +82,30 @@ fn active_plan_and_reality_gate_documents_are_in_sync() {
     assert!(
         report
             .completed_plan_items
+            .contains(&"M1.1.3 Scoped Episode Provenance Read".to_string()),
+        "active plan must expose the completed M1.1.3 episode provenance slice as a checkbox"
+    );
+    for planned_gate in [
+        "M1.0.1 Scoped Identity Evidence-to-Episode Gate",
+        "M1.0.2 Mixed-Scope Claim Revision Edge Redaction",
+        "M1.0.3 Owner-Namespace Read-Write Reachability Contract",
+        "M1.3.0 Current-Schema Structural Readback Gate",
+        "M2.0.1 Exclusive Init-and-Migration Lifecycle Gate",
+    ] {
+        assert!(
+            plan.contains(&format!("- [ ] **{planned_gate}**")),
+            "active plan must retain the unresolved gate: {planned_gate}"
+        );
+        assert!(
+            !report
+                .completed_plan_items
+                .contains(&planned_gate.to_string()),
+            "unresolved gate must not be reported complete: {planned_gate}"
+        );
+    }
+    assert!(
+        report
+            .completed_plan_items
             .contains(&"M1.2.1 Scoped Event Lookup".to_string()),
         "active plan must expose the completed M1.2.1 event lookup slice as a checkbox"
     );

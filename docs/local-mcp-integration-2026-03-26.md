@@ -1,4 +1,4 @@
-# 本机 MCP 接入说明（2026-03-26，按 2026-07-15 fresh 验证更新）
+# 本机 MCP 接入说明（2026-03-26，按 2026-08-09 scoped Episode read 更新）
 
 ## 1. 目标
 
@@ -150,7 +150,7 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 ### 已实现
 
 - `ingest_interaction`
-- `search_memory`（M1.1.1 Event 与 M1.1.2 Claim recall 首片；显式 `namespace` 必填，provider 离线可用；省略 `record_type` 时仍为 Event）
+- `search_memory`（M1.1.1 Event、M1.1.2 Claim 与 M1.1.3 Episode provenance recall 首片；显式 `namespace` 必填，provider 离线可用；省略 `record_type` 时仍为 Event）
 - `get_memory`（M1.2.1 Event + M1.2.2 Claim lookup 首片；显式 `namespace` + stable `id` 必填；省略 `record_type` 保持 Event，Claim 要求显式 `record_type = Claim`；跨 scope 返回 `record: null`）
 - `get_reflection_history`（M1.2.3 exact scoped Claim revision chain 首片；显式 `namespace` + `claim_reference` 必填，limit 默认 20、范围 `1..=100`）
 - `build_self_snapshot`
@@ -163,10 +163,11 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 - 配置文件驱动的 provider 选择
 - `search_memory` 的 Event 路径支持 exact event reference、event kind、inclusive RFC3339 time window 和 `1..=100` limit；返回 canonical event ID、scope、时间、摘要和 claim/episode provenance。
 - additive `record_type = Claim` 路径支持 canonical/raw `claim_reference`、`claim_status`、`mode` 和 `1..=100` limit；省略 `claim_status` 时默认 `Active`。结果包含 canonical `claim:<id>`、subject/predicate/object、mode/status、canonical evidence event references、episode references 和直接 source/superseded reflection links。claims 没有 stored `recorded_at`，因此该路径拒绝 event reference、event kind 与时间过滤。
-- 两种 `search_memory` 路径都先在 SQLite 按 server-derived owner + namespace 收窄，再应用 filter/limit；它们只读、provider-free，跨 scope exact reference 返回空结果。当前仍不是完整跨类型 lookup/history/correction 合同。
+- additive `record_type = Episode` 路径支持 exact opaque `episode_reference` 与 `1..=100` limit。SQLite 先通过同 scope Event membership 收窄，再按最新 scoped Event 元组稳定排序；结果原样返回持久化 Episode reference，并包含由同 scope 数据证明的 canonical Event/Claim provenance。该首片不规范化 `episode:` 前缀，也不返回未持久化的 objective/outcome/lesson。
+- 三种 `search_memory` 路径都先在 SQLite 按 server-derived owner + namespace 收窄，再应用类型专属 filter/limit；它们只读、provider-free，跨 scope exact reference 返回空结果。当前仍不是完整跨类型 lookup/history/correction 合同。
 - `get_memory` 复用相同 scoped read service 返回单条 Event 或 Claim。省略 `record_type` 时保持原 Event 语义，包括 raw Event ID；Claim 要求显式 `record_type = Claim`，并接受 canonical/raw Claim ID，从而避免 `claim:*` raw Event ID 的判型歧义。精确 Claim lookup 不套用 search 的默认 Active 过滤，因此 Active、Disputed、Superseded 都可按 ID 返回。它不提供 unscoped existence probe，也不代表 episode/reflection lookup 或完整 history 已完成。
 - `get_reflection_history` 接受 canonical/raw Claim ID，以 exact scoped Claim 为锚点递归读取 superseded/replacement 双向链，并按 newest-first 返回 reflection ID、时间、摘要、canonical superseded/replacement Claim references 与同 scope canonical evidence references。missing/cross-scope anchor 返回空，mixed-scope edge 整条隐藏；读取只读且不依赖 provider，operation metadata 仅含 `history_type`、`result_count`、`has_more`。
-- 当前 history 首片不覆盖 identity/commitment history、record-only reflection、episode/reflection `get_memory` 或 correction。它没有 schema migration/index，保留 technical-MVP 表扫描性能边界。
+- 当前 Episode search 首片与 Claim history 首片都不覆盖 identity/commitment history、record-only reflection、Episode/Reflection `get_memory` 或 correction。Episode reference 仍是 opaque persisted string；两片都没有 schema migration/index，保留 technical-MVP 表扫描性能边界。
 - trigger-ledger-backed automatic self-revision MVP
   - 当前 MCP-wired automatic path 只有 4 条：
     - `ingest_interaction -> failure`
@@ -200,6 +201,10 @@ args = ["run", "--quiet", "--bin", "agent_llm_mm", "--", "serve"]
 
 ### 未实现
 
+- M1.0 scope/data-integrity gates：scoped identity evidence-to-Episode 计数、mixed-scope Claim revision edge 整边隐藏、owner/namespace 写读可达性合同
+- scoped Reflection/evidence-relation runtime read 与稳定完整 cross-type record union
+- Episode / Reflection `get_memory`、identity/commitment 和 record-only Reflection history
+- audited `supersede_memory` correction 与真实客户端 M1 退出故事
 - richer 自动 evidence lookup
 - richer evidence weighting / relation / ranking
 - richer reflection 语义（当前已有最小 `identity_core` / `commitments` 深层修订，但仍不是 richer schema / versioned policy）
