@@ -2,6 +2,9 @@ use agent_llm_mm::{
     application::{
         build_self_snapshot::{BuildSelfSnapshotInput, execute as build_self_snapshot},
         get_evidence_relation::{GetEvidenceRelationInput, execute as get_evidence_relation},
+        search_memory::{
+            MemoryRecordType, SearchMemoryInput, SearchMemoryRecord, execute as search_memory,
+        },
     },
     domain::{
         claim::{ClaimDraft, ClaimReference},
@@ -3527,6 +3530,211 @@ async fn sqlite_evidence_relation_runtime_is_scoped_intersect_only_and_hides_cro
         })
         .await;
     assert!(matches!(unscoped, Err(AppError::InvalidParams(_))));
+}
+
+#[tokio::test]
+async fn sqlite_search_memory_union_is_scoped_stable_sorted_and_hides_cross_scope_types() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let project_a = Namespace::for_project("union-a");
+    let project_b = Namespace::for_project("union-b");
+
+    for (event_id, namespace, recorded_at) in [
+        ("union-event-old", project_a.clone(), now),
+        (
+            "union-event-new",
+            project_a.clone(),
+            now + chrono::Duration::seconds(60),
+        ),
+        (
+            "union-event-b",
+            project_b.clone(),
+            now + chrono::Duration::seconds(180),
+        ),
+    ] {
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.to_string(),
+                recorded_at,
+                Event::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    EventKind::Observation,
+                    event_id,
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+    }
+    context
+        .store
+        .record_event_in_episode("episode:union-a".to_string(), "union-event-new".to_string())
+        .await
+        .unwrap();
+    context
+        .store
+        .record_event_in_episode("episode:union-b".to_string(), "union-event-b".to_string())
+        .await
+        .unwrap();
+
+    for (claim_id, namespace, status) in [
+        ("union-claim-a", project_a.clone(), ClaimStatus::Active),
+        (
+            "union-claim-old",
+            project_a.clone(),
+            ClaimStatus::Superseded,
+        ),
+        ("union-claim-b", project_b.clone(), ClaimStatus::Active),
+    ] {
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                claim_id.to_string(),
+                ClaimDraft::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    "union.fact",
+                    "is",
+                    claim_id,
+                    Mode::Observed,
+                ),
+                status,
+            ))
+            .await
+            .unwrap();
+    }
+    context
+        .store
+        .append_reflection(StoredReflection::new(
+            "union-reflection-a".to_string(),
+            now + chrono::Duration::seconds(120),
+            Reflection::new("scoped union reflection"),
+            Some("union-claim-old".to_string()),
+            None,
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .append_reflection(StoredReflection::new(
+            "union-reflection-b".to_string(),
+            now + chrono::Duration::seconds(240),
+            Reflection::new("other namespace"),
+            Some("union-claim-b".to_string()),
+            None,
+        ))
+        .await
+        .unwrap();
+
+    let result = search_memory(
+        &context.store,
+        SearchMemoryInput {
+            namespace: project_a.clone(),
+            record_types: vec![
+                MemoryRecordType::Event,
+                MemoryRecordType::Claim,
+                MemoryRecordType::Episode,
+                MemoryRecordType::Reflection,
+            ],
+            event_reference: None,
+            kind: None,
+            recorded_after: None,
+            recorded_before: None,
+            claim_reference: None,
+            claim_status: None,
+            mode: None,
+            episode_reference: None,
+            reflection_reference: None,
+            limit: 10,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result.record_types,
+        vec!["event", "claim", "episode", "reflection"]
+    );
+    assert_eq!(
+        result
+            .records
+            .iter()
+            .map(|record| match record {
+                SearchMemoryRecord::Event { id, .. } => ("event", id.as_str()),
+                SearchMemoryRecord::Claim { id, .. } => ("claim", id.as_str()),
+                SearchMemoryRecord::Episode { id, .. } => ("episode", id.as_str()),
+                SearchMemoryRecord::Reflection { id, .. } => ("reflection", id.as_str()),
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            ("reflection", "union-reflection-a"),
+            ("event", "event:union-event-new"),
+            ("episode", "episode:union-a"),
+            ("event", "event:union-event-old"),
+            ("claim", "claim:union-claim-a"),
+        ]
+    );
+
+    let bounded = search_memory(
+        &context.store,
+        SearchMemoryInput {
+            namespace: project_a.clone(),
+            record_types: vec![MemoryRecordType::Event, MemoryRecordType::Reflection],
+            event_reference: None,
+            kind: None,
+            recorded_after: None,
+            recorded_before: None,
+            claim_reference: None,
+            claim_status: None,
+            mode: None,
+            episode_reference: None,
+            reflection_reference: None,
+            limit: 2,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(bounded.records.len(), 2);
+    assert!(matches!(
+        &bounded.records[0],
+        SearchMemoryRecord::Reflection { id, .. } if id == "union-reflection-a"
+    ));
+    assert!(matches!(
+        &bounded.records[1],
+        SearchMemoryRecord::Event { id, .. } if id == "event:union-event-new"
+    ));
+
+    let events_only = search_memory(
+        &context.store,
+        SearchMemoryInput {
+            namespace: project_a,
+            record_types: vec![MemoryRecordType::Event],
+            event_reference: None,
+            kind: None,
+            recorded_after: None,
+            recorded_before: None,
+            claim_reference: None,
+            claim_status: None,
+            mode: None,
+            episode_reference: None,
+            reflection_reference: None,
+            limit: 10,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        events_only
+            .records
+            .iter()
+            .map(|record| match record {
+                SearchMemoryRecord::Event { id, .. } => id.as_str(),
+                _ => "not-event",
+            })
+            .collect::<Vec<_>>(),
+        vec!["event:union-event-new", "event:union-event-old"]
+    );
 }
 
 #[tokio::test]

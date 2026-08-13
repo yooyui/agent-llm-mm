@@ -500,6 +500,8 @@ pub struct SearchMemoryParams {
     #[serde(default)]
     pub record_type: Option<SearchMemoryRecordTypeDto>,
     #[serde(default)]
+    pub record_types: Option<Vec<SearchMemoryRecordTypeDto>>,
+    #[serde(default)]
     pub event_reference: Option<String>,
     #[serde(default)]
     pub kind: Option<EventKindDto>,
@@ -628,13 +630,10 @@ impl TryFrom<SearchMemoryParams> for SearchMemoryInput {
     type Error = AppError;
 
     fn try_from(value: SearchMemoryParams) -> Result<Self, Self::Error> {
-        let record_type = value
-            .record_type
-            .map(MemoryRecordType::from)
-            .unwrap_or(MemoryRecordType::Event);
+        let record_types = resolve_search_record_types(value.record_type, value.record_types)?;
         let input = Self {
             namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
-            record_type,
+            record_types: record_types.clone(),
             event_reference: value
                 .event_reference
                 .map(EventReference::parse)
@@ -649,7 +648,8 @@ impl TryFrom<SearchMemoryParams> for SearchMemoryInput {
                 .transpose()
                 .map_err(AppError::from)?,
             claim_status: value.claim_status.map(ClaimStatus::from).or_else(|| {
-                (record_type == MemoryRecordType::Claim).then_some(ClaimStatus::Active)
+                (record_types.as_slice() == [MemoryRecordType::Claim])
+                    .then_some(ClaimStatus::Active)
             }),
             mode: value.mode.map(Mode::from),
             episode_reference: value.episode_reference,
@@ -658,6 +658,23 @@ impl TryFrom<SearchMemoryParams> for SearchMemoryInput {
         };
         input.validate()?;
         Ok(input)
+    }
+}
+
+fn resolve_search_record_types(
+    record_type: Option<SearchMemoryRecordTypeDto>,
+    record_types: Option<Vec<SearchMemoryRecordTypeDto>>,
+) -> Result<Vec<MemoryRecordType>, AppError> {
+    match (record_type, record_types) {
+        (Some(_), Some(_)) => Err(AppError::InvalidParams(
+            "record_type and record_types cannot be set together".to_string(),
+        )),
+        (None, Some(types)) if types.is_empty() => Err(AppError::InvalidParams(
+            "record_types must contain at least one record type".to_string(),
+        )),
+        (None, Some(types)) => Ok(types.into_iter().map(MemoryRecordType::from).collect()),
+        (Some(record_type), None) => Ok(vec![MemoryRecordType::from(record_type)]),
+        (None, None) => Ok(vec![MemoryRecordType::Event]),
     }
 }
 

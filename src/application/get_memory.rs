@@ -53,7 +53,7 @@ where
         deps,
         SearchMemoryInput {
             namespace: input.namespace,
-            record_type,
+            record_types: vec![record_type],
             event_reference,
             kind: None,
             recorded_after: None,

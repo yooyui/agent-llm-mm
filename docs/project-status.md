@@ -55,7 +55,7 @@ M1.1.3 为现有 `search_memory` 增加显式 `record_type = Episode` 与 option
 
 SQLite 从 `episode_events -> events` 出发，在 exact filter、分组、排序和 `1..=100` limit 之前按 server-derived owner + namespace 收窄。同一个 reference 即使关联多个 namespace，也只返回请求 scope 的 membership，不暴露其他 scope 的计数或存在性。结果的 `recorded_at` 由该 scope 内最新 Event 派生，provenance 返回 canonical recent-first Event references 与 canonical same-scope Claim references；路径只读、provider-free，operation metadata 仅记录 record type 与结果数。
 
-该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1.1.4 / M1.1.5 已补上 scoped Reflection search 与 evidence-relation runtime，但稳定完整 record union、Episode/Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
+该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1.1.4 / M1.1.5 / M1.1.6 已补上 scoped Reflection search、evidence-relation runtime 与跨类型 union，但 Episode/Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
 
 同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan。2026-08-13 已完成全部三项：identity supporting-Episode 查询现在同时限制 Claim 与 Event scope；Claim search/get 对 mixed-scope revision edge 整边隐藏；新写入拒绝 `Owner::Unknown`，只读 doctor 盘点 legacy Unknown 行且不改写。它们不回滚本切片已验证的 scope-first Episode projection。
 
@@ -88,6 +88,12 @@ M1.1.4 为现有 `search_memory` 增加显式 `record_type = Reflection` 与 opt
 M1.1.5 把既有只读 `build_evidence_relation_report` 收敛为第 8 个 MCP 工具 `get_evidence_relation(namespace, trigger_window_event_ids, selected_evidence_event_ids?, selection_basis?)`。显式 namespace 派生 owner；trigger window 接受裸 ID 与 `event:<id>`，保序去重后再与 SQLite 中同 owner+namespace 的 Event 做 intersect-only 收窄。missing / cross-scope trigger ID 从窗口省略；selected 必须落在 scoped window 内，否则 fail closed。结果返回 canonical `event:<id>`、caller-order `window_rank`、selected / available-not-selected、bounded binary weight 与 rejection reason。路径只读、provider-free；operation metadata 仅含 `report_type`、`trigger_window_size`、`selected_count`、`result_count`。
 
 该切片没有 schema migration / index，也不引入 ranking、widening、stable union、Episode/Reflection lookup 或 correction。既有 projection JSON 的 raw `event_id` 合同保持不变。
+
+## 2026-08-13 M1.1.6 Stable Cross-Type Record Union
+
+M1.1.6 为 `search_memory` 增加 additive `record_types`。省略 `record_type` 与 `record_types` 时仍查询 Event；两者同时出现、空数组或重复类型 fail closed。单类型路径保持原来的 SQL 顺序与 tagged JSON。两个及以上类型组成 scoped union：先分别按同一 owner+namespace 与 `1..=100` limit 读取，再按 `recorded_at DESC`（Claim 无 timestamp 排在最后）、type rank（Event / Episode / Reflection / Claim）、id DESC 稳定排序并截断。union 拒绝类型专属 filter；Claim 在 union 中仍默认 Active。`get_memory` 仍只接受 Event / Claim。
+
+该切片没有 schema migration / index，也不开放 Episode/Reflection lookup、identity/commitment history 或 correction。
 
 ## 项目定位
 
@@ -358,7 +364,6 @@ Implementation notes:
 
 ## 未实现
 
-- 稳定完整 cross-type record union
 - Episode / Reflection `get_memory`、identity/commitment history 与 record-only Reflection history
 - current-schema structural readback，以及 exclusive init/migration lifecycle gate
 - 受审计的 `supersede_memory` correction 合同，以及真实 MCP 客户端“记录 → 重连 → 检索 → 查看证据 → supersede → 回看历史”退出证据
@@ -373,7 +378,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-08-13`，测试与工具链已完成分层减重；M1.1.5 继续复用以下运行入口：
+截至 `2026-08-13`，测试与工具链已完成分层减重；M1.1.6 继续复用以下运行入口：
 
 - `cargo fmt --check`
 - `git diff --check`

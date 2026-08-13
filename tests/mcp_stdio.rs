@@ -117,6 +117,7 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
         "mode",
         "episode_reference",
         "reflection_reference",
+        "record_types",
         "limit",
     ] {
         assert!(
@@ -2637,6 +2638,188 @@ async fn get_evidence_relation_returns_scoped_window_and_hides_cross_scope_ids_o
             "result_count": 0
         })
     );
+}
+
+#[tokio::test]
+async fn search_memory_union_returns_scoped_mixed_records_and_preserves_event_default_over_stdio() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let ingest = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/union-stdio-a",
+                    "kind": "Observation",
+                    "summary": "scoped union event"
+                },
+                "claim_drafts": [{
+                    "owner": "World",
+                    "namespace": "project/union-stdio-a",
+                    "subject": "union.fact",
+                    "predicate": "is",
+                    "object": "old",
+                    "mode": "Observed"
+                }],
+                "episode_reference": "episode:union-stdio-a"
+            }),
+        )
+        .await
+        .unwrap();
+    let event_id = ingest["result"]["structuredContent"]["event_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let old_claim_id = format!("{event_id}:claim:0");
+    let reflection = client
+        .call_tool(
+            "run_reflection",
+            json!({
+                "reflection": {"summary": "replace the scoped union claim"},
+                "supersede_claim_id": old_claim_id,
+                "replacement_claim": {
+                    "owner": "World",
+                    "namespace": "project/union-stdio-a",
+                    "subject": "union.fact",
+                    "predicate": "is",
+                    "object": "new",
+                    "mode": "Observed"
+                },
+                "replacement_evidence_event_ids": [format!("event:{event_id}")]
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        reflection.get("error").is_none(),
+        "reflection failed: {reflection:?}"
+    );
+    let reflection_id = reflection["result"]["structuredContent"]["reflection_id"]
+        .as_str()
+        .unwrap();
+    let replacement_claim_id = reflection["result"]["structuredContent"]["replacement_claim_id"]
+        .as_str()
+        .unwrap();
+    let _ = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/union-stdio-b",
+                    "kind": "Observation",
+                    "summary": "cross-scope interferer"
+                },
+                "claim_drafts": [{
+                    "owner": "World",
+                    "namespace": "project/union-stdio-b",
+                    "subject": "union.fact",
+                    "predicate": "is",
+                    "object": "other",
+                    "mode": "Observed"
+                }],
+                "episode_reference": "episode:union-stdio-b"
+            }),
+        )
+        .await
+        .unwrap();
+
+    let union = client
+        .call_tool(
+            "search_memory",
+            json!({
+                "namespace": "project/union-stdio-a",
+                "record_types": ["Event", "Claim", "Episode", "Reflection"],
+                "limit": 10
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        union.get("error").is_none(),
+        "union search failed: {union:?}"
+    );
+    let structured = &union["result"]["structuredContent"];
+    assert_eq!(
+        structured["record_types"],
+        json!(["event", "claim", "episode", "reflection"])
+    );
+    let records = structured["records"].as_array().cloned().unwrap();
+    let types = records
+        .iter()
+        .map(|record| record["record_type"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(types, vec!["reflection", "event", "episode", "claim"]);
+    assert_eq!(records[0]["id"], reflection_id);
+    assert_eq!(records[1]["id"], format!("event:{event_id}"));
+    assert_eq!(records[2]["id"], "episode:union-stdio-a");
+    assert_eq!(records[3]["id"], format!("claim:{replacement_claim_id}"));
+    assert!(
+        records
+            .iter()
+            .all(|record| record["namespace"] == "project/union-stdio-a")
+    );
+
+    let default_event = client
+        .call_tool(
+            "search_memory",
+            json!({"namespace": "project/union-stdio-a"}),
+        )
+        .await
+        .unwrap();
+    let default_records = default_event["result"]["structuredContent"]["records"]
+        .as_array()
+        .unwrap();
+    assert_eq!(default_records.len(), 1);
+    assert_eq!(default_records[0]["record_type"], "event");
+
+    for invalid in [
+        json!({
+            "namespace": "project/union-stdio-a",
+            "record_type": "Event",
+            "record_types": ["Claim"]
+        }),
+        json!({
+            "namespace": "project/union-stdio-a",
+            "record_types": []
+        }),
+        json!({
+            "namespace": "project/union-stdio-a",
+            "record_types": ["Event", "Claim"],
+            "kind": "Observation"
+        }),
+    ] {
+        let response = client.call_tool("search_memory", invalid).await.unwrap();
+        assert_eq!(
+            response["error"]["code"], -32602,
+            "invalid union search must fail closed: {response:?}"
+        );
+    }
+
+    let empty = client
+        .call_tool(
+            "search_memory",
+            json!({"namespace": "project/union-stdio-empty"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(empty["result"]["structuredContent"]["records"], json!([]));
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    let operation = sqlx::query(
+        "SELECT response_summary_json FROM operation_log WHERE entrypoint = 'search_memory' ORDER BY occurred_at DESC, operation_id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let summary: Value =
+        serde_json::from_str(&operation.get::<String, _>("response_summary_json")).unwrap();
+    assert_eq!(summary, json!({"record_type": "event", "result_count": 0}));
 }
 
 #[tokio::test]

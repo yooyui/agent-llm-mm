@@ -293,7 +293,7 @@ impl Server {
     }
 
     #[tool(
-        description = "Search complete event, claim, scoped Episode, or scoped Reflection provenance records in one explicit local memory namespace. Omitted record_type preserves Event behavior. Event queries support exact reference, kind, inclusive time range, and bounded recent-first results. Claim queries support exact reference, status, and mode; claims have no stored recorded_at timestamp. Episode queries support an exact persisted episode_reference. Reflection queries attribute rows only through same-scope Claim endpoints, hide mixed-scope edges, and exclude record-only reflections.",
+        description = "Search complete event, claim, scoped Episode, or scoped Reflection provenance records in one explicit local memory namespace. Omitted record_type preserves Event behavior. Additive record_types runs a scoped union of the requested types with a stable recorded_at / type / id order. Event queries support exact reference, kind, inclusive time range, and bounded recent-first results. Claim queries support exact reference, status, and mode; claims have no stored recorded_at timestamp. Episode queries support an exact persisted episode_reference. Reflection queries attribute rows only through same-scope Claim endpoints, hide mixed-scope edges, and exclude record-only reflections. Union queries reject type-specific filters.",
         input_schema = rmcp::handler::server::tool::cached_schema_for_type::<Parameters<SearchMemoryParams>>()
     )]
     async fn search_memory(&self, raw_params: JsonObject) -> Result<CallToolResult, McpError> {
@@ -315,7 +315,11 @@ impl Server {
             search_memory::SearchMemoryInput::try_from(params),
         )
         .await?;
-        let record_type = input.record_type;
+        let log_record_type = if input.is_union() {
+            "union".to_string()
+        } else {
+            input.record_types[0].as_str().to_string()
+        };
         let result = map_tool_error(
             &self.runtime,
             "search_memory",
@@ -331,10 +335,10 @@ impl Server {
             format!(
                 "memory search returned {} {} records",
                 result.records.len(),
-                record_type.as_str()
+                log_record_type
             ),
             &serde_json::json!({
-                "record_type": record_type.as_str(),
+                "record_type": log_record_type,
                 "result_count": result.records.len(),
             }),
         );
@@ -342,7 +346,7 @@ impl Server {
             .record_tool_operation(
                 ToolOperationRecord::ok("search_memory", dashboard_namespace, Some(correlation_id))
                     .with_response_summary(serde_json::json!({
-                        "record_type": record_type.as_str(),
+                        "record_type": log_record_type,
                         "result_count": result.records.len(),
                     })),
             )

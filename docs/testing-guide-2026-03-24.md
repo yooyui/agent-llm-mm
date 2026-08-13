@@ -446,7 +446,7 @@ bash -n scripts/agent-llm-mm.sh scripts/first-run-bootstrap-smoke-local.sh scrip
 
 M0.4 不证明 remote backup、scheduled backup、cloud sync、production disaster recovery，或超出 SQLite 事务语义的 crash/power-loss guarantee。
 
-### 6.3F M1.1.1 / M1.1.2 / M1.1.3 / M1.1.4 / M1.1.5 / M1.2.1 / M1.2.2 / M1.2.3 scoped read model 回归
+### 6.3F M1.1.1 / M1.1.2 / M1.1.3 / M1.1.4 / M1.1.5 / M1.1.6 / M1.2.1 / M1.2.2 / M1.2.3 scoped read model 回归
 
 ```zsh
 cargo test --test sqlite_store sqlite_event_recall -v
@@ -478,7 +478,7 @@ M1.1.3 回归另外证明：`record_type = Episode` 只在 `search_memory` 中�
 
 M1.2.3 回归另外证明：`get_reflection_history` 要求显式 namespace 与 exact Claim anchor，接受 canonical/raw Claim ID，limit 默认 20 且只允许 `1..=100`；SQLite 递归读取 superseded/replacement 双向 chain，并按 newest-first 返回有界结果与 `has_more`。missing/cross-scope Claim 返回空；mixed-scope edge 整条隐藏；supporting evidence 只返回同 scope canonical references；malformed legacy evidence fail closed。断开重连且 provider 不可达时历史读取仍可用，semantic memory tables 不变，operation log metadata 只保存 `history_type`、`result_count`、`has_more`。
 
-该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.1.4 Scoped Reflection Provenance Read`、`M1.1.5 Scoped Evidence Relation Runtime Read`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup` 与 `M1.2.3 Scoped Claim Reflection History`。M1.0.1 / M1.0.2 / M1.0.3 分别由 6.3G / 6.3H / 6.3I 单独证明。M1.1.4 由 6.3J 单独补充。M1.1.5 由 6.3K 单独补充。它不证明稳定完整 record union、identity/commitment history、record-only reflection、Episode/Reflection `get_memory`、correction、current-schema structural readback、exclusive init/migration、完整 M1.1/M1.2/M1、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha；Episode reference normalization、schema migration/index 和规模化性能也未证明，当前仍是 MVP 表扫描边界。
+该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.1.4 Scoped Reflection Provenance Read`、`M1.1.5 Scoped Evidence Relation Runtime Read`、`M1.1.6 Stable Cross-Type Record Union`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup` 与 `M1.2.3 Scoped Claim Reflection History`。M1.0.1 / M1.0.2 / M1.0.3 分别由 6.3G / 6.3H / 6.3I 单独证明。M1.1.4 由 6.3J 单独补充。M1.1.5 由 6.3K 单独补充。M1.1.6 由 6.3L 单独补充。它不证明 identity/commitment history、record-only reflection、Episode/Reflection `get_memory`、correction、current-schema structural readback、exclusive init/migration、完整 M1.1/M1.2/M1、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha；Episode reference normalization、schema migration/index 和规模化性能也未证明，当前仍是 MVP 表扫描边界。
 
 ### 6.3G M1.0.1 scoped identity evidence-to-Episode gate
 
@@ -542,6 +542,19 @@ cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -- --
 ```
 
 这组回归验证：第 8 个 MCP 工具 `get_evidence_relation` 要求显式 namespace 与 `trigger_window_event_ids`；裸 ID 与 `event:<id>` 保序去重后，SQLite 只保留同 owner+namespace Event。missing / cross-scope trigger ID 从窗口省略；selected 越 scoped window 时 fail closed。结果返回 canonical `event:<id>`、window_rank、selected / available-not-selected、binary weight 与 rejection reason。路径只读、provider-free，operation metadata 不保存原始 ID 列表。该切片没有 schema migration / index，也不证明 ranking、stable union 或完整 M1。
+
+### 6.3L M1.1.6 stable cross-type record union
+
+```zsh
+cargo test --test sqlite_store sqlite_search_memory_union_is_scoped_stable_sorted_and_hides_cross_scope_types -- --exact
+cargo test --test evidence_query_dto search_memory_dto_adds_union_record_types_without_widening_get_memory -- --exact
+cargo test --test evidence_query_dto search_memory_dto_validates_union_filters_and_type_compatibility -- --exact
+cargo test --test mcp_stdio search_memory_union_returns_scoped_mixed_records_and_preserves_event_default_over_stdio -- --exact
+cargo test --test mcp_stdio server_preserves_tool_input_schemas_over_stdio -- --exact
+./scripts/test-tier.sh core
+```
+
+这组回归验证：additive `record_types` 可请求 Event / Claim / Episode / Reflection 的 scoped union；省略 `record_type` / `record_types` 仍为 Event。两者同时出现、空数组、重复类型或类型专属 filter fail closed。单类型路径保持原 SQL 顺序与 tagged JSON。union 按 `recorded_at DESC`（Claim 无 timestamp 在后）、type rank、id DESC 收口并截断，跨 scope 记录不进入结果。`get_memory` 仍只接受 Event / Claim。该切片没有 schema migration / index，也不证明 lookup/history/correction 或完整 M1。
 
 ### 6.4 Provider 合规预检
 

@@ -16,7 +16,7 @@ use agent_llm_mm::{
         GetEvidenceRelationParams, GetMemoryParams, GetReflectionHistoryParams,
         MemoryRecordTypeDto, ModeDto, OwnerDto, SearchMemoryParams,
     },
-    ports::EvidenceQuery,
+    ports::{ClaimStatus, EvidenceQuery},
 };
 use chrono::{DateTime, Utc};
 
@@ -67,7 +67,7 @@ fn search_memory_dto_adds_episode_without_widening_get_memory_record_types() {
     .expect("search_memory should deserialize the Episode record type");
     let input = SearchMemoryInput::try_from(params).expect("Episode search should convert");
 
-    assert_eq!(input.record_type, MemoryRecordType::Episode);
+    assert_eq!(input.single_record_type(), Some(MemoryRecordType::Episode));
     assert_eq!(
         input.episode_reference.as_deref(),
         Some("episode:Persisted-Exactly")
@@ -94,7 +94,7 @@ fn search_memory_dto_keeps_omitted_record_type_as_event() {
     .unwrap();
     let input = SearchMemoryInput::try_from(params).unwrap();
 
-    assert_eq!(input.record_type, MemoryRecordType::Event);
+    assert_eq!(input.single_record_type(), Some(MemoryRecordType::Event));
     assert!(input.episode_reference.is_none());
 }
 
@@ -152,7 +152,10 @@ fn search_memory_dto_adds_reflection_without_widening_get_memory_record_types() 
     .expect("search_memory should deserialize the Reflection record type");
     let input = SearchMemoryInput::try_from(params).expect("Reflection search should convert");
 
-    assert_eq!(input.record_type, MemoryRecordType::Reflection);
+    assert_eq!(
+        input.single_record_type(),
+        Some(MemoryRecordType::Reflection)
+    );
     assert_eq!(
         input.reflection_reference.as_deref(),
         Some("reflection-persisted")
@@ -207,6 +210,99 @@ fn search_memory_dto_validates_exact_reflection_filters_and_type_compatibility()
             "Reflection-specific filters must stay bound to record_type Reflection"
         );
     }
+}
+
+#[test]
+fn search_memory_dto_adds_union_record_types_without_widening_get_memory() {
+    let params = serde_json::from_value::<SearchMemoryParams>(serde_json::json!({
+        "namespace": "project/dto",
+        "record_types": ["Event", "Claim", "Episode", "Reflection"],
+        "limit": 8
+    }))
+    .expect("search_memory should deserialize a union record_types list");
+    let input = SearchMemoryInput::try_from(params).expect("union search should convert");
+
+    assert!(input.is_union());
+    assert_eq!(input.single_record_type(), None);
+    assert_eq!(
+        input.record_types,
+        vec![
+            MemoryRecordType::Event,
+            MemoryRecordType::Claim,
+            MemoryRecordType::Episode,
+            MemoryRecordType::Reflection
+        ]
+    );
+    assert_eq!(input.limit, 8);
+    assert!(input.claim_status.is_none());
+}
+
+#[test]
+fn search_memory_dto_validates_union_filters_and_type_compatibility() {
+    let both = serde_json::from_value::<SearchMemoryParams>(serde_json::json!({
+        "namespace": "project/dto",
+        "record_type": "Event",
+        "record_types": ["Claim"]
+    }))
+    .unwrap();
+    assert!(
+        SearchMemoryInput::try_from(both).is_err(),
+        "record_type and record_types must stay mutually exclusive"
+    );
+
+    let empty = serde_json::from_value::<SearchMemoryParams>(serde_json::json!({
+        "namespace": "project/dto",
+        "record_types": []
+    }))
+    .unwrap();
+    assert!(
+        SearchMemoryInput::try_from(empty).is_err(),
+        "empty record_types must fail closed"
+    );
+
+    let duplicates = serde_json::from_value::<SearchMemoryParams>(serde_json::json!({
+        "namespace": "project/dto",
+        "record_types": ["Event", "Event"]
+    }))
+    .unwrap();
+    assert!(
+        SearchMemoryInput::try_from(duplicates).is_err(),
+        "duplicate record_types must fail closed"
+    );
+
+    for params in [
+        serde_json::json!({
+            "namespace": "project/dto",
+            "record_types": ["Event", "Claim"],
+            "kind": "Observation"
+        }),
+        serde_json::json!({
+            "namespace": "project/dto",
+            "record_types": ["Event", "Episode"],
+            "episode_reference": "episode:union-filter"
+        }),
+        serde_json::json!({
+            "namespace": "project/dto",
+            "record_types": ["Claim", "Reflection"],
+            "claim_status": "Disputed"
+        }),
+    ] {
+        let params = serde_json::from_value::<SearchMemoryParams>(params).unwrap();
+        assert!(
+            SearchMemoryInput::try_from(params).is_err(),
+            "union searches must reject type-specific filters"
+        );
+    }
+
+    let single_via_array = serde_json::from_value::<SearchMemoryParams>(serde_json::json!({
+        "namespace": "project/dto",
+        "record_types": ["Claim"]
+    }))
+    .unwrap();
+    let input = SearchMemoryInput::try_from(single_via_array)
+        .expect("single-element record_types should keep Claim search semantics");
+    assert_eq!(input.single_record_type(), Some(MemoryRecordType::Claim));
+    assert_eq!(input.claim_status, Some(ClaimStatus::Active));
 }
 
 #[test]

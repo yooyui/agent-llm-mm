@@ -39,7 +39,7 @@ impl MemoryRecordType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchMemoryInput {
     pub namespace: Namespace,
-    pub record_type: MemoryRecordType,
+    pub record_types: Vec<MemoryRecordType>,
     pub event_reference: Option<EventReference>,
     pub kind: Option<EventKind>,
     pub recorded_after: Option<DateTime<Utc>>,
@@ -53,6 +53,14 @@ pub struct SearchMemoryInput {
 }
 
 impl SearchMemoryInput {
+    pub fn is_union(&self) -> bool {
+        self.record_types.len() > 1
+    }
+
+    pub fn single_record_type(&self) -> Option<MemoryRecordType> {
+        (self.record_types.len() == 1).then_some(self.record_types[0])
+    }
+
     pub fn validate(&self) -> Result<(), AppError> {
         if self.limit == 0 {
             return Err(AppError::InvalidParams(
@@ -63,6 +71,22 @@ impl SearchMemoryInput {
             return Err(AppError::InvalidParams(format!(
                 "search_memory limit must be at most {MAX_EVENT_RECORD_QUERY_LIMIT}"
             )));
+        }
+        if self.record_types.is_empty() {
+            return Err(AppError::InvalidParams(
+                "search_memory record_types must contain at least one record type".to_string(),
+            ));
+        }
+        if self.record_types.iter().any(|record_type| {
+            self.record_types
+                .iter()
+                .filter(|candidate| *candidate == record_type)
+                .count()
+                > 1
+        }) {
+            return Err(AppError::InvalidParams(
+                "search_memory record_types must not contain duplicates".to_string(),
+            ));
         }
         if self
             .recorded_after
@@ -89,8 +113,33 @@ impl SearchMemoryInput {
                     .to_string(),
             ));
         }
+        if self.is_union() {
+            return self.validate_union_filters();
+        }
+        self.validate_single_type_filters(self.record_types[0])
+    }
 
-        match self.record_type {
+    fn validate_union_filters(&self) -> Result<(), AppError> {
+        if self.event_reference.is_some()
+            || self.kind.is_some()
+            || self.recorded_after.is_some()
+            || self.recorded_before.is_some()
+            || self.claim_reference.is_some()
+            || self.claim_status.is_some()
+            || self.mode.is_some()
+            || self.episode_reference.is_some()
+            || self.reflection_reference.is_some()
+        {
+            return Err(AppError::InvalidParams(
+                "union searches support only namespace, record_types, and limit filters"
+                    .to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_single_type_filters(&self, record_type: MemoryRecordType) -> Result<(), AppError> {
+        match record_type {
             MemoryRecordType::Event
                 if self.claim_reference.is_some()
                     || self.claim_status.is_some()
@@ -155,6 +204,7 @@ pub struct SearchMemoryResult {
     pub owner: Owner,
     pub namespace: String,
     pub limit: usize,
+    pub record_types: Vec<String>,
     pub records: Vec<SearchMemoryRecord>,
 }
 
@@ -237,11 +287,43 @@ where
     let owner = scope
         .owner()
         .expect("namespace-derived memory scope must have an owner");
-    let records = match input.record_type {
+    let record_type_labels = input
+        .record_types
+        .iter()
+        .map(|record_type| record_type.as_str().to_string())
+        .collect::<Vec<_>>();
+    let mut records = Vec::new();
+    for record_type in &input.record_types {
+        records.extend(query_typed_records(deps, &scope, *record_type, &input).await?);
+    }
+    if input.is_union() {
+        sort_union_records(&mut records);
+        records.truncate(input.limit);
+    }
+
+    Ok(SearchMemoryResult {
+        owner,
+        namespace: input.namespace.as_str().to_string(),
+        limit: input.limit,
+        record_types: record_type_labels,
+        records,
+    })
+}
+
+async fn query_typed_records<D>(
+    deps: &D,
+    scope: &MemoryScope,
+    record_type: MemoryRecordType,
+    input: &SearchMemoryInput,
+) -> Result<Vec<SearchMemoryRecord>, AppError>
+where
+    D: MemoryReadStore + Sync,
+{
+    let records = match record_type {
         MemoryRecordType::Event => deps
             .query_event_records(EventRecordQuery {
-                scope,
-                event_reference: input.event_reference,
+                scope: scope.clone(),
+                event_reference: input.event_reference.clone(),
                 kind: input.kind,
                 recorded_after: input.recorded_after,
                 recorded_before: input.recorded_before,
@@ -253,9 +335,9 @@ where
             .collect(),
         MemoryRecordType::Claim => deps
             .query_claim_records(ClaimRecordQuery {
-                scope,
-                claim_reference: input.claim_reference,
-                status: input.claim_status,
+                scope: scope.clone(),
+                claim_reference: input.claim_reference.clone(),
+                status: claim_query_status(input),
                 mode: input.mode,
                 limit: input.limit,
             })
@@ -265,8 +347,8 @@ where
             .collect(),
         MemoryRecordType::Episode => deps
             .query_episode_records(EpisodeRecordQuery {
-                scope,
-                episode_reference: input.episode_reference,
+                scope: scope.clone(),
+                episode_reference: input.episode_reference.clone(),
                 limit: input.limit,
             })
             .await?
@@ -275,8 +357,8 @@ where
             .collect(),
         MemoryRecordType::Reflection => deps
             .query_reflection_records(ReflectionRecordQuery {
-                scope,
-                reflection_reference: input.reflection_reference,
+                scope: scope.clone(),
+                reflection_reference: input.reflection_reference.clone(),
                 limit: input.limit,
             })
             .await?
@@ -284,13 +366,51 @@ where
             .map(SearchMemoryRecord::from)
             .collect(),
     };
+    Ok(records)
+}
 
-    Ok(SearchMemoryResult {
-        owner,
-        namespace: input.namespace.as_str().to_string(),
-        limit: input.limit,
-        records,
-    })
+fn claim_query_status(input: &SearchMemoryInput) -> Option<ClaimStatus> {
+    if input.is_union() {
+        input.claim_status.or(Some(ClaimStatus::Active))
+    } else {
+        input.claim_status
+    }
+}
+
+fn sort_union_records(records: &mut [SearchMemoryRecord]) {
+    records.sort_by(|left, right| {
+        union_recorded_at(right)
+            .cmp(&union_recorded_at(left))
+            .then_with(|| union_type_rank(left).cmp(&union_type_rank(right)))
+            .then_with(|| union_record_id(right).cmp(union_record_id(left)))
+    });
+}
+
+fn union_recorded_at(record: &SearchMemoryRecord) -> Option<DateTime<Utc>> {
+    match record {
+        SearchMemoryRecord::Event { recorded_at, .. }
+        | SearchMemoryRecord::Episode { recorded_at, .. }
+        | SearchMemoryRecord::Reflection { recorded_at, .. } => Some(*recorded_at),
+        SearchMemoryRecord::Claim { .. } => None,
+    }
+}
+
+fn union_type_rank(record: &SearchMemoryRecord) -> u8 {
+    match record {
+        SearchMemoryRecord::Event { .. } => 0,
+        SearchMemoryRecord::Episode { .. } => 1,
+        SearchMemoryRecord::Reflection { .. } => 2,
+        SearchMemoryRecord::Claim { .. } => 3,
+    }
+}
+
+fn union_record_id(record: &SearchMemoryRecord) -> &str {
+    match record {
+        SearchMemoryRecord::Event { id, .. }
+        | SearchMemoryRecord::Claim { id, .. }
+        | SearchMemoryRecord::Episode { id, .. }
+        | SearchMemoryRecord::Reflection { id, .. } => id,
+    }
 }
 
 impl From<EventReadRecord> for SearchMemoryRecord {
