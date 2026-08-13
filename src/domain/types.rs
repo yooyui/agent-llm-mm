@@ -78,6 +78,12 @@ impl Namespace {
         &self.0
     }
 
+    pub fn derived_owner(&self) -> Owner {
+        MemoryScope::for_namespace(self.clone())
+            .owner()
+            .expect("namespace constructors only permit known namespace shapes")
+    }
+
     pub fn matches_owner(&self, owner: Owner) -> bool {
         match owner {
             Owner::Self_ => self.as_str() == "self",
@@ -103,6 +109,12 @@ impl<'de> serde::Deserialize<'de> for Namespace {
 pub struct MemoryScope {
     owner: Option<Owner>,
     namespace: Option<Namespace>,
+}
+
+impl Owner {
+    pub fn is_accepted_for_new_writes(self) -> bool {
+        !matches!(self, Self::Unknown)
+    }
 }
 
 impl MemoryScope {

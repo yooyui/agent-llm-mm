@@ -5,10 +5,15 @@ use agent_llm_mm::{
         get_reflection_history::{DEFAULT_REFLECTION_HISTORY_LIMIT, GetReflectionHistoryInput},
         search_memory::{MemoryRecordType, SearchMemoryInput},
     },
-    domain::{event::MAX_EVIDENCE_MANIFEST_ITEMS, types::Owner},
+    domain::{
+        claim::ClaimDraft,
+        event::{Event, MAX_EVIDENCE_MANIFEST_ITEMS},
+        types::Owner,
+    },
     interfaces::mcp::dto::{
-        BuildSelfSnapshotParams, EvidenceQueryDto, GetMemoryParams, GetReflectionHistoryParams,
-        MemoryRecordTypeDto, SearchMemoryParams,
+        BuildSelfSnapshotParams, ClaimDraftDto, EventDto, EventKindDto, EvidenceQueryDto,
+        GetMemoryParams, GetReflectionHistoryParams, MemoryRecordTypeDto, ModeDto, OwnerDto,
+        SearchMemoryParams,
     },
     ports::EvidenceQuery,
 };
@@ -458,4 +463,34 @@ fn snapshot_dto_bounds_evidence_manifest_before_query_construction() {
             .to_string()
             .contains("evidence_manifest must contain at most 256 entries")
     );
+}
+
+#[test]
+fn event_and_claim_dtos_reject_unknown_owner_for_new_writes() {
+    let event = Event::try_from(EventDto {
+        owner: OwnerDto::Unknown,
+        namespace: Some("world".to_string()),
+        kind: EventKindDto::Observation,
+        summary: "legacy-looking write".to_string(),
+    });
+    assert!(event.is_err());
+
+    let claim = ClaimDraft::try_from(ClaimDraftDto {
+        owner: OwnerDto::Unknown,
+        namespace: Some("project/demo".to_string()),
+        subject: "project.fact".to_string(),
+        predicate: "is".to_string(),
+        object: "legacy".to_string(),
+        mode: ModeDto::Observed,
+    });
+    assert!(claim.is_err());
+
+    let accepted = Event::try_from(EventDto {
+        owner: OwnerDto::World,
+        namespace: Some("project/demo".to_string()),
+        kind: EventKindDto::Observation,
+        summary: "canonical write".to_string(),
+    })
+    .expect("canonical world/project writes remain accepted");
+    assert_eq!(accepted.owner(), Owner::World);
 }

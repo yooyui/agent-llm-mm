@@ -55,6 +55,25 @@ pub struct DatabaseTableCount {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct UnknownOwnerInventory {
+    pub events: i64,
+    pub claims: i64,
+    pub rewrite_performed: bool,
+    pub rewrite_requires_separate_approval: bool,
+}
+
+impl UnknownOwnerInventory {
+    fn empty() -> Self {
+        Self {
+            events: 0,
+            claims: 0,
+            rewrite_performed: false,
+            rewrite_requires_separate_approval: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct DatabaseLifecycleReport {
     pub operation: String,
     pub status: String,
@@ -69,6 +88,7 @@ pub struct DatabaseLifecycleReport {
     pub required_tables_present: bool,
     pub foreign_key_violations: usize,
     pub table_counts: Vec<DatabaseTableCount>,
+    pub unknown_owner_inventory: UnknownOwnerInventory,
     pub backup_path: Option<String>,
     pub restore_rehearsal: String,
     pub preserved_row_counts: bool,
@@ -96,6 +116,7 @@ impl DatabaseLifecycleReport {
             required_tables_present: false,
             foreign_key_violations: 0,
             table_counts: Vec::new(),
+            unknown_owner_inventory: UnknownOwnerInventory::empty(),
             backup_path: None,
             restore_rehearsal: "not_applicable".to_string(),
             preserved_row_counts: true,
@@ -120,6 +141,7 @@ impl DatabaseLifecycleReport {
             required_tables_present: false,
             foreign_key_violations: 0,
             table_counts: Vec::new(),
+            unknown_owner_inventory: UnknownOwnerInventory::empty(),
             backup_path: None,
             restore_rehearsal: "not_applicable".to_string(),
             preserved_row_counts: true,
@@ -532,6 +554,7 @@ async fn inspect_pool(
         false
     };
     let runtime_defaults_present = identity_present && baseline_commitment_present;
+    let unknown_owner_inventory = unknown_owner_inventory_pool(pool, &table_names).await?;
 
     let (status, migration_required, message) = if version > CURRENT_SCHEMA_VERSION {
         (
@@ -587,6 +610,7 @@ async fn inspect_pool(
         required_tables_present,
         foreign_key_violations,
         table_counts,
+        unknown_owner_inventory,
         backup_path: None,
         restore_rehearsal: "not_applicable".to_string(),
         preserved_row_counts: true,
@@ -634,6 +658,34 @@ async fn required_table_counts_pool(
         }
     }
     Ok(counts)
+}
+
+async fn unknown_owner_inventory_pool(
+    pool: &SqlitePool,
+    tables: &BTreeSet<String>,
+) -> Result<UnknownOwnerInventory, AppError> {
+    let events = if tables.contains("events") {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events WHERE owner = 'unknown'")
+            .fetch_one(pool)
+            .await
+            .map_err(sqlite_error)?
+    } else {
+        0
+    };
+    let claims = if tables.contains("claims") {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM claims WHERE owner = 'unknown'")
+            .fetch_one(pool)
+            .await
+            .map_err(sqlite_error)?
+    } else {
+        0
+    };
+    Ok(UnknownOwnerInventory {
+        events,
+        claims,
+        rewrite_performed: false,
+        rewrite_requires_separate_approval: true,
+    })
 }
 
 async fn create_backup_anchor(

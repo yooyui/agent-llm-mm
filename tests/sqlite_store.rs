@@ -2933,6 +2933,107 @@ async fn sqlite_claim_recall_is_scoped_status_aware_and_returns_provenance() {
 }
 
 #[tokio::test]
+async fn sqlite_canonical_owner_namespace_writes_are_reachable_through_scoped_reads() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let cases = [
+        Namespace::self_(),
+        Namespace::world(),
+        Namespace::for_user("alice"),
+        Namespace::for_project("demo"),
+    ];
+
+    for (index, namespace) in cases.into_iter().enumerate() {
+        let owner = namespace.derived_owner();
+        let event_id = format!("canonical-event-{index}");
+        let claim_id = format!("canonical-claim-{index}");
+        context
+            .store
+            .append_event(StoredEvent::new(
+                event_id.clone(),
+                now + chrono::Duration::seconds(index as i64),
+                Event::new_with_namespace(
+                    owner,
+                    namespace.clone(),
+                    EventKind::Observation,
+                    format!("canonical {namespace}"),
+                )
+                .unwrap(),
+            ))
+            .await
+            .unwrap();
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                claim_id.clone(),
+                ClaimDraft::new_with_namespace(
+                    owner,
+                    namespace.clone(),
+                    "canonical.fact",
+                    "is",
+                    event_id.clone(),
+                    Mode::Observed,
+                ),
+                ClaimStatus::Active,
+            ))
+            .await
+            .unwrap();
+
+        let events = context
+            .store
+            .query_event_records(EventRecordQuery {
+                scope: MemoryScope::for_namespace(namespace.clone()),
+                event_reference: Some(EventReference::parse(&event_id).unwrap()),
+                kind: None,
+                recorded_after: None,
+                recorded_before: None,
+                limit: 1,
+            })
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event.event.owner(), owner);
+        assert_eq!(events[0].event.event.namespace(), &namespace);
+
+        let claims = context
+            .store
+            .query_claim_records(ClaimRecordQuery {
+                scope: MemoryScope::for_namespace(namespace.clone()),
+                claim_reference: Some(ClaimReference::parse(&claim_id).unwrap()),
+                status: None,
+                mode: None,
+                limit: 1,
+            })
+            .await
+            .unwrap();
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].claim.claim.owner(), owner);
+        assert_eq!(claims[0].claim.claim.namespace(), &namespace);
+
+        let other = if namespace.as_str() == "world" {
+            Namespace::for_project("demo")
+        } else {
+            Namespace::world()
+        };
+        assert!(
+            context
+                .store
+                .query_event_records(EventRecordQuery {
+                    scope: MemoryScope::for_namespace(other),
+                    event_reference: Some(EventReference::parse(&event_id).unwrap()),
+                    kind: None,
+                    recorded_after: None,
+                    recorded_before: None,
+                    limit: 1,
+                })
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
+#[tokio::test]
 async fn sqlite_claim_revision_links_hide_mixed_scope_edges() {
     let context = test_support::new_sqlite_store().await;
     let now = test_support::fixed_now();

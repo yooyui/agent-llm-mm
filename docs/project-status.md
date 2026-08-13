@@ -57,7 +57,7 @@ SQLite 从 `episode_events -> events` 出发，在 exact filter、分组、排�
 
 该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1 当前完成六个独立切片，但 Reflection/evidence-relation runtime read、稳定完整 record union、Episode/Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
 
-同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan。2026-08-13 已完成前两项：identity supporting-Episode 查询现在同时限制 Claim 与 Event scope；Claim search/get 对 mixed-scope revision edge 整边隐藏。仍开放的一项是：schema/domain 允许的部分 `Owner::Unknown` world/project 记录无法由 namespace-derived scoped read 找回。M1.0.3 通过前不继续扩张后续 M1 feature；它们不回滚本切片已验证的 scope-first Episode projection。
+同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan。2026-08-13 已完成全部三项：identity supporting-Episode 查询现在同时限制 Claim 与 Event scope；Claim search/get 对 mixed-scope revision edge 整边隐藏；新写入拒绝 `Owner::Unknown`，只读 doctor 盘点 legacy Unknown 行且不改写。它们不回滚本切片已验证的 scope-first Episode projection。
 
 ## 2026-08-13 M1.0.1 Scoped Identity Evidence-to-Episode Gate
 
@@ -69,7 +69,13 @@ M1.0.1 让 identity auto-reflection 的 supporting-Episode 查询绑定完整 `M
 
 M1.0.2 让普通 Claim search/get 与 Claim history 使用同一 fail-closed edge 策略。`load_claim_revision_links` 在 source 与 superseded-by 两个方向都要求两端同属请求 scope；任一端缺失或越 scope 时整边隐藏，不返回 Reflection ID、对端 Claim ID、计数或存在性标志。同 scope revision 与 replacement 为空的 dispute edge 仍可见。`search_memory` 与 `get_memory` 共用该 store 路径。
 
-该切片没有 schema migration 或新 MCP tool。它不冻结 Unknown owner 写读可达性，也不构成完整 revision graph。
+该切片没有 schema migration 或新 MCP tool。它不构成完整 revision graph。
+
+## 2026-08-13 M1.0.3 Owner-Namespace Read-Write Reachability Contract
+
+M1.0.3 冻结新写入的 owner/namespace 合同：`self` → `Self_`，`world` → `World`，`user/*` → `User`，`project/*` → `World`。MCP Event/Claim DTO 与 Claim `validate` 拒绝 `Owner::Unknown`。namespace-derived scoped read 继续精确匹配 owner + namespace，不使用 unscoped fallback 或 `OR owner = unknown`。schema 仍允许 legacy Unknown world/project 行；只读 `inspect_database` / `doctor` 报告 `unknown_owner_inventory`，`rewrite_performed = false`，改写需另行批准。
+
+该切片没有 schema migration 或自动 rewrite。它不让 legacy Unknown 行通过 scoped read 找回。
 
 ## 项目定位
 
@@ -339,7 +345,6 @@ Implementation notes:
 
 ## 未实现
 
-- M1.0 剩余 scope/data-integrity gate：owner/namespace 写读可达性合同
 - scoped Reflection provenance read、正式 evidence-relation runtime read 与稳定完整 cross-type record union
 - Episode / Reflection `get_memory`、identity/commitment history 与 record-only Reflection history
 - current-schema structural readback，以及 exclusive init/migration lifecycle gate
@@ -355,7 +360,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-08-13`，测试与工具链已完成分层减重；M1.0.2 继续复用以下运行入口：
+截至 `2026-08-13`，测试与工具链已完成分层减重；M1.0.3 继续复用以下运行入口：
 
 - `cargo fmt --check`
 - `git diff --check`

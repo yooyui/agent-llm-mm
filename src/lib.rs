@@ -22,7 +22,7 @@ pub fn startup_transport_from_default_config() -> TransportKind {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub enum RunOutput {
     Doctor(Box<DoctorReport>),
-    DatabaseLifecycle(adapters::sqlite::DatabaseLifecycleReport),
+    DatabaseLifecycle(Box<adapters::sqlite::DatabaseLifecycleReport>),
 }
 
 pub async fn run_command(command: AppCommand, config: AppConfig) -> Result<Option<RunOutput>> {
@@ -38,11 +38,11 @@ pub async fn run_command(command: AppCommand, config: AppConfig) -> Result<Optio
         }
         AppCommand::Init => adapters::sqlite::initialize_database(&config.database_url)
             .await
-            .map(|report| Some(RunOutput::DatabaseLifecycle(report)))
+            .map(|report| Some(RunOutput::DatabaseLifecycle(Box::new(report))))
             .map_err(anyhow::Error::from),
         AppCommand::Migrate => adapters::sqlite::migrate_database(&config.database_url)
             .await
-            .map(|report| Some(RunOutput::DatabaseLifecycle(report)))
+            .map(|report| Some(RunOutput::DatabaseLifecycle(Box::new(report))))
             .map_err(anyhow::Error::from),
         AppCommand::Doctor(DoctorMode::ReadOnly) => run_doctor(config)
             .await

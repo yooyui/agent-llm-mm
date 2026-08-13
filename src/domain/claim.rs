@@ -117,6 +117,9 @@ impl ClaimDraft {
         if self.mode == Mode::Inferred && evidence_count == 0 {
             return Err(DomainError::InsufficientEvidence);
         }
+        if !self.owner.is_accepted_for_new_writes() {
+            return Err(DomainError::UnknownOwnerNotWritable);
+        }
 
         self.validate_namespace_owner()?;
 

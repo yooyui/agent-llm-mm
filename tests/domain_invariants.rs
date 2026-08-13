@@ -61,6 +61,47 @@ fn explicit_namespace_must_match_owner_scope() {
 }
 
 #[test]
+fn unknown_owner_is_not_accepted_for_new_writes() {
+    assert!(!Owner::Unknown.is_accepted_for_new_writes());
+    for owner in [Owner::Self_, Owner::User, Owner::World] {
+        assert!(owner.is_accepted_for_new_writes());
+    }
+
+    let draft = ClaimDraft::new_with_namespace(
+        Owner::Unknown,
+        Namespace::world(),
+        "world.fact",
+        "is",
+        "legacy",
+        Mode::Observed,
+    );
+    assert_eq!(
+        draft.validate(1),
+        Err(agent_llm_mm::domain::DomainError::UnknownOwnerNotWritable)
+    );
+}
+
+#[test]
+fn canonical_namespace_pairs_derive_one_write_owner() {
+    for (namespace, owner) in [
+        (Namespace::self_(), Owner::Self_),
+        (Namespace::world(), Owner::World),
+        (Namespace::for_user("alice"), Owner::User),
+        (Namespace::for_project("demo"), Owner::World),
+    ] {
+        assert_eq!(namespace.derived_owner(), owner);
+        assert_eq!(
+            MemoryScope::for_namespace(namespace.clone()).owner(),
+            Some(owner)
+        );
+        assert_eq!(
+            MemoryScope::for_namespace(namespace.clone()).namespace(),
+            Some(&namespace)
+        );
+    }
+}
+
+#[test]
 fn namespace_and_memory_scope_deserialization_preserve_scope_invariants() {
     assert!(serde_json::from_value::<Namespace>(serde_json::json!("tenant/invalid")).is_err());
 

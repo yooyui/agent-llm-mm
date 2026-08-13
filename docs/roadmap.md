@@ -40,7 +40,7 @@
 
 - 显式 namespace / manifest / time-window 的 M0.2 scoped snapshot 已收口，但省略 namespace 的 legacy 兼容调用仍未隔离，且尚无完整 recall read model；
 - 已有正式的 Event / Claim `search_memory` 与 `get_memory` 首片、Episode `search_memory` provenance 首片，以及 Claim-linked `get_reflection_history` 首片；Reflection/evidence-relation runtime read、稳定完整 record union、identity/commitment history、record-only reflection、Episode/Reflection lookup 与 correction 接口仍未实现；
-- 三项既有 scope/data-integrity 缺口已进入 M1.0 前置门：M1.0.1 已让 identity evidence-to-Episode 计数同时限制 Claim/Event scope，M1.0.2 已让 Claim search/get 对 mixed-scope revision edge 整边隐藏；合法 Unknown owner 写入与 namespace-derived read 的可达性合同尚未冻结；
+- M1.0 三项 scope/data-integrity 前置门已通过：identity evidence-to-Episode 计数同时限制 Claim/Event scope，Claim search/get 对 mixed-scope revision edge 整边隐藏，新写入拒绝 Unknown owner 且只读 doctor 盘点 legacy Unknown 行；
 - decision 已改用服务端 commitments，并同时 gate requested / provider-selected action；允许的 action-string 结果显式标记为 `experimental_non_authoritative`，且 policy scope 只覆盖 server commitment gate。但其他 snapshot 字段仍由 caller 提供，尚无完整 trusted snapshot handle 或 provenance binding；
 - cross-episode identity support 已使用 claim → evidence → episode 的真实 distinct join，并在 M1.0.1 绑定完整 `MemoryScope`；跨 namespace evidence link 不再改变 identity revision 判断，但仍没有完整 provenance graph；
 - M0.4 已完成：`init` / `migrate` / 默认只读 `doctor` / 显式 `doctor --allow-bootstrap` 已拆分，`serve` 不再隐式改库；
@@ -84,11 +84,11 @@ M0 未通过前，不开始新 provider、daemon 写能力、remote/team 或正�
 
 目标：完成用户真正需要的本地记忆闭环。
 
-已完成八片（截至 2026-08-13）：`M1.0.1 Scoped Identity Evidence-to-Episode Gate`、`M1.0.2 Mixed-Scope Claim Revision Edge Redaction`、`M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup` 与 `M1.2.3 Scoped Claim Reflection History`。Event / Claim search 和 lookup 继续使用显式 namespace、SQL scope-first filtering、provider-free read 与跨 scope empty/null；Episode search 以同 scope Event membership 投影 Episode，按最新 scoped Event 元组稳定排序，返回原样 opaque reference 与 canonical same-scope Event/Claim provenance。第 7 个 MCP 工具 `get_reflection_history` 仍只覆盖 Claim revision chain。Identity supporting-Episode 查询现在绑定完整 `MemoryScope`，并在分组/计数前同时限制 Claim 与 Evidence Event。Claim search/get 对 mixed-scope revision edge 整边隐藏。该 Episode 首片没有 schema migration/index，也没有开放 Episode lookup。完整 M1、Reflection/evidence-relation runtime read、稳定完整 record union、identity/commitment history、record-only reflection、Episode/Reflection lookup、correction 和真实客户端退出门仍开放。
+已完成九片（截至 2026-08-13）：`M1.0.1 Scoped Identity Evidence-to-Episode Gate`、`M1.0.2 Mixed-Scope Claim Revision Edge Redaction`、`M1.0.3 Owner-Namespace Read-Write Reachability Contract`、`M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup` 与 `M1.2.3 Scoped Claim Reflection History`。Event / Claim search 和 lookup 继续使用显式 namespace、SQL scope-first filtering、provider-free read 与跨 scope empty/null；Episode search 以同 scope Event membership 投影 Episode，按最新 scoped Event 元组稳定排序，返回原样 opaque reference 与 canonical same-scope Event/Claim provenance。第 7 个 MCP 工具 `get_reflection_history` 仍只覆盖 Claim revision chain。Identity supporting-Episode 查询现在绑定完整 `MemoryScope`，并在分组/计数前同时限制 Claim 与 Evidence Event。Claim search/get 对 mixed-scope revision edge 整边隐藏。新写入拒绝 Unknown owner；只读 doctor 盘点 legacy Unknown 行且不改写。该 Episode 首片没有 schema migration/index，也没有开放 Episode lookup。完整 M1、Reflection/evidence-relation runtime read、稳定完整 record union、identity/commitment history、record-only reflection、Episode/Reflection lookup、correction 和真实客户端退出门仍开放。
 
 计划能力：
 
-- 先完成剩余 M1.0 Scope/Data-Integrity Gate（M1.0.3）；通过前不继续扩张 Reflection、Evidence Relation、Stable Union、lookup/history 或 correction 合同；
+- M1.0 前置门已通过；下一步按冻结顺序完成 scoped Reflection read、evidence-relation runtime read 与稳定跨类型合同；
 - 已完成 scoped Episode provenance search 首片；下一步依次完成 scoped Reflection read、evidence-relation runtime read 与稳定跨类型合同；
 - `search_memory`；
 - `get_memory`：当前仅 Event / Claim；Episode lookup 在 Episode search 合同稳定后单独实现；

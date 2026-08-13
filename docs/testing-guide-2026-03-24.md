@@ -478,7 +478,7 @@ M1.1.3 回归另外证明：`record_type = Episode` 只在 `search_memory` 中�
 
 M1.2.3 回归另外证明：`get_reflection_history` 要求显式 namespace 与 exact Claim anchor，接受 canonical/raw Claim ID，limit 默认 20 且只允许 `1..=100`；SQLite 递归读取 superseded/replacement 双向 chain，并按 newest-first 返回有界结果与 `has_more`。missing/cross-scope Claim 返回空；mixed-scope edge 整条隐藏；supporting evidence 只返回同 scope canonical references；malformed legacy evidence fail closed。断开重连且 provider 不可达时历史读取仍可用，semantic memory tables 不变，operation log metadata 只保存 `history_type`、`result_count`、`has_more`。
 
-该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup` 与 `M1.2.3 Scoped Claim Reflection History`。M1.0.1 与 M1.0.2 分别由 6.3G / 6.3H 单独证明。它不证明 owner/namespace 写读可达性合同，也不证明 Reflection/evidence-relation runtime read、稳定完整 record union、identity/commitment history、record-only reflection、Episode/Reflection `get_memory`、correction、current-schema structural readback、exclusive init/migration、完整 M1.1/M1.2/M1、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha；Episode reference normalization、schema migration/index 和规模化性能也未证明，当前仍是 MVP 表扫描边界。
+该证据只完成 `M1.1.1 Scoped Event Recall Read Model`、`M1.1.2 Scoped Claim Provenance Read`、`M1.1.3 Scoped Episode Provenance Read`、`M1.2.1 Scoped Event Lookup`、`M1.2.2 Scoped Claim Lookup` 与 `M1.2.3 Scoped Claim Reflection History`。M1.0.1 / M1.0.2 / M1.0.3 分别由 6.3G / 6.3H / 6.3I 单独证明。它不证明 Reflection/evidence-relation runtime read、稳定完整 record union、identity/commitment history、record-only reflection、Episode/Reflection `get_memory`、correction、current-schema structural readback、exclusive init/migration、完整 M1.1/M1.2/M1、真实本地客户端 transcript、fresh-machine、Windows、remote 或 Local Alpha；Episode reference normalization、schema migration/index 和规模化性能也未证明，当前仍是 MVP 表扫描边界。
 
 ### 6.3G M1.0.1 scoped identity evidence-to-Episode gate
 
@@ -490,7 +490,7 @@ cargo test --test application_use_cases episode_store_default_preserves_legacy_c
 ./scripts/test-tier.sh core
 ```
 
-这组回归验证：`list_episode_references_supporting_claims` 必须接收显式 `MemoryScope`；SQLite 在 Episode 分组/计数前同时限制 Claim 与 Evidence Event 的 owner + namespace。恶意跨 namespace evidence link 不能把外 scope Episode 计入 identity revision；legacy unscoped 与不支持该查询的 store 保持 fail closed。该切片复用现有表，不证明 M1.0.3 Unknown owner 写读可达性或完整 provenance graph。
+这组回归验证：`list_episode_references_supporting_claims` 必须接收显式 `MemoryScope`；SQLite 在 Episode 分组/计数前同时限制 Claim 与 Evidence Event 的 owner + namespace。恶意跨 namespace evidence link 不能把外 scope Episode 计入 identity revision；legacy unscoped 与不支持该查询的 store 保持 fail closed。该切片复用现有表，不证明完整 provenance graph。
 
 ### 6.3H M1.0.2 mixed-scope Claim revision-edge redaction
 
@@ -501,7 +501,20 @@ cargo test --test mcp_stdio search_memory_returns_scoped_claims_with_revision_pr
 ./scripts/test-tier.sh core
 ```
 
-这组回归验证：Claim search/get 遇到任一端越 scope 的 revision edge 时整边隐藏，不保留 Reflection ID、另一端 Claim ID、计数或存在性标志；source 与 superseded-by 两个方向、`search_memory` 与 `get_memory` 都覆盖。同 scope revision edge 仍可见。该切片复用现有表，不证明 M1.0.3 Unknown owner 写读可达性或完整 revision graph。
+这组回归验证：Claim search/get 遇到任一端越 scope 的 revision edge 时整边隐藏，不保留 Reflection ID、另一端 Claim ID、计数或存在性标志；source 与 superseded-by 两个方向、`search_memory` 与 `get_memory` 都覆盖。同 scope revision edge 仍可见。该切片复用现有表，不证明完整 revision graph。
+
+### 6.3I M1.0.3 owner/namespace write-read reachability
+
+```zsh
+cargo test --test domain_invariants unknown_owner_is_not_accepted_for_new_writes -- --exact
+cargo test --test domain_invariants canonical_namespace_pairs_derive_one_write_owner -- --exact
+cargo test --test evidence_query_dto event_and_claim_dtos_reject_unknown_owner_for_new_writes -- --exact
+cargo test --test sqlite_store sqlite_canonical_owner_namespace_writes_are_reachable_through_scoped_reads -- --exact
+cargo test --test sqlite_lifecycle read_only_inspection_inventories_unknown_owner_rows_without_rewriting -- --exact
+./scripts/test-tier.sh core
+```
+
+这组回归验证：新写入只接受 namespace-derived owner；MCP DTO 与 Claim validate 拒绝 `Owner::Unknown`；canonical self/world/user/project 写后可通过同一 scope 读回。只读 doctor inventory 统计 legacy Unknown 行，`rewrite_performed = false`，原行不被改写。scoped 查询不得用 `OR owner = unknown` 扩大结果。
 
 ### 6.4 Provider 合规预检
 

@@ -149,6 +149,9 @@ impl TryFrom<EventDto> for Event {
 
     fn try_from(value: EventDto) -> Result<Self, Self::Error> {
         let owner = Owner::from(value.owner);
+        if !owner.is_accepted_for_new_writes() {
+            return Err(crate::domain::DomainError::UnknownOwnerNotWritable);
+        }
         let kind = EventKind::from(value.kind);
         let namespace = value.namespace.map(Namespace::parse).transpose()?;
 
@@ -174,6 +177,9 @@ impl TryFrom<ClaimDraftDto> for ClaimDraft {
 
     fn try_from(value: ClaimDraftDto) -> Result<Self, Self::Error> {
         let owner = Owner::from(value.owner);
+        if !owner.is_accepted_for_new_writes() {
+            return Err(crate::domain::DomainError::UnknownOwnerNotWritable);
+        }
         let mode = Mode::from(value.mode);
         let namespace = value.namespace.map(Namespace::parse).transpose()?;
 

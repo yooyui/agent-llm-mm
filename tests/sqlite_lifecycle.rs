@@ -139,6 +139,74 @@ async fn init_records_schema_ledger_defaults_counts_and_foreign_key_readback() {
             .rows,
         CURRENT_DATABASE_SCHEMA_VERSION
     );
+    assert_eq!(report.unknown_owner_inventory.events, 0);
+    assert_eq!(report.unknown_owner_inventory.claims, 0);
+    assert!(!report.unknown_owner_inventory.rewrite_performed);
+    assert!(
+        report
+            .unknown_owner_inventory
+            .rewrite_requires_separate_approval
+    );
+}
+
+#[tokio::test]
+async fn read_only_inspection_inventories_unknown_owner_rows_without_rewriting() {
+    let temp = tempdir().expect("tempdir");
+    let database_path = temp.path().join("unknown-inventory.sqlite");
+    let url = sqlite_url(&database_path);
+    initialize_database(&url).await.expect("init");
+
+    let mut connection = SqliteConnection::connect_with(
+        &SqliteConnectOptions::from_str(&url)
+            .expect("options")
+            .create_if_missing(false),
+    )
+    .await
+    .expect("connection");
+    sqlx::query(
+        "INSERT INTO events (event_id, recorded_at, owner, namespace, kind, summary) VALUES ('unknown-event', '2026-08-13T00:00:00Z', 'unknown', 'world', 'observation', 'legacy unknown')",
+    )
+    .execute(&mut connection)
+    .await
+    .expect("unknown event");
+    sqlx::query(
+        "INSERT INTO claims (claim_id, owner, namespace, subject, predicate, object, mode, status) VALUES ('unknown-claim', 'unknown', 'project/demo', 'legacy.fact', 'is', 'unreadable', 'observed', 'active')",
+    )
+    .execute(&mut connection)
+    .await
+    .expect("unknown claim");
+    connection.close().await.expect("close");
+
+    let report = inspect_database(&url).await.expect("inventory report");
+    assert_eq!(report.status, "current");
+    assert_eq!(report.unknown_owner_inventory.events, 1);
+    assert_eq!(report.unknown_owner_inventory.claims, 1);
+    assert!(!report.unknown_owner_inventory.rewrite_performed);
+    assert!(
+        report
+            .unknown_owner_inventory
+            .rewrite_requires_separate_approval
+    );
+
+    let mut connection =
+        SqliteConnection::connect_with(&SqliteConnectOptions::from_str(&url).expect("options"))
+            .await
+            .expect("reread");
+    let event_owner = sqlx::query_scalar::<_, String>(
+        "SELECT owner FROM events WHERE event_id = 'unknown-event'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("event owner");
+    let claim_owner = sqlx::query_scalar::<_, String>(
+        "SELECT owner FROM claims WHERE claim_id = 'unknown-claim'",
+    )
+    .fetch_one(&mut connection)
+    .await
+    .expect("claim owner");
+    connection.close().await.expect("close reread");
+    assert_eq!(event_owner, "unknown");
+    assert_eq!(claim_owner, "unknown");
 }
 
 #[tokio::test]

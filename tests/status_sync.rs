@@ -97,8 +97,13 @@ fn active_plan_and_reality_gate_documents_are_in_sync() {
             .contains(&"M1.0.2 Mixed-Scope Claim Revision Edge Redaction".to_string()),
         "active plan must expose the completed M1.0.2 mixed-scope claim revision-edge gate as a checkbox"
     );
+    assert!(
+        report
+            .completed_plan_items
+            .contains(&"M1.0.3 Owner-Namespace Read-Write Reachability Contract".to_string()),
+        "active plan must expose the completed M1.0.3 owner-namespace reachability gate as a checkbox"
+    );
     for planned_gate in [
-        "M1.0.3 Owner-Namespace Read-Write Reachability Contract",
         "M1.3.0 Current-Schema Structural Readback Gate",
         "M2.0.1 Exclusive Init-and-Migration Lifecycle Gate",
     ] {

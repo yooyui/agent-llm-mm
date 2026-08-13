@@ -99,6 +99,7 @@ Implemented:
 - M1.2.3 scoped Claim reflection history through the seventh MCP tool, `get_reflection_history`; canonical/raw Claim anchors reach a bounded newest-first bidirectional revision chain, while missing/cross-scope anchors and mixed-scope edges do not widen or leak
 - M1.0.1 scoped identity evidence-to-Episode counting: supporting-Episode lookup now requires an explicit `MemoryScope` and keeps only Claim/Event endpoints that match that owner + namespace before any identity-revision count
 - M1.0.2 mixed-scope Claim revision-edge redaction: Claim search/get hide the whole edge when either endpoint leaves the requested scope, so Reflection IDs and the other Claim ID cannot leak as metadata
+- M1.0.3 owner/namespace write-read reachability: new writes use the namespace-derived owner matrix and reject `Owner::Unknown`; read-only doctor inventories leftover Unknown rows without rewriting them
 
 Partially implemented:
 
@@ -116,14 +117,13 @@ Partially implemented:
 - Identity, claims, evidence, and episodes in the decision snapshot are still caller-provided; there is no server-created snapshot handle or complete policy/provenance binding yet.
 - Episodes are still lightweight scope-projected records over `episode_events -> events`, not a durable Episode entity or complete autobiographical memory model. The new search slice does not persist or claim `objective`, `outcome`, or `lesson` fields.
 - The runtime read interface now covers complete Event/Claim search and lookup records, scoped Episode provenance search, and a bounded Claim-linked reflection-history slice. These paths remain read-only/provider-free, but they do not cover Reflection search, a stable full cross-type union, identity/commitment or record-only reflection history, Episode/Reflection `get_memory`, or correction tools. The Episode slice adds no schema migration or index and retains an MVP table-scan performance boundary.
-- One scope/data-integrity gate remains open before later M1 feature expansion: legacy-valid `Owner::Unknown` world/project rows do not yet have a frozen scoped write-read reachability contract.
+- M1.0 scope/data-integrity gates are complete for new writes. Leftover `Owner::Unknown` rows remain schema-legal but invisible to namespace-derived scoped reads until a separately approved rewrite.
 - Provider live evidence proves configuration and connectivity only. It does not prove model quality, SLA, or production readiness.
 - Local alpha gates still depend on external evidence such as a real fresh-machine run, Windows parity, and a human release decision.
 - The repository remains on `rmcp 0.5.0`. An isolated `2.2.0` compatibility probe is documented as no-go for an in-place M0.5 bump because one handler error contract regressed; the future upgrade must remain capability-neutral.
 
 Not implemented:
 
-- Remaining scope/data-integrity gate for owner/namespace write-read reachability
 - Full memory layering
 - Complete Reflection/evidence-relation read models, stable cross-type union, Episode/Reflection lookup, identity/commitment and record-only reflection history, and audited correction tools
 - Richer evidence ranking / weighting
