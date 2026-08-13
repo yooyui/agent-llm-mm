@@ -135,7 +135,7 @@ Partially implemented:
 Not implemented:
 
 - Full memory layering
-- Versioned identity/commitment ledger, record-only reflection history, and audited correction tools
+- Versioned identity/commitment ledger, record-only reflection history, and Event/Episode/Reflection correction
 - Richer evidence ranking / weighting
 - Production-grade remote, team, or multi-tenant mode
 - Daemon write capabilities and autonomous background operation

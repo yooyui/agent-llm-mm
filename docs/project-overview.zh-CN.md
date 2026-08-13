@@ -13,6 +13,7 @@ MCP Memory Ledger 是一个 Rust 编写的本机 MCP `stdio` memory demo，用�
 - 配置文件驱动的 provider 加载
 - `openai-compatible` / OpenRouter provider
 - `ingest_interaction`
+- `search_memory` / `get_memory` / `get_reflection_history` / `get_self_model_history` / `get_evidence_relation` / `supersede_memory`
 - `build_self_snapshot`
 - `decide_with_snapshot`
 - `run_reflection`
@@ -20,9 +21,10 @@ MCP Memory Ledger 是一个 Rust 编写的本机 MCP `stdio` memory demo，用�
 
 ## 当前边界
 
+- M1 已完成十六片到 M1.2.7：四类 scoped search/lookup、union、Claim history、self-model audit、evidence-relation runtime 与 scoped Claim supersede；下一片是 M1.3.0 current-schema structural readback
 - `decide_with_snapshot` 已可走 `openai-compatible` 或 OpenRouter provider，但返回契约仍是最小动作字符串
 - 没有远程 HTTP transport
-- 没有 richer evidence lookup / weight / relation
+- `get_evidence_relation` 已有 scoped runtime 首片，仍不是 richer ranking / weighting
 - 还没有 Azure / 本地模型 provider；OpenRouter 通过 OpenAI-compatible transport 使用，显式 live runner 只生成 provider preflight evidence，不是 provider 质量认证、SLA 或 gateway 认证
 - release evidence index、provider certification preflight、packaging preflight 和 richer memory semantics projection 均为本机只读 / 预检能力，不生成缺失产品证据、不认证 provider 质量、不创建安装包，也不代表完整多层 memory 体系
 
@@ -39,10 +41,12 @@ MCP Memory Ledger 是一个 Rust 编写的本机 MCP `stdio` memory demo，用�
 
 ## 当前验证状态
 
-截至 `2026-07-10`：
+截至 `2026-08-13`：
 
 - 测试分为 `fast` / `core` / `full` 三级；默认 core 不编译发布工具链
 - `release-tools` feature 保留完整发布证据、打包与 provider certification 验证
+- MCP `stdio` 当前暴露 10 个工具；`run_reflection` 仍是 identity / commitment / reflection 的唯一 durable write path
+- M0 已收口；M1 进行中，M1.2.7 已完成，下一领取顺序是 M1.3.0
 - `doctor` 返回 `status = ok`
 
 ## 致谢

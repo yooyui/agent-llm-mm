@@ -13,6 +13,7 @@ Compatibility note: the current Rust crate, binary, scripts, configuration examp
 - Config-file driven provider loading
 - `openai-compatible` / OpenRouter provider
 - `ingest_interaction`
+- `search_memory` / `get_memory` / `get_reflection_history` / `get_self_model_history` / `get_evidence_relation` / `supersede_memory`
 - `build_self_snapshot`
 - `decide_with_snapshot`
 - `run_reflection`
@@ -20,9 +21,10 @@ Compatibility note: the current Rust crate, binary, scripts, configuration examp
 
 ## Current Boundaries
 
+- M1 has completed sixteen slices through M1.2.7: four scoped search/lookup types, union, Claim history, self-model audit, evidence-relation runtime, and scoped Claim supersede. The next slice is M1.3.0 current-schema structural readback
 - `decide_with_snapshot` can now use an `openai-compatible` or OpenRouter provider, but its output contract is still a minimal action string
 - There is no remote HTTP transport
-- There is no richer evidence lookup / weight / relation yet
+- `get_evidence_relation` has a scoped runtime first slice; it is still not richer ranking / weighting
 - Azure and local-model providers are not implemented yet; OpenRouter uses the OpenAI-compatible transport, and the explicit live runner only generates provider preflight evidence, not provider quality, SLA, or gateway certification
 - The release evidence index, provider certification preflight, packaging preflight, and richer memory semantics projection are local read-only / preflight capabilities; they do not create missing product evidence, certify provider quality, build installers, or complete the broader multi-layer memory model
 
@@ -39,10 +41,12 @@ Compatibility note: the current Rust crate, binary, scripts, configuration examp
 
 ## Verification Status
 
-As of `2026-07-10`:
+As of `2026-08-13`:
 
 - tests are split into `fast`, `core`, and `full` tiers; default core checks do not compile release tooling
 - the `release-tools` feature retains release-evidence, packaging, and provider-certification verification
+- MCP `stdio` currently exposes 10 tools; `run_reflection` remains the only durable write path for identity / commitment / reflection
+- M0 is closed; M1 is active through M1.2.7, and the next slice is M1.3.0
 - `doctor` returns `status = ok`
 
 ## Acknowledgement

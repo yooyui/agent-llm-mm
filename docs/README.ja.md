@@ -10,13 +10,19 @@ MCP Memory Ledger は、ローカル AI クライアント向けの Rust 製 MCP
 
 ## Features
 
-- **Local MCP memory service**: MCP `stdio` 経由で `ingest_interaction`、`build_self_snapshot`、`decide_with_snapshot`、`run_reflection` を提供します。
+- **Local MCP memory service**: MCP `stdio` 経由で `ingest_interaction`、`search_memory`、`get_memory`、`get_reflection_history`、`get_self_model_history`、`get_evidence_relation`、`supersede_memory`、`build_self_snapshot`、`decide_with_snapshot`、`run_reflection` の 10 ツールを提供します。
+- **Scoped Event / Claim / Episode / Reflection recall**: `search_memory` は明示的な namespace を必須とします。型を省略すると bounded recent-first Event を返します。`record_type = Claim / Episode / Reflection` はそれぞれ scoped Claim、同一 scope の Event から投影した Episode、同一 scope の Claim 端点だけに帰属する Reflection を返します。record-only Reflection は見えません。additive `record_types` で既存 tagged record の scoped union を要求できます。deterministic read は provider 非依存です。mixed-scope Claim revision edge は辺ごと隠します。
+- **Scoped stable-ID lookup**: `get_memory(namespace, id, record_type?)` は Event、Claim、Episode、または scoped Reflection を 1 件返します。`record_type` 省略時は Event 互換です。missing / 別 namespace / record-only Reflection は `record: null` で、クエリを広げません。
+- **Claim reflection history**: `get_reflection_history` は 1 件の exact scoped Claim から newest-first の双方向 revision chain を返します。
+- **identity/commitment revision audit**: `get_self_model_history` は claim-attributed reflection に残った identity / commitment patch を読みます。versioned ledger ではありません。
+- **Evidence-relation runtime**: `get_evidence_relation` は caller の trigger window と同一 scope Event の intersect-only です。ranking も widening もしません。
+- **Scoped audited supersede**: `supersede_memory` は既存の `run_reflection` transaction で同一 scope の Claim を置き換えます。旧 Claim は `Superseded` のまま残ります。第二条の durable write path ではありません。
 - **SQLite persistence**: event、claim、evidence、reflection audit、trigger ledger、operation log を保存します。
 - **Evidence-gated self-revision**: claim、identity、commitment の更新には明示的な evidence と governance rule が必要です。identity / commitment / reflection の永続化 write path は `run_reflection` のみです。
-- **Observable local diagnostics**: read-only dashboard、`doctor` preflight、operation-log lookup、redacted support-bundle generator を含みます。
+- **Bounded scoped snapshots**: M0.2 の明示 path は namespace、optional evidence manifest、inclusive time window を受け取り、SQLite で owner/namespace 絞り込みと recent-first 順を適用します。
+- **Bounded local operations**: operation-log lookup、backup / restore、redacted diagnostics、明示的な `init` / `migrate`、既定で書き込まない `doctor --read-only` を含みます。`serve` は欠損または古いデータベースを暗黙に変更しません。
 - **Runtime and source gates**: unauthenticated dashboard は localhost/loopback のみを許可し、tracing は stderr に固定します。Rust `1.95.0` の Linux/macOS CI で formatting、all-feature Clippy、full tests、status sync を実行します。
 - **Provider integration**: `mock`、`openai-compatible`、OpenRouter の config path をサポートします。provider secrets は private local config または environment variables に置く前提です。
-- **Local release gates**: local alpha evidence、provider preflight、packaging preflight、release evidence summary の read-only checks を含みます。これらは現在の境界を証明するものであり、release の公開や認証は行いません。
 
 ## Use Cases
 
@@ -32,7 +38,8 @@ macOS:
 
 ```zsh
 ./scripts/agent-llm-mm.sh bootstrap-local
-./scripts/agent-llm-mm.sh doctor
+./scripts/agent-llm-mm.sh init
+./scripts/agent-llm-mm.sh doctor --read-only
 ./scripts/agent-llm-mm.sh serve
 ```
 
@@ -40,7 +47,8 @@ Windows:
 
 ```powershell
 pwsh -File .\scripts\agent-llm-mm.ps1 bootstrap-local
-pwsh -File .\scripts\agent-llm-mm.ps1 doctor
+pwsh -File .\scripts\agent-llm-mm.ps1 init
+pwsh -File .\scripts\agent-llm-mm.ps1 doctor --read-only
 pwsh -File .\scripts\agent-llm-mm.ps1 serve
 ```
 
@@ -93,25 +101,36 @@ Implemented:
 - Minimal identity and commitment revision
 - Trigger-ledger-backed automatic self-revision MVP
 - Read-only dashboard, `doctor`, local support bundle, and local gate summary scripts
+- Explicit SQLite schema version / migration ledger, transactional legacy migration, pre-write backup and restore rehearsal
 - Dashboard loopback enforcement, stderr-only tracing, and Linux/macOS source CI on pinned Rust `1.95.0`
+- M1.0.1–M1.0.3 scope / data-integrity gates
+- M1.1.1–M1.1.6 scoped Event / Claim / Episode / Reflection search、evidence-relation runtime、cross-type union
+- M1.2.1–M1.2.5 Event / Claim / Episode / Reflection lookup と Claim reflection history
+- M1.2.6 scoped identity/commitment revision audit（`get_self_model_history`）。versioned ledger ではない
+- M1.2.7 scoped Claim audited supersede（`supersede_memory`）。`run_reflection` を再利用し、hard delete しない
 
 Partially implemented:
 
-- `decide_with_snapshot` は action-string contract を使っており、full decision engine ではありません。
-- episode は現在 lightweight projection であり、complete autobiographical memory model ではありません。
-- provider live evidence は configuration と connectivity のみを証明します。model quality、SLA、production readiness は証明しません。
-- local alpha gates は real fresh-machine run、Windows parity、human release decision などの external evidence に依存します。
-- `rmcp` は `0.5.0` のままです。official `2.2.0` isolated spike は handler error contract の回帰が 1 件あったため、M0.5 内の直接 upgrade は no-go です。
+- M0.2 は明示 scoped snapshot 境界だけ完了。`namespace` を省略した legacy 呼び出しは unscoped 互換のまま
+- `decide_with_snapshot` は action-string contract を使っており、full decision engine ではありません
+- episode は現在 lightweight scope projection であり、complete autobiographical memory model ではありません
+- runtime read は四種の search/lookup、union、Claim history、self-model audit、evidence-relation を覆う。`supersede_memory` は `run_reflection` の scoped Claim 訂正 facade であり、第二条の durable write path ではない
+- leftover `Owner::Unknown` 行は schema 上合法だが、namespace-derived scoped read からは見えない
+- provider live evidence は configuration と connectivity のみを証明します。model quality、SLA、production readiness は証明しません
+- local alpha gates は real fresh-machine run、Windows parity、human release decision などの external evidence に依存します
+- `rmcp` は `0.5.0` のままです。official `2.2.0` isolated spike は handler error contract の回帰が 1 件あったため、M0.5 内の直接 upgrade は no-go です
 
 Not implemented:
 
 - Full memory layering
+- Versioned identity/commitment ledger、record-only Reflection history、Event / Episode / Reflection の訂正
+- M1.3.0 current-schema structural readback と M1.3.1 real-client exit gate
 - Richer evidence ranking / weighting
 - Production-grade remote, team, or multi-tenant mode
 - Daemon write capabilities and autonomous background operation
 - Installers, service managers, auto-updaters, and release certification
 
-Complete implementation status is tracked in [project status](project-status.md) and [roadmap](roadmap.md).
+Complete implementation status is tracked in [project status](project-status.md), [roadmap](roadmap.md), and the [active plan](plans/2026-07-10-product-replan.md). Next slice is `M1.3.0 Current-Schema Structural Readback Gate`.
 
 ## Documentation
 
