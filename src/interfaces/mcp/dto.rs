@@ -73,6 +73,7 @@ pub enum MemoryRecordTypeDto {
     Event,
     Claim,
     Episode,
+    Reflection,
 }
 
 impl From<MemoryRecordTypeDto> for MemoryRecordType {
@@ -81,6 +82,7 @@ impl From<MemoryRecordTypeDto> for MemoryRecordType {
             MemoryRecordTypeDto::Event => Self::Event,
             MemoryRecordTypeDto::Claim => Self::Claim,
             MemoryRecordTypeDto::Episode => Self::Episode,
+            MemoryRecordTypeDto::Reflection => Self::Reflection,
         }
     }
 }
@@ -623,6 +625,9 @@ impl TryFrom<GetMemoryParams> for GetMemoryInput {
             MemoryRecordTypeDto::Episode => {
                 MemoryRecordReference::Episode(parse_opaque_episode_reference(value.id)?)
             }
+            MemoryRecordTypeDto::Reflection => {
+                MemoryRecordReference::Reflection(parse_opaque_reflection_reference(value.id)?)
+            }
         };
         Ok(Self {
             namespace: Namespace::parse(value.namespace).map_err(AppError::from)?,
@@ -632,11 +637,18 @@ impl TryFrom<GetMemoryParams> for GetMemoryInput {
 }
 
 fn parse_opaque_episode_reference(value: String) -> Result<String, AppError> {
+    parse_opaque_exact_reference(value, "episode_reference")
+}
+
+fn parse_opaque_reflection_reference(value: String) -> Result<String, AppError> {
+    parse_opaque_exact_reference(value, "reflection_reference")
+}
+
+fn parse_opaque_exact_reference(value: String, field: &str) -> Result<String, AppError> {
     if value.is_empty() || value.trim() != value {
-        return Err(AppError::InvalidParams(
-            "episode_reference must be non-empty and have no leading or trailing whitespace"
-                .to_string(),
-        ));
+        return Err(AppError::InvalidParams(format!(
+            "{field} must be non-empty and have no leading or trailing whitespace"
+        )));
     }
     Ok(value)
 }

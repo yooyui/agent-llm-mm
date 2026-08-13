@@ -17,6 +17,7 @@ pub enum MemoryRecordReference {
     Event(EventReference),
     Claim(ClaimReference),
     Episode(String),
+    Reflection(String),
 }
 
 impl MemoryRecordReference {
@@ -25,6 +26,7 @@ impl MemoryRecordReference {
             Self::Event(_) => MemoryRecordType::Event,
             Self::Claim(_) => MemoryRecordType::Claim,
             Self::Episode(_) => MemoryRecordType::Episode,
+            Self::Reflection(_) => MemoryRecordType::Reflection,
         }
     }
 }
@@ -47,10 +49,12 @@ where
     D: MemoryReadStore + Sync,
 {
     let record_type = input.id.record_type();
-    let (event_reference, claim_reference, episode_reference) = match input.id {
-        MemoryRecordReference::Event(reference) => (Some(reference), None, None),
-        MemoryRecordReference::Claim(reference) => (None, Some(reference), None),
-        MemoryRecordReference::Episode(reference) => (None, None, Some(reference)),
+    let (event_reference, claim_reference, episode_reference, reflection_reference) = match input.id
+    {
+        MemoryRecordReference::Event(reference) => (Some(reference), None, None, None),
+        MemoryRecordReference::Claim(reference) => (None, Some(reference), None, None),
+        MemoryRecordReference::Episode(reference) => (None, None, Some(reference), None),
+        MemoryRecordReference::Reflection(reference) => (None, None, None, Some(reference)),
     };
     let result = super::search_memory::execute(
         deps,
@@ -65,7 +69,7 @@ where
             claim_status: None,
             mode: None,
             episode_reference,
-            reflection_reference: None,
+            reflection_reference,
             limit: 1,
         },
     )

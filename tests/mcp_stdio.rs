@@ -152,8 +152,8 @@ async fn server_preserves_tool_input_schemas_over_stdio() {
     );
     assert_eq!(
         get_schema["definitions"]["MemoryRecordTypeDto"]["enum"],
-        json!(["Event", "Claim", "Episode"]),
-        "get_memory record_type schema must remain exactly Event, Claim, and Episode"
+        json!(["Event", "Claim", "Episode", "Reflection"]),
+        "get_memory record_type schema must remain exactly Event, Claim, Episode, and Reflection"
     );
 
     let history_schema = tools
@@ -2482,7 +2482,7 @@ async fn search_memory_returns_scoped_reflection_provenance_and_hides_record_onl
         .unwrap();
     assert_eq!(hidden["result"]["structuredContent"]["records"], json!([]));
 
-    let unsupported_get = client
+    let found = client
         .call_tool(
             "get_memory",
             json!({
@@ -2493,7 +2493,36 @@ async fn search_memory_returns_scoped_reflection_provenance_and_hides_record_onl
         )
         .await
         .unwrap();
-    assert_eq!(unsupported_get["error"]["code"], -32602);
+    assert!(
+        found.get("error").is_none(),
+        "reflection lookup failed: {found:?}"
+    );
+    assert_eq!(found["result"]["structuredContent"]["record"], records[0]);
+
+    for params in [
+        json!({
+            "namespace": "project/reflection-search-a",
+            "id": "reflection-record-only",
+            "record_type": "Reflection"
+        }),
+        json!({
+            "namespace": "project/reflection-search-a",
+            "id": "reflection-missing",
+            "record_type": "Reflection"
+        }),
+        json!({
+            "namespace": "project/empty",
+            "id": reflection_id,
+            "record_type": "Reflection"
+        }),
+    ] {
+        let missing = client.call_tool("get_memory", params).await.unwrap();
+        assert_eq!(
+            missing["result"]["structuredContent"]["record"],
+            json!(null),
+            "missing, record-only, or cross-scope Reflection lookup must return null"
+        );
+    }
 }
 
 #[tokio::test]

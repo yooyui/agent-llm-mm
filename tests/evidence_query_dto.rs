@@ -35,6 +35,9 @@ fn get_memory_dto_defaults_ambiguous_raw_ids_to_event_for_compatibility() {
         }
         MemoryRecordReference::Claim(_) => panic!("omitted record type must not select Claim"),
         MemoryRecordReference::Episode(_) => panic!("omitted record type must not select Episode"),
+        MemoryRecordReference::Reflection(_) => {
+            panic!("omitted record type must not select Reflection")
+        }
     }
 }
 
@@ -54,6 +57,9 @@ fn get_memory_dto_uses_explicit_claim_type_for_raw_or_canonical_claim_ids() {
             }
             MemoryRecordReference::Event(_) => panic!("explicit Claim must not select Event"),
             MemoryRecordReference::Episode(_) => panic!("explicit Claim must not select Episode"),
+            MemoryRecordReference::Reflection(_) => {
+                panic!("explicit Claim must not select Reflection")
+            }
         }
     }
 }
@@ -90,14 +96,16 @@ fn search_memory_dto_adds_episode_without_widening_get_memory_record_types() {
         MemoryRecordReference::Episode(reference) => {
             assert_eq!(reference, "episode:Persisted-Exactly");
         }
-        MemoryRecordReference::Event(_) | MemoryRecordReference::Claim(_) => {
+        MemoryRecordReference::Event(_)
+        | MemoryRecordReference::Claim(_)
+        | MemoryRecordReference::Reflection(_) => {
             panic!("explicit Episode must keep the opaque persisted reference")
         }
     }
 }
 
 #[test]
-fn get_memory_dto_rejects_invalid_episode_references_without_accepting_reflection() {
+fn get_memory_dto_rejects_invalid_episode_references() {
     for id in ["", "   ", " episode:trimmed", "episode:trimmed "] {
         let error = GetMemoryInput::try_from(GetMemoryParams {
             namespace: "project/dto".to_string(),
@@ -107,16 +115,6 @@ fn get_memory_dto_rejects_invalid_episode_references_without_accepting_reflectio
         .expect_err("empty or boundary-whitespace Episode ids must fail closed");
         assert!(error.to_string().contains("episode_reference"));
     }
-
-    let get_reflection = serde_json::from_value::<GetMemoryParams>(serde_json::json!({
-        "namespace": "project/dto",
-        "id": "reflection-persisted",
-        "record_type": "Reflection"
-    }));
-    assert!(
-        get_reflection.is_err(),
-        "get_memory must not accept Reflection in this slice"
-    );
 }
 
 #[test]
@@ -196,15 +194,38 @@ fn search_memory_dto_adds_reflection_without_widening_get_memory_record_types() 
     assert_eq!(input.limit, 9);
     assert!(input.claim_status.is_none());
 
-    let get_reflection = serde_json::from_value::<GetMemoryParams>(serde_json::json!({
-        "namespace": "project/dto",
-        "id": "reflection-persisted",
-        "record_type": "Reflection"
-    }));
-    assert!(
-        get_reflection.is_err(),
-        "get_memory must not accept Reflection in this slice"
-    );
+    let get_reflection = GetMemoryInput::try_from(
+        serde_json::from_value::<GetMemoryParams>(serde_json::json!({
+            "namespace": "project/dto",
+            "id": "reflection-persisted",
+            "record_type": "Reflection"
+        }))
+        .expect("get_memory should deserialize the Reflection record type"),
+    )
+    .expect("explicit Reflection lookup should convert");
+    match get_reflection.id {
+        MemoryRecordReference::Reflection(reference) => {
+            assert_eq!(reference, "reflection-persisted");
+        }
+        MemoryRecordReference::Event(_)
+        | MemoryRecordReference::Claim(_)
+        | MemoryRecordReference::Episode(_) => {
+            panic!("explicit Reflection must keep the opaque persisted id")
+        }
+    }
+}
+
+#[test]
+fn get_memory_dto_rejects_invalid_reflection_references() {
+    for id in ["", "   ", " reflection-trimmed", "reflection-trimmed "] {
+        let error = GetMemoryInput::try_from(GetMemoryParams {
+            namespace: "project/dto".to_string(),
+            id: id.to_string(),
+            record_type: Some(MemoryRecordTypeDto::Reflection),
+        })
+        .expect_err("empty or boundary-whitespace Reflection ids must fail closed");
+        assert!(error.to_string().contains("reflection_reference"));
+    }
 }
 
 #[test]
