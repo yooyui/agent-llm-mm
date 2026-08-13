@@ -2115,6 +2115,171 @@ async fn search_memory_returns_scoped_claims_with_revision_provenance_over_stdio
 }
 
 #[tokio::test]
+async fn search_and_get_memory_hide_mixed_scope_claim_revision_edges_over_stdio() {
+    let (mut client, database_url, _database_dir) =
+        test_support::spawn_stdio_client_with_database()
+            .await
+            .unwrap();
+    let _ = client.list_all_tools().await.unwrap();
+
+    let project_a = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/revision-a",
+                    "kind": "Observation",
+                    "summary": "old scoped claim"
+                },
+                "claim_drafts": [{
+                    "owner": "World",
+                    "namespace": "project/revision-a",
+                    "subject": "project.claim",
+                    "predicate": "is",
+                    "object": "old",
+                    "mode": "Observed"
+                }]
+            }),
+        )
+        .await
+        .unwrap();
+    let project_b = client
+        .call_tool(
+            "ingest_interaction",
+            json!({
+                "event": {
+                    "owner": "World",
+                    "namespace": "project/revision-b",
+                    "kind": "Observation",
+                    "summary": "foreign replacement claim"
+                },
+                "claim_drafts": [{
+                    "owner": "World",
+                    "namespace": "project/revision-b",
+                    "subject": "project.claim",
+                    "predicate": "is",
+                    "object": "new",
+                    "mode": "Observed"
+                }]
+            }),
+        )
+        .await
+        .unwrap();
+    let old_claim_id = format!(
+        "{}:claim:0",
+        project_a["result"]["structuredContent"]["event_id"]
+            .as_str()
+            .unwrap()
+    );
+    let new_claim_id = format!(
+        "{}:claim:0",
+        project_b["result"]["structuredContent"]["event_id"]
+            .as_str()
+            .unwrap()
+    );
+
+    let pool = SqlitePool::connect(&database_url).await.unwrap();
+    sqlx::query(
+        r#"
+        INSERT INTO reflections (
+            reflection_id, recorded_at, summary, superseded_claim_id,
+            replacement_claim_id, supporting_evidence_event_ids
+        ) VALUES (?, ?, ?, ?, ?, '[]')
+        "#,
+    )
+    .bind("reflection-mixed-scope")
+    .bind("2026-08-13T00:00:00.000000000Z")
+    .bind("persisted mixed-scope revision edge")
+    .bind(&old_claim_id)
+    .bind(&new_claim_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    for (namespace, claim_id, tool, record_path) in [
+        (
+            "project/revision-a",
+            old_claim_id.as_str(),
+            "search_memory",
+            "records",
+        ),
+        (
+            "project/revision-b",
+            new_claim_id.as_str(),
+            "search_memory",
+            "records",
+        ),
+        (
+            "project/revision-a",
+            old_claim_id.as_str(),
+            "get_memory",
+            "record",
+        ),
+        (
+            "project/revision-b",
+            new_claim_id.as_str(),
+            "get_memory",
+            "record",
+        ),
+    ] {
+        let response = if tool == "search_memory" {
+            client
+                .call_tool(
+                    tool,
+                    json!({
+                        "namespace": namespace,
+                        "record_type": "Claim",
+                        "claim_reference": format!("claim:{claim_id}"),
+                        "claim_status": "Active"
+                    }),
+                )
+                .await
+                .unwrap()
+        } else {
+            client
+                .call_tool(
+                    tool,
+                    json!({
+                        "namespace": namespace,
+                        "id": format!("claim:{claim_id}"),
+                        "record_type": "Claim"
+                    }),
+                )
+                .await
+                .unwrap()
+        };
+        let record = if record_path == "records" {
+            &response["result"]["structuredContent"]["records"][0]
+        } else {
+            &response["result"]["structuredContent"]["record"]
+        };
+        assert_eq!(record["id"], format!("claim:{claim_id}"));
+        let provenance = &record["provenance"];
+        assert!(
+            provenance.get("source_reflection_id").is_none()
+                || provenance["source_reflection_id"].is_null(),
+            "{tool} {namespace} leaked source_reflection_id: {provenance}"
+        );
+        assert!(
+            provenance.get("superseded_by_reflection_id").is_none()
+                || provenance["superseded_by_reflection_id"].is_null(),
+            "{tool} {namespace} leaked superseded_by_reflection_id: {provenance}"
+        );
+        assert!(
+            provenance.get("supersedes_claim_reference").is_none()
+                || provenance["supersedes_claim_reference"].is_null(),
+            "{tool} {namespace} leaked supersedes_claim_reference: {provenance}"
+        );
+        assert!(
+            provenance.get("replacement_claim_reference").is_none()
+                || provenance["replacement_claim_reference"].is_null(),
+            "{tool} {namespace} leaked replacement_claim_reference: {provenance}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn search_memory_invalid_or_empty_scope_fails_closed_over_stdio() {
     let mut client = test_support::spawn_stdio_client().await.unwrap();
     let _ = client.list_all_tools().await.unwrap();

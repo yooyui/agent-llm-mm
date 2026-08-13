@@ -57,13 +57,19 @@ SQLite 从 `episode_events -> events` 出发，在 exact filter、分组、排�
 
 该首片没有新增 Episode table、schema migration 或 index，也没有把只读 projection 的 caller-provided `objective / outcome / lesson` 当成持久化事实。M1 当前完成六个独立切片，但 Reflection/evidence-relation runtime read、稳定完整 record union、Episode/Reflection lookup、identity/commitment 与 record-only reflection history、audited correction、真实客户端退出门和 Local Alpha 仍开放。
 
-同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan。2026-08-13 已完成其中第一项：identity supporting-Episode 查询现在同时限制 Claim 与 Event scope。仍开放的两项是：Claim 普通 provenance 对 mixed-scope revision edge 尚可能保留 Reflection ID；schema/domain 允许的部分 `Owner::Unknown` world/project 记录无法由 namespace-derived scoped read 找回。剩余两项全部通过前不继续扩张后续 M1 feature；它们不回滚本切片已验证的 scope-first Episode projection。
+同日只读复核还确认三项既有缺口，并已作为 M1.0 前置门写回 active plan。2026-08-13 已完成前两项：identity supporting-Episode 查询现在同时限制 Claim 与 Event scope；Claim search/get 对 mixed-scope revision edge 整边隐藏。仍开放的一项是：schema/domain 允许的部分 `Owner::Unknown` world/project 记录无法由 namespace-derived scoped read 找回。M1.0.3 通过前不继续扩张后续 M1 feature；它们不回滚本切片已验证的 scope-first Episode projection。
 
 ## 2026-08-13 M1.0.1 Scoped Identity Evidence-to-Episode Gate
 
 M1.0.1 让 identity auto-reflection 的 supporting-Episode 查询绑定完整 `MemoryScope`。`list_episode_references_supporting_claims` 现在接收 server-derived owner + namespace；legacy unscoped 调用 fail closed。SQLite 在 Episode 分组/计数前 JOIN `claims` 与 `events`，两端都必须匹配请求 scope。恶意跨 namespace 的 persisted evidence link 不再把外 scope Episode 计入 `cross_episode_support_count`，因此也不能单独把 identity revision 从拒绝变成通过。
 
-该切片没有 schema migration、新 index 或新 MCP tool。它不修复 mixed-scope Claim revision-edge redaction，也不冻结 Unknown owner 的写读可达性合同。
+该切片没有 schema migration、新 index 或新 MCP tool。它不冻结 Unknown owner 的写读可达性合同。
+
+## 2026-08-13 M1.0.2 Mixed-Scope Claim Revision Edge Redaction
+
+M1.0.2 让普通 Claim search/get 与 Claim history 使用同一 fail-closed edge 策略。`load_claim_revision_links` 在 source 与 superseded-by 两个方向都要求两端同属请求 scope；任一端缺失或越 scope 时整边隐藏，不返回 Reflection ID、对端 Claim ID、计数或存在性标志。同 scope revision 与 replacement 为空的 dispute edge 仍可见。`search_memory` 与 `get_memory` 共用该 store 路径。
+
+该切片没有 schema migration 或新 MCP tool。它不冻结 Unknown owner 写读可达性，也不构成完整 revision graph。
 
 ## 项目定位
 
@@ -333,7 +339,7 @@ Implementation notes:
 
 ## 未实现
 
-- M1.0 剩余 scope/data-integrity gates：mixed-scope Claim revision edge 整边 redaction，以及 owner/namespace 写读可达性合同
+- M1.0 剩余 scope/data-integrity gate：owner/namespace 写读可达性合同
 - scoped Reflection provenance read、正式 evidence-relation runtime read 与稳定完整 cross-type record union
 - Episode / Reflection `get_memory`、identity/commitment history 与 record-only Reflection history
 - current-schema structural readback，以及 exclusive init/migration lifecycle gate
@@ -349,7 +355,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-08-13`，测试与工具链已完成分层减重；M1.0.1 继续复用以下运行入口：
+截至 `2026-08-13`，测试与工具链已完成分层减重；M1.0.2 继续复用以下运行入口：
 
 - `cargo fmt --check`
 - `git diff --check`

@@ -11,9 +11,9 @@ use agent_llm_mm::{
     },
     error::AppError,
     ports::{
-        ClaimRecordQuery, ClaimReflectionHistoryQuery, ClaimStatus, ClaimStore, CommitmentStore,
-        EpisodeRecordQuery, EpisodeStore, EventRecordQuery, EventStore, EvidenceQuery,
-        IdentityStore, IngestTransactionRunner, MemoryReadStore, ReflectionStore,
+        ClaimRecordQuery, ClaimReflectionHistoryQuery, ClaimRevisionLinks, ClaimStatus, ClaimStore,
+        CommitmentStore, EpisodeRecordQuery, EpisodeStore, EventRecordQuery, EventStore,
+        EvidenceQuery, IdentityStore, IngestTransactionRunner, MemoryReadStore, ReflectionStore,
         ReflectionTransactionRunner, StoredClaim, StoredEvent, StoredReflection,
         StoredTriggerLedgerEntry, TriggerLedgerStatus, TriggerLedgerStore,
     },
@@ -2930,6 +2930,117 @@ async fn sqlite_claim_recall_is_scoped_status_aware_and_returns_provenance() {
         })
         .await;
     assert!(matches!(unscoped, Err(AppError::InvalidParams(_))));
+}
+
+#[tokio::test]
+async fn sqlite_claim_revision_links_hide_mixed_scope_edges() {
+    let context = test_support::new_sqlite_store().await;
+    let now = test_support::fixed_now();
+    let project_a = Namespace::for_project("revision-a");
+    let project_b = Namespace::for_project("revision-b");
+
+    for (claim_id, namespace, status) in [
+        ("claim-a-old", project_a.clone(), ClaimStatus::Superseded),
+        ("claim-b-new", project_b.clone(), ClaimStatus::Active),
+        (
+            "claim-a-same-old",
+            project_a.clone(),
+            ClaimStatus::Superseded,
+        ),
+        ("claim-a-same-new", project_a.clone(), ClaimStatus::Active),
+    ] {
+        context
+            .store
+            .upsert_claim(StoredClaim::new(
+                claim_id.to_string(),
+                ClaimDraft::new_with_namespace(
+                    Owner::World,
+                    namespace,
+                    "project.fact",
+                    "is",
+                    claim_id,
+                    Mode::Observed,
+                ),
+                status,
+            ))
+            .await
+            .unwrap();
+    }
+    context
+        .store
+        .append_reflection(StoredReflection::new(
+            "reflection-mixed".to_string(),
+            now,
+            Reflection::new("cross-scope replacement must stay hidden"),
+            Some("claim-a-old".to_string()),
+            Some("claim-b-new".to_string()),
+        ))
+        .await
+        .unwrap();
+    context
+        .store
+        .append_reflection(StoredReflection::new(
+            "reflection-same".to_string(),
+            now + chrono::Duration::seconds(1),
+            Reflection::new("same-scope replacement remains visible"),
+            Some("claim-a-same-old".to_string()),
+            Some("claim-a-same-new".to_string()),
+        ))
+        .await
+        .unwrap();
+
+    let mixed_source = context
+        .store
+        .query_claim_records(ClaimRecordQuery {
+            scope: MemoryScope::for_namespace(project_a.clone()),
+            claim_reference: Some(ClaimReference::parse("claim:claim-a-old").unwrap()),
+            status: None,
+            mode: None,
+            limit: 1,
+        })
+        .await
+        .unwrap();
+    assert_eq!(mixed_source.len(), 1);
+    assert_eq!(mixed_source[0].revision, ClaimRevisionLinks::default());
+
+    let mixed_replacement = context
+        .store
+        .query_claim_records(ClaimRecordQuery {
+            scope: MemoryScope::for_namespace(project_b),
+            claim_reference: Some(ClaimReference::parse("claim:claim-b-new").unwrap()),
+            status: None,
+            mode: None,
+            limit: 1,
+        })
+        .await
+        .unwrap();
+    assert_eq!(mixed_replacement.len(), 1);
+    assert_eq!(mixed_replacement[0].revision, ClaimRevisionLinks::default());
+
+    let same_scope = context
+        .store
+        .query_claim_records(ClaimRecordQuery {
+            scope: MemoryScope::for_namespace(project_a),
+            claim_reference: Some(ClaimReference::parse("claim:claim-a-same-new").unwrap()),
+            status: None,
+            mode: None,
+            limit: 1,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        same_scope[0].revision.source_reflection_id.as_deref(),
+        Some("reflection-same")
+    );
+    assert_eq!(
+        same_scope[0]
+            .revision
+            .supersedes_claim_reference
+            .as_ref()
+            .map(ClaimReference::canonical)
+            .as_deref(),
+        Some("claim:claim-a-same-old")
+    );
 }
 
 #[tokio::test]

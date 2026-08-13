@@ -1013,10 +1013,14 @@ async fn load_claim_revision_links(
         let scoped_replacement_claim_id =
             row.get::<Option<String>, _>("scoped_replacement_claim_id");
 
-        if let Some(claim_id) = replacement_claim_id
-            && claim_ids.contains(&claim_id.as_str())
+        if let Some(claim_id) = replacement_claim_id.as_deref()
+            && claim_ids.contains(&claim_id)
+            && !revision_edge_leaves_requested_scope(
+                superseded_claim_id.as_deref(),
+                scoped_superseded_claim_id.as_deref(),
+            )
         {
-            let links = grouped.entry(claim_id).or_default();
+            let links = grouped.entry(claim_id.to_string()).or_default();
             links
                 .source_reflection_id
                 .get_or_insert(reflection_id.clone());
@@ -1025,10 +1029,14 @@ async fn load_claim_revision_links(
                     scoped_superseded_claim_id.map(ClaimReference::from_claim_id);
             }
         }
-        if let Some(claim_id) = superseded_claim_id
-            && claim_ids.contains(&claim_id.as_str())
+        if let Some(claim_id) = superseded_claim_id.as_deref()
+            && claim_ids.contains(&claim_id)
+            && !revision_edge_leaves_requested_scope(
+                replacement_claim_id.as_deref(),
+                scoped_replacement_claim_id.as_deref(),
+            )
         {
-            let links = grouped.entry(claim_id).or_default();
+            let links = grouped.entry(claim_id.to_string()).or_default();
             links
                 .superseded_by_reflection_id
                 .get_or_insert(reflection_id);
@@ -1039,6 +1047,13 @@ async fn load_claim_revision_links(
         }
     }
     Ok(grouped)
+}
+
+fn revision_edge_leaves_requested_scope(
+    endpoint_id: Option<&str>,
+    scoped_endpoint_id: Option<&str>,
+) -> bool {
+    endpoint_id.is_some() && scoped_endpoint_id.is_none()
 }
 
 async fn query_evidence_event_ids_with_limit(
