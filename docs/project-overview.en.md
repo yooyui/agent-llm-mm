@@ -38,15 +38,17 @@ Compatibility note: the current Rust crate, binary, scripts, configuration examp
 
 - After finishing each task, update the corresponding documentation whenever that task changes behavior, capability boundaries, integration flow, configuration, verification commands, or collaboration rules.
 - Do not defer documentation updates until the end of a larger batch of work; code and docs should be closed out together whenever possible.
+- The [formalization improvement plan](formalization-improvement-plan-2026-08-25.md) is a gap and acceptance map, not a second execution queue. During the current catch-up, integrate through the existing `dev-work -> main` pull request; `main` requires fresh CI and explicit human review.
 
 ## Verification Status
 
-As of `2026-08-13`:
+As of `2026-08-25`:
 
 - tests are split into `fast`, `core`, and `full` tiers; default core checks do not compile release tooling
 - the `release-tools` feature retains release-evidence, packaging, and provider-certification verification
 - MCP `stdio` currently exposes 10 tools; `run_reflection` remains the only durable write path for identity / commitment / reflection
 - M0 is closed; M1 is active through M1.2.7, and the next slice is M1.3.0
+- the fresh local CI-equivalent gate passes format, all-target/all-feature Clippy, the full tier, status sync, and diff checks; remote PR checks remain a separate gate
 - `doctor` returns `status = ok`
 
 ## Acknowledgement

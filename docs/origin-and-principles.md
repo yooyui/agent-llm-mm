@@ -98,7 +98,7 @@ Identity 和 commitments 只允许通过带证据的治理路径改变；automat
 | owner / namespace 写入约束 | `implemented` |
 | explicit scoped snapshot | `implemented` |
 | legacy unscoped compatibility / complete recall | `partial` |
-| 可检索、可解释的 memory read contract | `unimplemented` |
+| 可检索、可解释的 memory read contract | `partial` |
 | 冲突、supersession 与 reflection audit | `implemented` |
 | 可信 commitment gate | `partial` |
 | 慢变量 identity 与版本回滚 | `partial` |

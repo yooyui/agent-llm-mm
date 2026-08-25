@@ -1,9 +1,11 @@
 # MCP Memory Ledger 路线图
 
 状态：`active summary`
-更新日期：`2026-08-13`
+更新日期：`2026-08-25`
 
 本文件只回答三个问题：现在做什么、接下来做什么、哪些方向暂不排期。具体任务、依赖、证据门与停止条件统一见 [2026-07-10 全新项目规划](plans/2026-07-10-product-replan.md)。
+
+[正式化改进与主线同步计划](formalization-improvement-plan-2026-08-25.md)补充产品、工程、安全、发布和 GitHub 主线治理的跨领域差距矩阵；它不改变 `M1 -> M2 -> M3` 的依赖顺序，也不是第二份执行队列。
 
 ## 产品北极星
 
@@ -166,6 +168,7 @@ M0 Truth and Safety
 - 当前事实：[project-status.md](project-status.md)
 - 唯一 active plan：[2026-07-10-product-replan.md](plans/2026-07-10-product-replan.md)
 - 证据状态：[follow-up-reality-gates.md](product/follow-up-reality-gates.md)
+- 正式化差距与主线同步：[formalization-improvement-plan-2026-08-25.md](formalization-improvement-plan-2026-08-25.md)
 - 计划索引：[plans/README.md](plans/README.md)
 - 历史归档：[archive.md](archive.md)
 

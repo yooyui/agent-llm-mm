@@ -38,15 +38,17 @@ MCP Memory Ledger 是一个 Rust 编写的本机 MCP `stdio` memory demo，用�
 
 - 每次处理完一个任务后，如果该任务影响了行为、能力边界、接入方式、配置、验证命令或协作规则，必须同步更新对应文档。
 - 不应把文档更新留到最后统一处理；代码与文档应尽量在同一轮任务内一起收口。
+- [正式化改进计划](formalization-improvement-plan-2026-08-25.md)只负责差距与验收映射，不是第二份执行队列。当前追平阶段统一通过既有 `dev-work -> main` PR 集成；进入 `main` 前必须有 fresh CI 和明确的人工 review。
 
 ## 当前验证状态
 
-截至 `2026-08-13`：
+截至 `2026-08-25`：
 
 - 测试分为 `fast` / `core` / `full` 三级；默认 core 不编译发布工具链
 - `release-tools` feature 保留完整发布证据、打包与 provider certification 验证
 - MCP `stdio` 当前暴露 10 个工具；`run_reflection` 仍是 identity / commitment / reflection 的唯一 durable write path
 - M0 已收口；M1 进行中，M1.2.7 已完成，下一领取顺序是 M1.3.0
+- fresh 本地 CI 等价门禁已通过 format、全目标/全特性 Clippy、full tier、status sync 与 diff check；远端 PR checks 仍是独立门禁
 - `doctor` 返回 `status = ok`
 
 ## 致谢

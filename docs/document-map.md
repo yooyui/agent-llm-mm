@@ -66,6 +66,7 @@ README 负责公共入口，起点与原则负责方向约束，状态负责当�
 
 ## 5. 发布与验证
 
+- [正式化改进与主线同步计划](formalization-improvement-plan-2026-08-25.md)：从 technical MVP 到可交付 Local Product Alpha 的差距矩阵、验收清单和 GitHub 主线同步路径；不是第二份任务队列。
 - [MVP release gate](release-gate.md)
 - [Local Alpha release gate](product/release-gate-local-alpha.md)
 - [Release engineering](product/release-engineering.md)
@@ -82,6 +83,7 @@ README 负责公共入口，起点与原则负责方向约束，状态负责当�
 | [roadmap.md](roadmap.md) | 先做什么、后做什么？ |
 | [plans/2026-07-10-product-replan.md](plans/2026-07-10-product-replan.md) | 当前允许执行哪个切片？ |
 | [product/follow-up-reality-gates.md](product/follow-up-reality-gates.md) | 哪些说法有证据，哪些仍被阻断？ |
+| [formalization-improvement-plan-2026-08-25.md](formalization-improvement-plan-2026-08-25.md) | 正式化还缺哪些产品、工程、安全、发布和主线治理条件？ |
 
 冲突时先以代码、测试和数据库 readback 为准，再修正文档；不得用旧计划覆盖当前事实。
 

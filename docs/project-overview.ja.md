@@ -38,15 +38,17 @@ MCP Memory Ledger は、長期記憶・自己スナップショット・反省�
 
 - 各タスクの完了後、そのタスクが挙動、能力境界、接続手順、設定、検証コマンド、または協業ルールに影響する場合は、対応するドキュメントを必ず同時に更新します。
 - ドキュメント更新を最後にまとめて回すのではなく、可能な限りコード変更と同じタスク内で一緒に収束させます。
+- [正式化改善計画](formalization-improvement-plan-2026-08-25.md)は gap と acceptance の対応表であり、第二の実行キューではありません。現在の catch-up 期間は既存の `dev-work -> main` PR で統合し、`main` への merge には fresh CI と明示的な human review が必要です。
 
 ## 現在の検証状態
 
-`2026-08-13` 時点で：
+`2026-08-25` 時点で：
 
 - tests は `fast` / `core` / `full` の 3 tiers に分かれ、default core は release tooling を build しません
 - `release-tools` feature は release evidence、packaging、provider certification の検証を保持します
 - MCP `stdio` は現在 10 ツール。identity / commitment / reflection の durable write path は `run_reflection` のみ
 - M0 は閉じ、M1 は M1.2.7 まで完了。次の切片は M1.3.0
+- fresh local CI-equivalent gate は format、all-target/all-feature Clippy、full tier、status sync、diff check を通過。remote PR checks は別 gate
 - `doctor` は `status = ok` を返します
 
 ## 謝辞

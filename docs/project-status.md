@@ -1,5 +1,13 @@
 # 当前实现状态
 
+## 2026-08-25 正式化与远端主线同步基线
+
+项目已进入“从 technical MVP 收束为可交付 Local Product Alpha”的正式化规划阶段，但尚未通过 M1、M2 或人工 release gate，因此当前对外口径仍是 local-first technical MVP。正式化的产品、工程、安全、发布和协作差距统一见[正式化改进与主线同步计划](formalization-improvement-plan-2026-08-25.md)；该文件是覆盖矩阵，不替代唯一 [active project plan](plans/2026-07-10-product-replan.md)。
+
+本轮任务开始时，本地 `dev-work@43580ba` 工作区 clean，相对 `origin/dev-work@082be93` 领先 12 个线性提交，相对 `origin/main@6fcbb5f` 领先 28 个提交。GitHub 已存在 PR #1（`dev-work -> main`），但远端 head 仍是 `082be93`，旧 Linux/macOS checks 均失败。因此当前正确路径是先以 fresh 本地门禁验证候选，再推送现有 `dev-work` 更新 PR；只有新 head checks 通过并完成人工 review 后，才允许合并 `main`。
+
+这里的 GitHub source sync 不等于生产部署。当前仓库没有唯一生产主机、服务单元、容器平台或部署清单，本轮不包含 SSH、服务重启、数据库迁移、live provider、tag 或 GitHub Release。
+
 ## 2026-07-10 主线收束
 
 项目现在以[项目起点与主线原则](origin-and-principles.md)作为认知入口，以 `Truth and Safety -> Trustworthy Recall -> Local Product Alpha` 作为当前执行顺序。
@@ -396,7 +404,7 @@ Implementation notes:
 
 ## 当前验证状态
 
-截至 `2026-08-13`，测试与工具链已完成分层减重；M1.2.7 继续复用以下运行入口：
+截至 `2026-08-25`，测试与工具链已完成分层减重；本轮 fresh 本地 CI 等价门禁已通过以下运行入口，`status-sync` 读回 26 个完成计划项与 implemented reality gates 一致：
 
 - `cargo fmt --check`
 - `git diff --check`

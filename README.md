@@ -10,6 +10,8 @@ The project grew out of a discussion about information loss, durable memory, and
 
 The current project is best understood as a technical MVP for local agent memory, MCP integration, SQLite persistence, and governed self-revision. It is not a production autonomous-agent platform. Remote team mode, multi-tenancy, packaged installers, daemon write capabilities, and production security boundaries remain gated roadmap work.
 
+The [formalization improvement plan](docs/formalization-improvement-plan-2026-08-25.md) consolidates the current product, engineering, security, release, and mainline-sync gaps. It is an acceptance map, not evidence that Local Alpha or production readiness has already been achieved; the active project plan remains the only execution queue.
+
 ## Features
 
 - **Local MCP memory service**: exposes `ingest_interaction`, `search_memory`, `get_memory`, `get_reflection_history`, `get_self_model_history`, `get_evidence_relation`, `supersede_memory`, `build_self_snapshot`, `decide_with_snapshot`, and `run_reflection` over MCP `stdio`.
@@ -151,7 +153,8 @@ See [project status](docs/project-status.md), the [roadmap](docs/roadmap.md), an
 2. [Positioning](docs/positioning.md)
 3. [Current implementation status](docs/project-status.md)
 4. [Now / Next / Later roadmap](docs/roadmap.md)
-5. [Active project plan](docs/plans/2026-07-10-product-replan.md)
+5. [Formalization improvement and mainline sync plan](docs/formalization-improvement-plan-2026-08-25.md)
+6. [Active project plan](docs/plans/2026-07-10-product-replan.md)
 
 The active plan is the only current execution queue. Historical checklists are
 preserved for traceability, but they do not define current work.

@@ -28,6 +28,16 @@ This repository is a public technical demo and MVP. Please keep changes aligned 
 5. For release-facing changes, follow [Release Engineering](docs/product/release-engineering.md): source-only artifacts first, evidence directory recorded, compatibility and soak evidence captured when relevant, and deprecation notes written before removal.
 6. Keep `Cargo.toml` and `rust-toolchain.toml` aligned. Toolchain changes must be explicit and pass the Linux/macOS CI-equivalent full gate documented in [Rust Toolchain Policy](docs/toolchain-policy.md).
 
+## Branch And Merge Policy
+
+- `main` is the public integrated branch. Normal feature work must reach it through a pull request; do not force-push `main`.
+- During the current mainline catch-up, `dev-work` is the integration branch and the existing `dev-work -> main` pull request is the canonical merge path. Do not create a duplicate mainline PR for the same commit chain.
+- Push an integration candidate only after the focused checks for each change and the local CI-equivalent final gate pass. A GitHub push updates source state; it is not a release or production deployment.
+- Merge to `main` only when the pull request head has fresh Linux/macOS checks and a human reviewer has explicitly accepted the candidate. Old checks from an earlier head do not satisfy this gate.
+- Create candidate tags or release notes only from an exact `main` commit that has passed the applicable release gate and human release decision.
+
+The current formalization gaps and acceptance path are tracked in the [Formalization Improvement And Mainline Sync Plan](docs/formalization-improvement-plan-2026-08-25.md). That document is a cross-cutting gap map; the active project plan remains the only implementation queue.
+
 ## Verification
 
 提交前验证命令请按当前平台读取对应文档：

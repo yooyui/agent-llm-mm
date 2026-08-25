@@ -315,7 +315,7 @@ M0 已收口，当前只能从 M1 领取一个独立最小切片。新 provider�
 - 已完成（2026-08-13）：两个及以上类型组成 scoped union：分别按同一 scope 与 `1..=100` limit 读取，再按 `recorded_at DESC`（Claim 无 timestamp 排在最后）、type rank（Event / Episode / Reflection / Claim）、id DESC 稳定收口并截断。union 拒绝所有类型专属 filter；Claim 在 union 中仍默认 Active。既有 tagged record JSON 不变。Episode lookup 由后续 M1.2.4 单独完成；Reflection `get_memory` 仍开放。
 - 该项没有 schema migration / index，也不开放 Episode/Reflection lookup、identity/commitment history 或 correction。
 
-- 已完成四类 scoped search、evidence-relation runtime、跨类型 union、Episode / Reflection lookup 与 identity/commitment revision audit 首片；下一步按冻结顺序领取 audited supersede。
+- 已完成四类 scoped search、evidence-relation runtime、跨类型 union、Episode / Reflection lookup、identity/commitment revision audit 与 audited supersede 首片；下一步按冻结顺序领取 M1.3.0 current-schema structural readback。
 - 查询结果保留 ID、namespace、owner、recorded_at、status、mode、provenance 和 supersession 状态。
 - SQLite 增加经过 explain/benchmark 证明需要的索引；不先假设 FTS 或向量数据库。
 
@@ -495,7 +495,7 @@ M2 退出指标：
 ### 第 3 周：Read Model v2
 
 - 已完成 Event / Claim `search_memory` 与 `get_memory` 首片，以及 scoped Episode / Reflection provenance `search_memory` 首片；
-- 已完成 exact scoped Claim revision history、scoped identity/commitment revision audit、evidence-relation runtime、跨类型 union 与 Episode / Reflection lookup 首片；继续建立 audited supersede；
+- 已完成 exact scoped Claim revision history、scoped identity/commitment revision audit、evidence-relation runtime、跨类型 union、Episode / Reflection lookup 与 audited supersede 首片；继续完成 current-schema structural readback；
 - 用两个 namespace 小样本验证。
 
 ### 第 4 周：真实客户端闭环
@@ -550,4 +550,4 @@ M2 退出指标：
 
 M0 已收口。仍属于后续路线图而非本轮完成声明的项目包括：repository-wide event-ID 统一、完整 recall contract、support bundle inventory、server-created snapshot handle、structured action validation、完整 policy arbitration、真实 binary package、fresh-machine 与 Windows runtime parity。本机私有 credential 轮换仍是用户侧动作，不纳入仓库提交。
 
-当前里程碑是 M1 Trustworthy Recall；M1.0 三项 Scope/Data-Integrity Gates、M1.1.1–M1.1.6 四类 scoped search / evidence-relation / 跨类型 union，以及 Event/Claim/Episode/Reflection lookup、Claim reflection history 与 identity/commitment revision audit 已完成。下一执行顺序冻结为 audited supersede → current-schema structural readback → real-client closure；每项仍须独立领取。M2 fresh-machine / packaging 前还必须完成 exclusive init/migration gate。remote、tasks、OAuth、daemon writes、provider 扩张和正式发布仍不因 M0 或这些已完成切片而获得授权。
+当前里程碑是 M1 Trustworthy Recall；M1.0 三项 Scope/Data-Integrity Gates、M1.1.1–M1.1.6 四类 scoped search / evidence-relation / 跨类型 union，以及 Event/Claim/Episode/Reflection lookup、Claim reflection history、identity/commitment revision audit 与 scoped Claim audited supersede 已完成。下一执行顺序冻结为 current-schema structural readback → real-client closure；每项仍须独立领取。M2 fresh-machine / packaging 前还必须完成 exclusive init/migration gate。remote、tasks、OAuth、daemon writes、provider 扩张和正式发布仍不因 M0 或这些已完成切片而获得授权。

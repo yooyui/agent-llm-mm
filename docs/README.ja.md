@@ -8,6 +8,8 @@ MCP Memory Ledger は、ローカル AI クライアント向けの Rust 製 MCP
 
 現在のプロジェクトは、ローカル Agent memory、MCP integration、SQLite persistence、governed self-revision のための technical MVP です。production-grade autonomous-agent platform ではありません。remote team mode、multi-tenancy、packaged installers、daemon write capabilities、production security boundaries は、今後の roadmap / gate 対象です。
 
+[正式化改善・mainline 同期計画](formalization-improvement-plan-2026-08-25.md)は、product、engineering、security、release、GitHub mainline の現在の gap をまとめます。これは acceptance map であり、Local Alpha や production-ready の完了証拠ではありません。active plan が引き続き唯一の実行キューです。
+
 ## Features
 
 - **Local MCP memory service**: MCP `stdio` 経由で `ingest_interaction`、`search_memory`、`get_memory`、`get_reflection_history`、`get_self_model_history`、`get_evidence_relation`、`supersede_memory`、`build_self_snapshot`、`decide_with_snapshot`、`run_reflection` の 10 ツールを提供します。
@@ -140,7 +142,8 @@ Complete implementation status is tracked in [project status](project-status.md)
 2. [Positioning](positioning.md)
 3. [現在の実装状況](project-status.md)
 4. [Now / Next / Later roadmap](roadmap.md)
-5. [現在の active plan](plans/2026-07-10-product-replan.md)
+5. [正式化改善・mainline 同期計画](formalization-improvement-plan-2026-08-25.md)
+6. [現在の active plan](plans/2026-07-10-product-replan.md)
 
 active plan が現在唯一の実行キューです。過去の plan は追跡用に保持しますが、
 現在の作業は定義しません。

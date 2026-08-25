@@ -10,6 +10,8 @@
 
 下一次 tag / candidate 前的执行口径见 [Release Gate](release-gate.md)。该 gate 只覆盖本机 Rust MCP `stdio` technical demo / MVP 的最低核验，不代表 Local Alpha、production autonomy、remote administration、multi-tenant deployment 或 background daemon readiness。
 
+[正式化改进与主线同步计划](formalization-improvement-plan-2026-08-25.md)集中记录从当前 technical MVP 到可交付 Local Product Alpha 仍缺少的产品、数据、安全、发布、平台与 GitHub 治理条件。它不替代 release gate，也不把计划项升级为完成证据。
+
 产品化阶段的发布工程规则见 [Release Engineering](product/release-engineering.md)。第一阶段 release artifact 采用 source-only tag 或同等保守的源码形态；不要把它描述为安装包、托管服务、Beta、GA 或 production-ready 交付。
 
 不建议定位为：
@@ -79,20 +81,20 @@
 
 ### 1. `decide_with_snapshot`
 
-- commitment gate 实现存在，但只检查调用方 snapshot 中的 commitments 与 requested action
-- provider-selected action 尚未再次经过同一 gate，因此不能把 envelope 解释为可信策略批准
+- application 会在 provider 调用前用当前服务端 commitment store 覆盖调用方 snapshot commitments，并同时 gate requested action 与 provider-selected action
+- 其余 snapshot 字段仍由 caller 提供，且没有 server-created snapshot handle、完整 provenance binding 或 policy arbitration，因此不能把 envelope 解释为完整可信策略批准
 - 已可走 `openai-compatible` 或 OpenRouter provider；配置示例和本地 stub 不是 live evidence，显式 `--live` runner 只生成 bounded live preflight evidence，不是 provider 质量、SLA 或 gateway 认证
-- 返回契约仍是最小动作字符串
+- 返回契约仍是最小动作字符串；允许结果显式标记为 `experimental_non_authoritative` 和 `server_commitment_gate_only`
 
 因此不应把它写成“完整 AI 决策引擎”。
 
 ### 2. memory 语义仍然是 MVP
 
-当前已经有骨架，但还没有完整实现：
+当前已完成四类 scoped search/lookup、跨类型 union、Claim-linked reflection history、scoped identity/commitment audit、evidence-relation runtime 与 scoped Claim supersede 首片，但仍没有完整实现：
 
-- minimal deeper reflection 已有，但 richer schema / versioned reflection policy 仍未完成
-- richer identity model
-- richer episode model
+- current-schema structural readback 与真实 MCP 客户端 recall/correction 退出证据
+- versioned identity/commitment ledger 与 record-only Reflection history
+- Event/Episode/Reflection correction，以及 richer identity / episode lifecycle
 - procedural memory
 
 ### 3. 数据隔离策略已有最小可发布结论

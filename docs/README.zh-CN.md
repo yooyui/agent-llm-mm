@@ -8,6 +8,8 @@ MCP Memory Ledger 是一个本地优先的 Rust MCP `stdio` 记忆服务。它�
 
 当前项目适合作为本地 Agent 记忆、MCP 集成、SQLite 持久化和受治理自我修订的技术 MVP。它不是生产级自治 Agent 平台，远程团队模式、多租户、安装包发布、daemon 写能力和生产安全边界仍按路线图和门禁分阶段推进。
 
+[正式化改进与主线同步计划](formalization-improvement-plan-2026-08-25.md)集中整理了当前产品、工程、安全、发布和 GitHub 主线差距。它是验收映射，不代表 Local Alpha 或 production-ready 已完成；当前 active plan 仍是唯一任务入口。
+
 ## 核心能力
 
 - **本地 MCP 记忆服务**：通过 `stdio` 暴露 `ingest_interaction`、`search_memory`、`get_memory`、`get_reflection_history`、`get_self_model_history`、`get_evidence_relation`、`supersede_memory`、`build_self_snapshot`、`decide_with_snapshot` 和 `run_reflection` 共 10 个工具。
@@ -140,7 +142,8 @@ pwsh -File .\scripts\agent-llm-mm.ps1 serve
 2. [项目定位](positioning.md)
 3. [当前实现状态](project-status.md)
 4. [Now / Next / Later 路线图](roadmap.md)
-5. [当前 active plan](plans/2026-07-10-product-replan.md)
+5. [正式化改进与主线同步计划](formalization-improvement-plan-2026-08-25.md)
+6. [当前 active plan](plans/2026-07-10-product-replan.md)
 
 当前 active plan 是唯一任务入口；历史计划只用于追溯，不再定义当前工作。
 
